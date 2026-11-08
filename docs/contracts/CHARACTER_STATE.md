@@ -8,7 +8,7 @@
 
 当NarrationRequest.character存在时，模型输出允许额外字段proposed_changes；没有角色的旧旅程和纯预览仍使用原先严格两字段格式。
 
-仅允许：stamina_delta、spirit_delta（整数-100..100），coins_delta（整数-1000..1000），minutes（整数0..1440），location（1–80字）。拒绝bool、浮点、未知字段、负余额、属性越界、负耗时；不静默截断或修正数值。姓名、背包、能力不能通过提议改写。
+仅允许：stamina_delta、spirit_delta（整数-100..100），coins_delta（整数-1000..1000），minutes（整数0..1440），location（1–80字）。拒绝bool、浮点、未知字段、负余额、属性越界、负耗时；不静默截断或修正数值。姓名和能力不能通过提议改写。背包仅允许[INVENTORY](INVENTORY.md)约定的数量增减。
 
 草案result增加state_before、proposed_changes、projected_state。生成草案不改变角色；模型没有提议时为null。Fake提供显式测试提议（耗时10分钟、体力-1），不是自然语言规则裁决。
 
@@ -22,4 +22,6 @@ POST /adventures/{id}/drafts/{draft_id}/commit可传{apply_changes:true|false}�
 
 ## 产品边界
 
-程序目前只核对字段、类型、范围和提交一致性，不判断经济价值、移动合理性或叙事因果。玩家必须核对提议；未采用状态时叙事中的变化不自动成为账目事实。体力为0不自动代表死亡；尚无战斗、死亡、技能、背包、装备、正式历法或NPC知识规则。此阶段是可追溯状态账本，不宣称完成世界模拟引擎。
+程序目前只核对字段、类型、范围和提交一致性，不判断经济价值、移动合理性或叙事因果。玩家必须核对提议；未采用状态时叙事中的变化不自动成为账目事实。体力为0不自动代表死亡；背包已有数量账本，尚无战斗、死亡、技能、装备、正式历法或NPC知识规则。此阶段是可追溯状态账本，不宣称完成世界模拟引擎。
+
+背包扩展：character可含inventory，proposed_changes可含inventory_changes，规则见[INVENTORY](INVENTORY.md)。其他旧字段与纯预览输出约束不变。

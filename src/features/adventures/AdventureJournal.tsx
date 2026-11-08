@@ -5,7 +5,9 @@ import {
   type Draft,
   type Run,
   type Turn,
+  type InventoryItem,
 } from "./api";
+import { InventoryEditor } from "./InventoryEditor";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -24,6 +26,7 @@ export function AdventureJournal({
   api?: typeof adventureApi;
 }) {
   const [characterName, setCharacterName] = useState("旅人");
+  const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
   const [initialCoins, setInitialCoins] = useState(0);
   const [initialLocation, setInitialLocation] = useState("起点");
   const [applyChanges, setApplyChanges] = useState(false);
@@ -240,6 +243,10 @@ export function AdventureJournal({
         <p className="muted">
           新角色体力100、精神100，累计耗时从0分钟开始。初始化只在创建旅程时生效。
         </p>
+        <InventoryEditor
+          items={initialInventory}
+          onChange={setInitialInventory}
+        />
         <select
           aria-label="新冒险模式"
           value={mode}
@@ -258,6 +265,7 @@ export function AdventureJournal({
                   name: characterName,
                   location: initialLocation,
                   coins: initialCoins,
+                  inventory: initialInventory,
                 });
               if (valid(generation)) {
                 setRuns((prev) => [created, ...prev]);
@@ -363,6 +371,23 @@ export function AdventureJournal({
               <strong>待确认草案 · 尚未写入回合</strong>
               <p>{draft.action}</p>
               {renderResult(draft.result)}
+              {Array.isArray(
+                draft.result.proposed_changes?.inventory_changes,
+              ) && (
+                <div className="inventory-proposal" aria-label="物品增减提议">
+                  <strong>待确认物品变化</strong>
+                  <ul>
+                    {draft.result.proposed_changes.inventory_changes.map(
+                      (item) => (
+                        <li key={item.name}>
+                          {item.name}：{item.delta > 0 ? "+" : ""}
+                          {item.delta}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              )}
               {draft.result.projected_state && (
                 <>
                   <CharacterCard
