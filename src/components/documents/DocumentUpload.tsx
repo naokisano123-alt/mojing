@@ -23,11 +23,24 @@ export interface DocumentUploadProps {
   onRefreshRequest?: () => void;
   /** 可选支持的格式扩展名，默认 ['.txt', '.md']，严禁默认启用未接通的格式 */
   supportedFormats?: string[];
-  /** 可选：单文件大小上限（字节），默认 2 MiB；PDF/DOCX 由调用方提高到 8 MiB */
+  /** 可选：单文件大小全局默认上限（字节），默认 2 MiB；当未传入 maxBytesByFormat 或未匹配时兜底 */
   maxBytes?: number;
+  /**
+   * 可选：逐格式单文件大小上限映射表（字节），例如 { '.txt': 2097152, '.pdf': 8388608 }。
+   * 修复 B1 / B2：按具体扩展名动态判定上限，不再粗暴用单一格式决定全部格式上限。
+   */
+  maxBytesByFormat?: Record<string, number>;
 }
 
-const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB (契约 §4.7)
+const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB 默认保底 (契约 §4.7)
+
+function formatBytes(bytes: number): string {
+  const mib = bytes / (1024 * 1024);
+  if (Number.isInteger(mib)) {
+    return `${mib} MiB`;
+  }
+  return `${mib.toFixed(1)} MiB`;
+}
 
 export function DocumentUpload({
   worldId,
@@ -36,7 +49,8 @@ export function DocumentUpload({
   onViewExisting,
   onRefreshRequest,
   supportedFormats = ['.txt', '.md'],
-  maxBytes = MAX_FILE_BYTES,
+  maxBytes = DEFAULT_MAX_FILE_BYTES,
+  maxBytesByFormat,
 }: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -68,18 +82,33 @@ export function DocumentUpload({
     };
   }, []);
 
+  function getMaxBytesForExt(ext: string): number {
+    if (maxBytesByFormat) {
+      const lowerExt = ext.toLowerCase();
+      for (const [key, val] of Object.entries(maxBytesByFormat)) {
+        if (key.toLowerCase() === lowerExt && typeof val === 'number') {
+          return val;
+        }
+      }
+    }
+    return maxBytes;
+  }
+
   function validateFile(file: File): string | null {
     const ext = '.' + file.name.split('.').pop()?.toLowerCase();
     const isSupported = supportedFormats.some(f => f.toLowerCase() === ext);
     if (!isSupported) {
-      return `不支持该文件格式。仅支持导入 ${supportedFormats.join('、')} 纯文本设定文档。`;
+      return `不支持该文件格式。仅支持导入 ${supportedFormats.join('、')} 设定文档。`;
     }
     if (file.size === 0) {
       return '文件内容为空，无法导入。';
     }
-    if (file.size > maxBytes) {
+
+    const formatLimit = getMaxBytesForExt(ext);
+    if (file.size > formatLimit) {
       const mb = (file.size / (1024 * 1024)).toFixed(1);
-      return `文件大小为 ${mb} MB，超出单文件 2 MiB 上限。`;
+      const limitLabel = formatBytes(formatLimit);
+      return `文件大小为 ${mb} MB，超出 ${ext} 格式 ${limitLabel} 上限。`;
     }
     return null;
   }
@@ -188,7 +217,7 @@ export function DocumentUpload({
         <div>
           <h3>导入世界观资料</h3>
           <p className="muted text-xs mt-1">
-            支持 UTF-8 / GB18030 中文纯文本及 Markdown
+            支持设定文档导入，自动按章节切片与坐标定位
           </p>
         </div>
         <Tag>M1 · 资料库</Tag>
@@ -217,11 +246,14 @@ export function DocumentUpload({
         >
           <Upload size={32} />
           <h3>点击或拖拽文件到此处</h3>
-          <p>单文件最大 2 MiB · 自动按章节断块与字符定位</p>
+          <p>单文件按格式上限受限 · 自动按章节断块与字符定位</p>
           <div className="upload-limits">
-            {supportedFormats.map(fmt => (
-              <Tag key={fmt}>{fmt} 格式</Tag>
-            ))}
+            {supportedFormats.map(fmt => {
+              const limit = getMaxBytesForExt(fmt);
+              return (
+                <Tag key={fmt}>{fmt} (≤{formatBytes(limit)})</Tag>
+              );
+            })}
           </div>
           <input
             ref={inputRef}

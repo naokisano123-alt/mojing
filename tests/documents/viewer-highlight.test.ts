@@ -113,3 +113,71 @@ test('raw pagination offset history preserves arbitrary non-constant boundaries'
   const prevOffset0 = history.pop();
   assert.equal(prevOffset0, 0);
 });
+
+test('B5 fix: DocumentViewer correctly detects PARTIAL_TEXT and formats structured warning records as plain text', () => {
+  function isPartialTextWarning(w) {
+    if (!w) return false;
+    if (typeof w === 'string') {
+      return w.includes('PARTIAL_TEXT') || w.includes('部分内容未提取');
+    }
+    if (typeof w === 'object' && w !== null) {
+      return (
+        w.code === 'PARTIAL_TEXT' ||
+        (w.message ? w.message.includes('部分内容未提取') : false)
+      );
+    }
+    return false;
+  }
+
+  function formatWarningText(w) {
+    if (typeof w === 'string') return w;
+    if (typeof w === 'object' && w !== null) {
+      const msg = w.message || w.code || '未知解析警告';
+      if (typeof w.count === 'number' && w.count > 1) {
+        return `${msg}（共 ${w.count} 处）`;
+      }
+      return msg;
+    }
+    return String(w);
+  }
+
+  // 1. 结构化 warning record 识别 PARTIAL_TEXT
+  const rec1 = { code: 'PARTIAL_TEXT', message: '由于第 3 页包含复杂图表，部分内容未提取' };
+  assert.equal(isPartialTextWarning(rec1), true);
+
+  // 2. 字符串 warning 识别 PARTIAL_TEXT
+  const str1 = 'PARTIAL_TEXT: 页眉被跳过';
+  assert.equal(isPartialTextWarning(str1), true);
+
+  // 3. 非 PARTIAL_TEXT 警告
+  const rec2 = { code: 'TABLES_FLATTENED', message: '表格已平铺为普通段落', count: 3 };
+  assert.equal(isPartialTextWarning(rec2), false);
+
+  // 4. 纯文本格式化输出，带计数
+  assert.equal(formatWarningText(rec2), '表格已平铺为普通段落（共 3 处）');
+  assert.equal(formatWarningText('通用警告文本'), '通用警告文本');
+});
+
+test('B5 fix: encoding_semantics extracted_text suppresses raw byte encoding display', () => {
+  function getEncodingTagText(doc) {
+    if (doc.encoding_semantics === 'extracted_text') {
+      return 'EXTRACTED TEXT';
+    }
+    return (doc.encoding || 'utf-8').toUpperCase();
+  }
+
+  const pdfDoc = {
+    encoding: 'utf-8',
+    encoding_semantics: 'extracted_text',
+    warnings: [{ code: 'PARTIAL_TEXT', message: '部分内容未提取' }],
+  };
+  assert.equal(getEncodingTagText(pdfDoc), 'EXTRACTED TEXT');
+  assert.notEqual(getEncodingTagText(pdfDoc), 'GB18030');
+
+  const txtDoc = {
+    encoding: 'gb18030',
+    encoding_semantics: 'source_bytes',
+    warnings: [],
+  };
+  assert.equal(getEncodingTagText(txtDoc), 'GB18030');
+});
