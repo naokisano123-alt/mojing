@@ -166,3 +166,54 @@ export interface CapabilitiesResponse {
   max_bytes: Record<string, number>;
   search: boolean;
 }
+
+/* ================= M1-D 人工条目（M1_R3_API §1.1） ================= */
+
+export type LoreEntryType = 'character' | 'location' | 'faction' | 'rule' | 'other';
+export type LoreEntryStatus = 'draft' | 'confirmed';
+export type SourceAvailability = 'active' | 'deleted' | 'unavailable';
+
+export interface LoreEntrySourceLink {
+  document_id: Uuid;
+  chunk_id: Uuid;
+  start_char: number;
+  end_char: number;
+  excerpt: string;
+  availability: SourceAvailability;
+}
+
+export interface LoreEntryDto {
+  id: Uuid;
+  world_id: Uuid;
+  type: LoreEntryType;
+  title: string;
+  summary: string;
+  status: LoreEntryStatus;
+  revision: number;
+  origin: 'manual';
+  source_links: LoreEntrySourceLink[];
+  needs_source_review: boolean;
+  created_at: IsoTime;
+  updated_at: IsoTime;
+  deleted_at: IsoTime | null;
+}
+
+export interface LoreEntryPage {
+  items: LoreEntryDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LoreEntryDraftPayload {
+  type: LoreEntryType;
+  title: string;
+  summary: string;
+  status: LoreEntryStatus;
+  source_links: Array<{
+    document_id: Uuid;
+    chunk_id: Uuid;
+    start_char: number;
+    end_char: number;
+  }>;
+}

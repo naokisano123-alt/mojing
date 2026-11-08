@@ -29,6 +29,7 @@ import type {
   SearchResponse,
   CapabilitiesResponse,
 } from './types';
+import type { LoreEntryDto, LoreEntryPage, LoreEntryDraftPayload } from './types';
 
 export const DEFAULT_QUERY_TIMEOUT_MS = 30_000;
 export const DEFAULT_UPLOAD_TIMEOUT_MS = 60_000;
@@ -469,4 +470,51 @@ export function searchLore(
 /** R2：能力探测（契约 M1_R2_API §1.7） */
 export function getCapabilities(signal?: AbortSignal): Promise<CapabilitiesResponse> {
   return request<CapabilitiesResponse>('GET', '/capabilities', { signal });
+}
+
+/* ================= M1-D 人工条目（M1_R3_API §1.3） ================= */
+
+export function listLoreEntries(
+  params: { worldId: string; type?: string; status?: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<LoreEntryPage> {
+  return request<LoreEntryPage>('GET', '/worlds/' + encodeURIComponent(params.worldId) + '/lore-entries', {
+    queryParams: { type: params.type, status: params.status, limit: params.limit, offset: params.offset },
+    signal,
+  });
+}
+
+export function createLoreEntry(
+  worldId: string,
+  payload: LoreEntryDraftPayload,
+  signal?: AbortSignal,
+): Promise<LoreEntryDto> {
+  return request<LoreEntryDto>('POST', '/worlds/' + encodeURIComponent(worldId) + '/lore-entries', { body: payload, signal });
+}
+
+export function getLoreEntry(entryId: string, signal?: AbortSignal): Promise<LoreEntryDto> {
+  return request<LoreEntryDto>('GET', '/lore-entries/' + encodeURIComponent(entryId), { signal });
+}
+
+export function updateLoreEntry(
+  entryId: string,
+  payload: Partial<LoreEntryDraftPayload>,
+  expectedRevision: number,
+  signal?: AbortSignal,
+): Promise<LoreEntryDto> {
+  return request<LoreEntryDto>('PATCH', '/lore-entries/' + encodeURIComponent(entryId), {
+    body: { ...payload, expected_revision: expectedRevision },
+    signal,
+  });
+}
+
+export function deleteLoreEntry(
+  entryId: string,
+  expectedRevision: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  return request<void>('DELETE', '/lore-entries/' + encodeURIComponent(entryId), {
+    queryParams: { expected_revision: expectedRevision },
+    signal,
+  });
 }

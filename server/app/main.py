@@ -24,6 +24,9 @@ from .config import Settings, load_settings
 from .db import db, init_db
 from .errors import ApiError
 from .importer import chunk_text, decode_document, normalize, preview, slice_u16, u16len
+from .import_policy.policy import get_max_bytes_for_suffix
+from .lore_entries import service as lore_service
+from .lore_entries.errors import LoreEntryError
 from .lore_search.service import search_chunks
 from .lore_search.types import SearchValidationError, SearchWorldNotFoundError
 from .parsers.extractor import extract_document
@@ -60,6 +63,20 @@ def _map_parser_code(code: str, suffix: str) -> str:
     """把解析模块的内部错误码映射成契约 §1.5 的对外错误码。"""
     kind = "pdf" if suffix == ".pdf" else "docx"
     return _PARSER_CODE_MAP.get(code, {}).get(kind, code)
+
+
+def _import_policy_config(cfg: Settings) -> dict[str, Any]:
+    """由服务端配置构造逐格式限额策略（Li 的 import_policy 纯函数消费）。"""
+    return {
+        "max_bytes_by_format": {
+            ".txt": cfg.max_upload_bytes,
+            ".md": cfg.max_upload_bytes,
+            ".pdf": cfg.max_doc_bytes,
+            ".docx": cfg.max_doc_bytes,
+        },
+        "fallback_max_bytes": cfg.max_upload_bytes,
+        "allowed_suffixes": list(ALLOWED_SUFFIXES),
+    }
 
 
 def _warning_payload(message: str) -> dict[str, Any]:
@@ -400,7 +417,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 {"allowed": list(ALLOWED_SUFFIXES)},
             )
 
-        limit = cfg.max_upload_bytes if suffix in TEXT_SUFFIXES else cfg.max_doc_bytes
+        limit = get_max_bytes_for_suffix(suffix, _import_policy_config(cfg))
         data = await file.read(limit + 1)
         if len(data) > limit:
             raise ApiError(
@@ -441,7 +458,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             encoding = parsed.encoding
             media_type = parsed.media_type
             encoding_semantics = "extracted_text"
-            warnings = [_warning_payload(item) for item in parsed.warnings]
+            records = getattr(parsed, "warning_records", None) or []
+            if records:
+                warnings = [
+                    {"code": record.code, "message": record.message, "count": record.count}
+                    for record in records
+                ]
+            else:
+                warnings = [_warning_payload(item) for item in parsed.warnings]
 
         if not text.strip():
             raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")
@@ -637,6 +661,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "UPDATE documents SET deleted_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, document_id),
                 )
+        return JSONResponse(status_code=204, content=None)
+
+    @app.exception_handler(LoreEntryError)
+    async def _lore_entry_error_handler(_request, exc: LoreEntryError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status, content=exc.body())
+
+    @app.get("/api/v1/worlds/{world_id}/lore-entries")
+    def list_lore_entries(
+        world_id: str,
+        type: str | None = Query(None),
+        status: str | None = Query(None),
+        limit: int = Query(20, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+    ) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            return lore_service.list_entries(
+                conn, world_id, type=type, status=status, limit=limit, offset=offset
+            )
+
+    @app.post("/api/v1/worlds/{world_id}/lore-entries", status_code=201)
+    def create_lore_entry(world_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            return lore_service.create_entry(conn, world_id, payload)
+
+    @app.get("/api/v1/lore-entries/{entry_id}")
+    def get_lore_entry(entry_id: str) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            return lore_service.get_entry(conn, entry_id)
+
+    @app.patch("/api/v1/lore-entries/{entry_id}")
+    def update_lore_entry(entry_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        expected = payload.get("expected_revision")
+        body = {key: value for key, value in payload.items() if key != "expected_revision"}
+        with db(cfg.db_path) as conn:
+            return lore_service.update_entry(conn, entry_id, body, expected)
+
+    @app.delete("/api/v1/lore-entries/{entry_id}", status_code=204)
+    def delete_lore_entry(
+        entry_id: str,
+        expected_revision: int = Query(...),
+    ) -> JSONResponse:
+        with db(cfg.db_path) as conn:
+            lore_service.delete_entry(conn, entry_id, expected_revision)
         return JSONResponse(status_code=204, content=None)
 
     @app.get("/api/v1/capabilities")
