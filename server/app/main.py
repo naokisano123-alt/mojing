@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Query, UploadFile
+from fastapi import FastAPI, File, Query, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -398,7 +398,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "UPDATE documents SET deleted_at = ?, updated_at = ? WHERE world_id = ? AND deleted_at IS NULL",
                 (now, now, world_id),
             )
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
 
     # -------------------------------------------------------------- 文档
 
@@ -659,7 +659,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "UPDATE documents SET deleted_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, document_id),
                 )
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
 
     @app.exception_handler(LoreEntryError)
     async def _lore_entry_error_handler(_request, exc: LoreEntryError) -> JSONResponse:
@@ -717,7 +717,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         with db(cfg.db_path) as conn:
             lore_service.delete_entry(conn, entry_id, int(expected_revision))
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
 
     @app.get("/api/v1/capabilities")
     def capabilities() -> dict[str, Any]:

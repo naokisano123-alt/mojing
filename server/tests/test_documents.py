@@ -364,3 +364,17 @@ def test_rich_document_warnings_survive_http_upload_and_restart(client, db_path,
         ).json()["items"]
         assert "".join(chunk["text"] for chunk in chunks) == raw
 
+
+
+def test_delete_endpoints_return_empty_204_body(client):
+    """204 不能带响应体；带 body 会让 uvicorn 抛 Content-Length 错误。"""
+    world = create_world(client)
+    doc = upload(client, world["id"], "云山纪.md", SAMPLE_MD.encode("utf-8")).json()
+
+    deleted_doc = client.delete(f"/api/v1/documents/{doc['id']}")
+    assert deleted_doc.status_code == 204
+    assert deleted_doc.content == b""
+
+    deleted_world = client.delete(f"/api/v1/worlds/{world['id']}")
+    assert deleted_world.status_code == 204
+    assert deleted_world.content == b""
