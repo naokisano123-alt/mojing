@@ -1,0 +1,3 @@
+# 测试与本地开发额外依赖（运行时不需要）
+# reportlab 仅用于生成测试用 PDF 样本（server/tests/parsers/sample_helpers.py）
+reportlab>=4.0

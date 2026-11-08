@@ -23,6 +23,8 @@ export interface DocumentUploadProps {
   onRefreshRequest?: () => void;
   /** 可选支持的格式扩展名，默认 ['.txt', '.md']，严禁默认启用未接通的格式 */
   supportedFormats?: string[];
+  /** 可选：单文件大小上限（字节），默认 2 MiB；PDF/DOCX 由调用方提高到 8 MiB */
+  maxBytes?: number;
 }
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB (契约 §4.7)
@@ -34,6 +36,7 @@ export function DocumentUpload({
   onViewExisting,
   onRefreshRequest,
   supportedFormats = ['.txt', '.md'],
+  maxBytes = MAX_FILE_BYTES,
 }: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -74,7 +77,7 @@ export function DocumentUpload({
     if (file.size === 0) {
       return '文件内容为空，无法导入。';
     }
-    if (file.size > MAX_FILE_BYTES) {
+    if (file.size > maxBytes) {
       const mb = (file.size / (1024 * 1024)).toFixed(1);
       return `文件大小为 ${mb} MB，超出单文件 2 MiB 上限。`;
     }

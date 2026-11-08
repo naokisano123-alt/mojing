@@ -26,6 +26,8 @@ import type {
   WorldDetail,
   WorldDocument,
   WorldSummary,
+  SearchResponse,
+  CapabilitiesResponse,
 } from './types';
 
 export const DEFAULT_QUERY_TIMEOUT_MS = 30_000;
@@ -446,4 +448,25 @@ export function deleteDocument(
   signal?: AbortSignal,
 ): Promise<void> {
   return request<void>('DELETE', `/documents/${encodeURIComponent(documentId)}`, { signal });
+}
+
+/** R2：资料检索（契约 M1_R2_API §2） */
+export function searchLore(
+  params: { worldId: string; query: string; limit?: number; offset?: number },
+  signal?: AbortSignal,
+): Promise<SearchResponse> {
+  return request<SearchResponse>('GET', '/search', {
+    queryParams: {
+      world_id: params.worldId,
+      q: params.query,
+      limit: params.limit,
+      offset: params.offset,
+    },
+    signal,
+  });
+}
+
+/** R2：能力探测（契约 M1_R2_API §1.7） */
+export function getCapabilities(signal?: AbortSignal): Promise<CapabilitiesResponse> {
+  return request<CapabilitiesResponse>('GET', '/capabilities', { signal });
 }

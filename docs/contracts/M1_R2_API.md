@@ -88,7 +88,7 @@ interface DocumentWarning {
 | 单文件字节 | 2 MiB（`MOJING_MAX_UPLOAD_BYTES`） | 8 MiB（`MOJING_MAX_DOC_BYTES`） | 8 MiB（同上） |
 | 页数 | — | ≤ 200（`MOJING_MAX_PDF_PAGES`） | — |
 | 解压后字节 | — | — | ≤ 100 MiB（`MOJING_MAX_DOCX_UNZIPPED`） |
-| 压缩包条目 | — | — | ≤ 2000 |
+| 压缩包条目 | — | — | 未实现（以解压字节 + 膨胀率双限替代，见 §1.5 ARCHIVE_BOMB） |
 | 提取文本 | — | ≤ 2,000,000 UTF-16 单位（`MOJING_MAX_TEXT_UNITS`） | 同左 |
 | 每世界文档数 | 20 | 20 | 20 |
 

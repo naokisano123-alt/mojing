@@ -40,6 +40,10 @@ def _env_origins(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 class Settings:
     db_path: Path = DEFAULT_DB_PATH
     max_upload_bytes: int = 2 * 1024 * 1024
+    max_doc_bytes: int = 8 * 1024 * 1024
+    max_pdf_pages: int = 200
+    max_text_units: int = 2_000_000
+    max_docx_unzipped_bytes: int = 100 * 1024 * 1024
     max_documents_per_world: int = 20
     allow_gb18030: bool = True
     allow_big5: bool = False
@@ -58,6 +62,10 @@ def load_settings(db_path: Path | str | None = None) -> Settings:
     return Settings(
         db_path=default_db,
         max_upload_bytes=_env_int("MOJING_MAX_UPLOAD_BYTES", 2 * 1024 * 1024),
+        max_doc_bytes=_env_int("MOJING_MAX_DOC_BYTES", 8 * 1024 * 1024),
+        max_pdf_pages=_env_int("MOJING_MAX_PDF_PAGES", 200),
+        max_text_units=_env_int("MOJING_MAX_TEXT_UNITS", 2_000_000),
+        max_docx_unzipped_bytes=_env_int("MOJING_MAX_DOCX_UNZIPPED", 100 * 1024 * 1024),
         max_documents_per_world=_env_int("MOJING_MAX_DOCUMENTS_PER_WORLD", 20),
         allow_gb18030=_env_bool("MOJING_ALLOW_GB18030", True),
         allow_big5=_env_bool("MOJING_ALLOW_BIG5", False),

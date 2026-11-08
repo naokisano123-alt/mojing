@@ -13,10 +13,10 @@
 | --- | --- | --- |
 | DSH-01/02/03（M1-A/B） | **MERGED** | PR #1 已合并，不重做 |
 | R2-D 补充契约 | **WRITTEN** | `docs/contracts/M1_R2_API.md` |
-| R2-M（Marcin）包 | **PENDING** | 尚未收到 |
-| R2-L（Li）包 | **PENDING** | 尚未收到 |
-| R2-A（Ma）包 | **PENDING** | 尚未收到 |
-| R2 集成 | **IN PROGRESS** | 共享层修复已提交；三个包到位后逐包 import |
+| R2-M（Marcin）包 | **IMPORTED** | `import/r2-marcin` @ `a5f0ff2`，8 文件，作者保留 |
+| R2-L（Li）包 | **IMPORTED** | `import/r2-li` @ `bd57ec3`，13 文件，作者保留 |
+| R2-A（Ma）包 | **IMPORTED** | `import/r2-ma` @ `c9f966c`，12 文件，作者保留；其 `patch.diff` 损坏，改用 manifest 校验通过的 `files/` 落地 |
+| R2 集成 | **IN PROGRESS** | 三包已合并入 `feat/r2-integration`，共享接线与全量回归进行中 |
 | 线上部署 | **未部署** | 本轮只有本地闭环；静态站点不能跑 Python 后端，不声称后端已上线 |
 
 ## 2. 本轮已完成（不依赖三个包的部分）
@@ -74,3 +74,41 @@
 - **未部署**：`dist/` 是静态前端，Python 后端没有可用的线上运行环境；本轮交付为本地完整闭环。
 - 依赖解析库（Li 包）未安装前，PDF/DOCX 入口必须保持关闭（契约 §1.7 的能力接口即为此设计）。
 - `/search` 第一版是字面子串扫描，不承诺分词召回或海量性能。
+## 6. R2 三包导入记录
+
+| 包 | 分支 | 提交 | 校验 | 备注 |
+| --- | --- | --- | --- | --- |
+| gemini-marcin-R2-M-3e900637 | import/r2-marcin | a5f0ff2 | 8/8 sha256 一致，`git apply --check` 通过 | 修改 3 个既有组件 + 新增 4 文件 |
+| gemini-li-R2-L-3e90063 | import/r2-li | bd57ec3 | 13/13 sha256 一致，apply 通过 | 纯新增 `server/app/parsers/**` |
+| gemini-ma-R2-A-3e900637 | import/r2-ma | c9f966c | 12/12 sha256 一致；**patch.diff 第 520 行损坏** | 用 `files/` 逐文件落地（哈希已核验） |
+
+三个分支均为 `--no-ff` 合并进 `feat/r2-integration`，作者信息保留。
+
+## 7. 共享接线（DSH 完成）
+
+| 位置 | 改动 |
+| --- | --- |
+| `server/app/main.py` | 上传入口支持 PDF/DOCX（调用 Li 的 `extract_document`），新增 `GET /api/v1/capabilities`、`GET /api/v1/search`（调用 Ma 的 `search_chunks`），解析错误码映射到契约 §1.5 |
+| `server/app/config.py` | 新增 `max_doc_bytes` / `max_pdf_pages` / `max_text_units` / `max_docx_unzipped_bytes` |
+| `server/app/db.py` | `documents` 增加 `encoding_semantics`、`warnings` 两列；幂等 `_ensure_columns` 迁移旧库 |
+| `server/tests/conftest.py` | 追加仓库根到 `sys.path`，让 Li 的 `from server.app...` 测试可运行 |
+| `server/requirements-dev.txt` | 新增（reportlab 仅测试生成 PDF 样本用） |
+| `src/api/client.ts` | 新增 `searchLore()`、`getCapabilities()` |
+| `src/components/documents/WorldLoreView.tsx` | 新增“检索资料”页签；能力探测决定可用格式；检索来源点击 → `DocumentViewer.initialSource` 高亮 |
+| `src/components/documents/DocumentUpload.tsx` | 增加可选 `maxBytes`（默认 2 MiB；PDF/DOCX 由调用方提到 8 MiB） |
+| `.github/workflows/ci.yml` | 安装解析与测试依赖后跑前后端测试 |
+
+## 8. 本轮回归（实际执行）
+
+| 命令 | 结果 |
+| --- | --- |
+| `npm test` | **41 passed / 0 failed**（22 既有 + Marcin 14 + Ma 5） |
+| `npm run build` | 通过，1599 modules，JS 328.78 kB（gzip 102.67 kB），CSS 48.62 kB |
+| `pytest`（server） | **82 passed**（37 既有 + Li 解析 30 + Ma 检索 + DSH 新增 API 用例） |
+
+## 9. 与契约的偏差（如实记录）
+
+- DOCX 压缩包条目数上限（契约 §1.4 原写 2000）**未实现**，实际以“解压字节 100 MiB + 膨胀率 100×”双限替代；契约已同步改写。
+- Li 的解析模块错误码（`CORRUPT_DOCUMENT` / `ENCRYPTED_DOCUMENT` / `SCANNED_OR_EMPTY_PDF` / `ZIP_BOMB_DETECTED`）由 `main.py` 映射为契约 §1.5 的对外码，模块内部不改。
+- Ma 的 `SearchItem` 字段（`filename`、`match_chunk_*`）在路由层映射为契约字段（`document_filename`、`match_start/match_end`），面板 DTO 由 `WorldLoreView` 适配，未改 Ma 的组件类型。
+- Marcin 的 `DocumentUpload` 原为固定 2 MiB；本次加了可选 `maxBytes`，未改变默认行为。
