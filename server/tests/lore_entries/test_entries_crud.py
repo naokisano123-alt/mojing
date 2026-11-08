@@ -2,6 +2,7 @@
 
 依据：
 - docs/collaboration/ROUND3.md、docs/collaboration/R3_GEMINI_MA.md
+- docs/collaboration/ROUND5.md、docs/collaboration/R5_GEMINI_MA.md
 - docs/contracts/M1_R3_API.md
 """
 
@@ -10,6 +11,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timezone
 
@@ -318,6 +320,241 @@ class TestLoreEntriesCRUD(unittest.TestCase):
 
         cur.execute("SELECT COUNT(*) FROM lore_entries")
         self.assertEqual(cur.fetchone()[0], 0)
+
+    def test_savepoint_rollback_on_update_failure(self) -> None:
+        """验证 SAVEPOINT 原子性：更新时若校验失败，revision 不得递增，且外层无需回滚即可继续。"""
+        entry = create_entry(
+            self.conn,
+            self.world_id,
+            {"type": "character", "title": "守望者", "summary": "初始版本"},
+        )
+        self.assertEqual(entry["revision"], 1)
+
+        # 尝试更新传入非法的 title 导致校验失败
+        with self.assertRaises(LoreEntryValidationError):
+            update_entry(
+                self.conn,
+                entry["id"],
+                {"title": "   "},
+                expected_revision=1,
+            )
+
+        # 验证条目未受影响，版本号仍为 1
+        fetched = get_entry(self.conn, entry["id"])
+        self.assertEqual(fetched["title"], "守望者")
+        self.assertEqual(fetched["revision"], 1)
+
+    def test_dual_connection_concurrent_update_barrier(self) -> None:
+        """R4-02 并发回归测试：两个独立真实连接与同步屏障（Barrier）。
+        连接 A 与连接 B 均读取到 revision=1。
+        并发提交更新，原子 UPDATE 保证恰好只有 1 个成功（进入 rev 2），
+        另 1 个必须抛出 409 LoreEntryConflictError，绝不发生后写覆盖前写。
+        """
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+            db_path = tf.name
+
+        try:
+            init_conn = sqlite3.connect(db_path)
+            init_conn.row_factory = sqlite3.Row
+            init_conn.execute("PRAGMA journal_mode = WAL")
+            init_conn.execute("PRAGMA foreign_keys = ON")
+            init_conn.executescript(SCHEMA)
+            ensure_lore_entries_schema(init_conn)
+
+            w_id = "world_dual_01"
+            now = _iso_now()
+            init_conn.execute(
+                "INSERT INTO worlds VALUES (?, ?, ?, ?, ?, ?)",
+                (w_id, "并发世界", "描述", now, now, None),
+            )
+            entry = create_entry(
+                init_conn,
+                w_id,
+                {"type": "character", "title": "初始并发条目", "summary": "描述"},
+            )
+            init_conn.commit()
+            init_conn.close()
+
+            entry_id = entry["id"]
+
+            barrier = threading.Barrier(2)
+            results: list[dict[str, str | None]] = []
+
+            def worker(tag: str, title: str) -> None:
+                conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+                conn.row_factory = sqlite3.Row
+                try:
+                    row = get_entry(conn, entry_id)
+                    assert row["revision"] == 1
+                    barrier.wait(timeout=5.0)
+
+                    conn.execute("BEGIN IMMEDIATE")
+                    upd = update_entry(
+                        conn,
+                        entry_id,
+                        {"title": title},
+                        expected_revision=1,
+                    )
+                    conn.execute("COMMIT")
+                    results.append({"tag": tag, "status": "success", "title": upd["title"]})
+                except LoreEntryConflictError as e:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    results.append({"tag": tag, "status": "conflict", "title": None})
+                except Exception as e:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    results.append({"tag": tag, "status": "error", "title": str(e)})
+                finally:
+                    conn.close()
+
+            t1 = threading.Thread(target=worker, args=("Writer_A", "A写入的标题"))
+            t2 = threading.Thread(target=worker, args=("Writer_B", "B写入的标题"))
+
+            t1.start()
+            t2.start()
+            t1.join(timeout=10.0)
+            t2.join(timeout=10.0)
+
+            statuses = [r["status"] for r in results]
+            self.assertEqual(len(statuses), 2)
+            self.assertEqual(statuses.count("success"), 1)
+            self.assertEqual(statuses.count("conflict"), 1)
+
+            # 最终检查
+            chk_conn = sqlite3.connect(db_path)
+            chk_conn.row_factory = sqlite3.Row
+            final_entry = get_entry(chk_conn, entry_id)
+            self.assertEqual(final_entry["revision"], 2)
+            chk_conn.close()
+        finally:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            for ext in ["-wal", "-shm"]:
+                if os.path.exists(db_path + ext):
+                    os.remove(db_path + ext)
+
+    def test_concurrent_delete_and_update_cannot_resurrect(self) -> None:
+        """测试删除与更新竞争：删除成功后，同版本更新绝不复活条目，返回 404。"""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+            db_path = tf.name
+
+        try:
+            init_conn = sqlite3.connect(db_path)
+            init_conn.row_factory = sqlite3.Row
+            init_conn.execute("PRAGMA journal_mode = WAL")
+            init_conn.execute("PRAGMA foreign_keys = ON")
+            init_conn.executescript(SCHEMA)
+            ensure_lore_entries_schema(init_conn)
+
+            w_id = "world_del_resurrect_01"
+            now = _iso_now()
+            init_conn.execute(
+                "INSERT INTO worlds VALUES (?, ?, ?, ?, ?, ?)",
+                (w_id, "世界", "描述", now, now, None),
+            )
+            entry = create_entry(
+                init_conn,
+                w_id,
+                {"type": "faction", "title": "待灭帮派", "summary": "描述"},
+            )
+            init_conn.commit()
+            init_conn.close()
+
+            entry_id = entry["id"]
+
+            conn_del = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+            conn_del.row_factory = sqlite3.Row
+            conn_upd = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+            conn_upd.row_factory = sqlite3.Row
+
+            # 删除成功
+            conn_del.execute("BEGIN IMMEDIATE")
+            delete_entry(conn_del, entry_id, expected_revision=1)
+            conn_del.execute("COMMIT")
+
+            # 尝试更新同版本已被删除的条目 -> 404 绝不复活
+            with self.assertRaises(LoreEntryNotFoundError):
+                update_entry(conn_upd, entry_id, {"title": "尝试复活"}, expected_revision=1)
+
+            conn_del.close()
+            conn_upd.close()
+        finally:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            for ext in ["-wal", "-shm"]:
+                if os.path.exists(db_path + ext):
+                    os.remove(db_path + ext)
+
+    def test_concurrent_duplicate_delete_idempotent(self) -> None:
+        """测试两个连接并发以同一版本软删除，均返回 204（None），保持幂等。"""
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
+            db_path = tf.name
+
+        try:
+            init_conn = sqlite3.connect(db_path)
+            init_conn.row_factory = sqlite3.Row
+            init_conn.execute("PRAGMA journal_mode = WAL")
+            init_conn.execute("PRAGMA foreign_keys = ON")
+            init_conn.executescript(SCHEMA)
+            ensure_lore_entries_schema(init_conn)
+
+            w_id = "world_dup_del_01"
+            now = _iso_now()
+            init_conn.execute(
+                "INSERT INTO worlds VALUES (?, ?, ?, ?, ?, ?)",
+                (w_id, "世界", "描述", now, now, None),
+            )
+            entry = create_entry(
+                init_conn,
+                w_id,
+                {"type": "rule", "title": "旧规则", "summary": "描述"},
+            )
+            init_conn.commit()
+            init_conn.close()
+
+            entry_id = entry["id"]
+
+            barrier = threading.Barrier(2)
+            results: list[str] = []
+
+            def del_worker() -> None:
+                conn = sqlite3.connect(db_path, timeout=10.0, isolation_level=None)
+                conn.row_factory = sqlite3.Row
+                try:
+                    barrier.wait(timeout=5.0)
+                    conn.execute("BEGIN IMMEDIATE")
+                    delete_entry(conn, entry_id, expected_revision=1)
+                    conn.execute("COMMIT")
+                    results.append("success")
+                except Exception as e:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    results.append(str(type(e).__name__))
+                finally:
+                    conn.close()
+
+            t1 = threading.Thread(target=del_worker)
+            t2 = threading.Thread(target=del_worker)
+
+            t1.start()
+            t2.start()
+            t1.join(timeout=10.0)
+            t2.join(timeout=10.0)
+
+            self.assertEqual(results, ["success", "success"])
+        finally:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            for ext in ["-wal", "-shm"]:
+                if os.path.exists(db_path + ext):
+                    os.remove(db_path + ext)
 
     def test_soft_deleted_world_entries_unreachable(self) -> None:
         """测试世界整体软删除后，该世界下所有条目均不可读写（404 WORLD_NOT_FOUND）。"""

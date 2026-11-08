@@ -1,24 +1,14 @@
 """人工设定条目后端服务核心实现。
 
-契约与规范依据（ROUND3.md、M1_R3_API.md §1、§4）：
-1. 模块边界与事务：所有服务函数接收连接 conn: sqlite3.Connection，由调用方控制事务，本模块不 commit、不 rollback、不私建正式库；
-2. 基础 CRUD：create_entry, list_entries, get_entry, update_entry, delete_entry；
-3. 五类 type（character, location, faction, rule, other），两状态（draft, confirmed），origin='manual'；
-4. 标题 1–80 字符，summary ≤ 500 字符；允许同名不同条目，绝不自动合并；
-5. 乐观并发 revision：初值 1，每次成功更新 +1。update_entry 与 delete_entry 强校验 expected_revision，版本不一致返回 409 LORE_ENTRY_CONFLICT；
-6. 软删除与幂等性：delete_entry 使用 expected_revision 进行软删除，已软删除的条目再次以相同 revision 删除保持幂等（204）；
-7. 来源引用强校验：
-   - document_id 属于同世界且未软删（SOURCE_CROSS_WORLD / SOURCE_DELETED）；
-   - chunk_id 属于该文档（SOURCE_CHUNK_MISMATCH）；
-   - 区间半开 [start, end) 必须落在块内，支持全文绝对坐标或块内偏移（SOURCE_OUT_OF_RANGE）；
-   - UTF-16 边界合法，不切代理对（SOURCE_INVALID_OFFSET）；
-   - 服务端提取 excerpt，不信任客户端上送内容；
-8. 来源生命周期与派生状态：
-   - 来源文档软删除后，条目保留，来源状态派生为 availability: 'deleted'；
-   - 切片异常缺失派生为 availability: 'unavailable'；
-   - 当且仅当 entry.status === 'confirmed' 且存在非 active 来源时，needs_source_review 为 True（仅作复核提示）；
-   - 无来源的 manual 条目合法且 needs_source_review 为 False；
-   - 已软删除的世界下所有条目不可读写，抛 404 WORLD_NOT_FOUND。
+契约与规范依据（ROUND3.md、ROUND5.md、M1_R3_API.md §1、§4、R5_GEMINI_MA.md）：
+1. 模块边界与事务：所有服务函数接收外部注入连接 conn: sqlite3.Connection，由调用方控制事务，本模块不 commit、不 rollback、不私建正式库；
+2. 事务原子性与嵌套回滚（SAVEPOINT）：条目和来源变更位于同一原子单元中，校验失败或写入异常时回滚该保存点，绝不遗留半份来源或已递增的 revision；真实数据库错误原样抛出，不吞为 409；
+3. 原子并发（R4-02 修复）：update 与 delete 均通过原子 UPDATE ... WHERE id = ? AND revision = ? AND deleted_at IS NULL 执行并核对受影响行数；update/update 同版本竞争仅一个成功其余 409；update/delete 不复活；重复同版本删除维持幂等（204）；
+4. 来源全文绝对坐标（R4-03 修复）：仅接受 chunk.start <= start < end <= chunk.end 的全文绝对 UTF-16 区间，彻底剔除相对坐标猜测，拒绝布尔值与代理对中间点；
+5. source_links 契约守卫：null 绝不隐式当作 [] 清空，必须报错 422；无来源时显式传 []；
+6. PATCH 来源语义闭环（R4-07 修复）：PATCH 若省略 source_links 则完整保留已有引用；显式数组允许保留当前条目原有的非 active 历史引用（保持原摘录用于提示复核），新增或修改的引用必须同世界且 active，禁止盗用其他条目的失效引用；
+7. 可用性派生与 additive chunk_index：准确区分软删（'deleted'）与切片缺失/不从属（'unavailable'），并在切片有效时 additive 输出 chunk_index；
+8. 软删除世界拦截：已软删除世界下的所有条目均不可读写，抛 404 WORLD_NOT_FOUND。
 """
 
 from __future__ import annotations
@@ -61,7 +51,7 @@ def _iso_now() -> str:
 
 
 def _check_world_active(conn: sqlite3.Connection, world_id: str) -> None:
-    """校验世界是否存在且未被软删除，已删除抛出 404 WORLD_NOT_FOUND。"""
+    """校验世界是否存在且未被软删除，不存在或已删除抛出 404 WORLD_NOT_FOUND。"""
     cur = conn.cursor()
     cur.execute("SELECT id, deleted_at FROM worlds WHERE id = ?", (world_id,))
     row = cur.fetchone()
@@ -124,7 +114,7 @@ def _validate_status(status: Any) -> str:
 
 
 def _validate_expected_revision(expected_revision: Any) -> int:
-    if expected_revision is None or not isinstance(expected_revision, int) or expected_revision < 1:
+    if expected_revision is None or isinstance(expected_revision, bool) or not isinstance(expected_revision, int) or expected_revision < 1:
         raise LoreEntryValidationError(
             "expected_revision",
             "必须提供正整数 expected_revision 用于并发安全检查。",
@@ -137,8 +127,16 @@ def _validate_and_prepare_source(
     conn: sqlite3.Connection,
     world_id: str,
     source: dict[str, Any],
+    existing_sources_cache: dict[tuple[str, str, int, int], str] | None = None,
 ) -> tuple[str, str, int, int, str]:
-    """严格校验单条来源引用，返回 (document_id, chunk_id, abs_start, abs_end, excerpt)。"""
+    """严格校验单条来源引用，返回 (document_id, chunk_id, abs_start, abs_end, excerpt)。
+
+    规则（R5_GEMINI_MA §3、§4）：
+    1. 坐标严格要求全文绝对 UTF-16：chunk.start <= start < end <= chunk.end；
+    2. 绝不猜测相对坐标，拒绝布尔值与代理对中间点；
+    3. 若该引用是当前条目原有的非 active 历史引用，允许保留原有摘录；
+    4. 新增或修改的引用必须属于同世界且为 active 状态。
+    """
     if not isinstance(source, dict):
         raise LoreEntryValidationError("source_links", "来源项必须为对象结构。")
 
@@ -151,12 +149,16 @@ def _validate_and_prepare_source(
         raise LoreEntryValidationError("source_links.document_id", "来源 document_id 不能为空。")
     if not isinstance(chunk_id, str) or not chunk_id.strip():
         raise LoreEntryValidationError("source_links.chunk_id", "来源 chunk_id 不能为空。")
+
+    # 严格类型检查：拒绝布尔值（bool 是 int 的子类）与非整数
+    if isinstance(start_char, bool) or isinstance(end_char, bool):
+        raise LoreEntryValidationError("source_links.coordinates", "start_char 与 end_char 不能为布尔值。")
     if not isinstance(start_char, int) or not isinstance(end_char, int):
         raise LoreEntryValidationError(
             "source_links.coordinates", "start_char 与 end_char 必须为整数。"
         )
 
-    # 1. 检查文档：同世界、未软删除
+    # 1. 检查文档：是否存在、是否属于同世界
     cur = conn.cursor()
     cur.execute(
         "SELECT id, world_id, deleted_at FROM documents WHERE id = ?",
@@ -171,16 +173,29 @@ def _validate_and_prepare_source(
 
     if doc_world_id != world_id:
         raise LoreEntrySourceCrossWorldError(document_id)
+
+    source_key = (document_id, chunk_id, start_char, end_char)
+    is_retained_historical = (
+        existing_sources_cache is not None and source_key in existing_sources_cache
+    )
+
+    # 若文档已被软删除
     if doc_deleted_at is not None:
+        if is_retained_historical:
+            # 允许保留本条目已有且身份/区间完全相同的历史引用，保留原摘录
+            return document_id, chunk_id, start_char, end_char, existing_sources_cache[source_key]
         raise LoreEntrySourceDeletedError(document_id)
 
-    # 2. 检查切片：属于该文档
+    # 2. 检查切片：属于该文档且存在
     cur.execute(
         "SELECT id, document_id, start_char, end_char, text FROM chunks WHERE id = ?",
         (chunk_id,),
     )
     chunk_row = cur.fetchone()
     if not chunk_row:
+        if is_retained_historical:
+            # 切片缺失但为条目已有历史引用，保留原摘录
+            return document_id, chunk_id, start_char, end_char, existing_sources_cache[source_key]
         raise LoreEntrySourceChunkMismatchError(chunk_id)
 
     c_doc_id = chunk_row["document_id"] if hasattr(chunk_row, "keys") else chunk_row[1]
@@ -189,28 +204,23 @@ def _validate_and_prepare_source(
     c_text = chunk_row["text"] if hasattr(chunk_row, "keys") else chunk_row[4]
 
     if c_doc_id != document_id:
+        if is_retained_historical:
+            return document_id, chunk_id, start_char, end_char, existing_sources_cache[source_key]
         raise LoreEntrySourceChunkMismatchError(chunk_id)
 
     chunk_u16_len = c_end - c_start
 
-    # 3. 校验并换算区间：支持全文绝对坐标或块内相对坐标
-    if start_char >= c_start and end_char <= c_end:
-        abs_start = start_char
-        abs_end = end_char
-        rel_start = start_char - c_start
-        rel_end = end_char - c_start
-    elif 0 <= start_char < end_char <= chunk_u16_len:
-        rel_start = start_char
-        rel_end = end_char
-        abs_start = c_start + start_char
-        abs_end = c_start + end_char
-    else:
+    # 3. 严格全文绝对坐标校验：chunk.start <= start_char < end_char <= chunk.end
+    # 彻底杜绝猜测相对坐标 (R4-03 修复)
+    if not (c_start <= start_char < end_char <= c_end):
         raise LoreEntrySourceOutOfRangeError(start_char, end_char, chunk_u16_len)
 
-    if not (0 <= rel_start < rel_end <= chunk_u16_len):
-        raise LoreEntrySourceOutOfRangeError(start_char, end_char, chunk_u16_len)
+    abs_start = start_char
+    abs_end = end_char
+    rel_start = start_char - c_start
+    rel_end = end_char - c_start
 
-    # 4. 代理对边界合法性检查
+    # 4. UTF-16 代理对边界合法性检查
     if not check_utf16_offset(c_text, rel_start) or not check_utf16_offset(c_text, rel_end):
         raise LoreEntrySourceInvalidOffsetError(start_char, end_char)
 
@@ -224,7 +234,7 @@ def _fetch_sources_for_entry(
     conn: sqlite3.Connection,
     entry_id: str,
 ) -> list[LoreEntrySource]:
-    """查询指定条目的所有来源引用，并动态派生 availability。"""
+    """查询指定条目的所有来源引用，并准确派生 availability 与 additive chunk_index。"""
     query = """
     SELECT
         s.id AS source_id,
@@ -235,7 +245,9 @@ def _fetch_sources_for_entry(
         s.excerpt,
         d.id AS doc_id,
         d.deleted_at AS doc_deleted_at,
-        c.id AS chunk_exists_id
+        c.id AS chunk_exists_id,
+        c.document_id AS chunk_doc_id,
+        c.chunk_index AS chunk_index
     FROM lore_entry_sources s
     LEFT JOIN documents d ON s.document_id = d.id
     LEFT JOIN chunks c ON s.chunk_id = c.id
@@ -257,6 +269,8 @@ def _fetch_sources_for_entry(
             doc_exists = r["doc_id"]
             doc_deleted_at = r["doc_deleted_at"]
             chunk_exists = r["chunk_exists_id"]
+            chunk_doc_id = r["chunk_doc_id"]
+            chunk_idx = r["chunk_index"]
         else:
             (
                 _sid,
@@ -268,26 +282,33 @@ def _fetch_sources_for_entry(
                 doc_exists,
                 doc_deleted_at,
                 chunk_exists,
+                chunk_doc_id,
+                chunk_idx,
             ) = r
 
-        # 动态派生 availability
+        # 准确区分软删与缺失，核对文档/块关系 (R5_GEMINI_MA §5)
         if doc_exists is None or doc_deleted_at is not None:
             availability: SourceAvailability = "deleted"
-        elif chunk_exists is None:
+            res_chunk_idx = chunk_idx if (chunk_exists is not None and chunk_doc_id == doc_id) else None
+        elif chunk_exists is None or chunk_doc_id != doc_id:
             availability = "unavailable"
+            res_chunk_idx = None
         else:
             availability = "active"
+            res_chunk_idx = chunk_idx
 
-        results.append(
-            {
-                "document_id": doc_id,
-                "chunk_id": chunk_id,
-                "start_char": start_char,
-                "end_char": end_char,
-                "excerpt": excerpt,
-                "availability": availability,
-            }
-        )
+        source_dict: LoreEntrySource = {
+            "document_id": doc_id,
+            "chunk_id": chunk_id,
+            "start_char": start_char,
+            "end_char": end_char,
+            "excerpt": excerpt,
+            "availability": availability,
+        }
+        if res_chunk_idx is not None:
+            source_dict["chunk_index"] = res_chunk_idx
+
+        results.append(source_dict)
     return results
 
 
@@ -316,62 +337,76 @@ def create_entry(
     summary = _validate_summary(payload.get("summary"))
     status = _validate_status(payload.get("status"))
 
-    raw_sources = payload.get("source_links", [])
+    # null 不能当 [] 静默清空
+    if "source_links" in payload and payload["source_links"] is None:
+        raise LoreEntryValidationError(
+            "source_links", "source_links 不能为 null，无来源时应传空数组 []。"
+        )
+
+    raw_sources = payload.get("source_links")
     if raw_sources is None:
         raw_sources = []
     if not isinstance(raw_sources, list):
         raise LoreEntryValidationError("source_links", "source_links 必须为数组。")
 
-    # 预先逐条严格校验全部来源
-    prepared_sources = [
-        _validate_and_prepare_source(conn, world_id, s) for s in raw_sources
-    ]
-
-    entry_id = str(uuid.uuid4())
-    now = _iso_now()
-
+    # 使用可嵌套 SAVEPOINT 保证原子性
+    sp_name = f"sp_create_entry_{uuid.uuid4().hex}"
     cur = conn.cursor()
-    cur.execute(
-        """INSERT INTO lore_entries (
-            id, world_id, type, title, summary, status,
-            revision, origin, created_at, updated_at, deleted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            entry_id,
-            world_id,
-            entry_type,
-            title,
-            summary,
-            status,
-            1,
-            "manual",
-            now,
-            now,
-            None,
-        ),
-    )
+    cur.execute(f"SAVEPOINT {sp_name}")
+    try:
+        prepared_sources = [
+            _validate_and_prepare_source(conn, world_id, s) for s in raw_sources
+        ]
 
-    for doc_id, chunk_id, abs_start, abs_end, excerpt in prepared_sources:
+        entry_id = str(uuid.uuid4())
+        now = _iso_now()
+
         cur.execute(
-            """INSERT INTO lore_entry_sources (
-                id, entry_id, world_id, document_id, chunk_id,
-                start_char, end_char, excerpt, created_at, deleted_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO lore_entries (
+                id, world_id, type, title, summary, status,
+                revision, origin, created_at, updated_at, deleted_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                str(uuid.uuid4()),
                 entry_id,
                 world_id,
-                doc_id,
-                chunk_id,
-                abs_start,
-                abs_end,
-                excerpt,
+                entry_type,
+                title,
+                summary,
+                status,
+                1,
+                "manual",
+                now,
                 now,
                 None,
             ),
         )
 
-    return get_entry(conn, entry_id)
+        for doc_id, chunk_id, abs_start, abs_end, excerpt in prepared_sources:
+            cur.execute(
+                """INSERT INTO lore_entry_sources (
+                    id, entry_id, world_id, document_id, chunk_id,
+                    start_char, end_char, excerpt, created_at, deleted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid.uuid4()),
+                    entry_id,
+                    world_id,
+                    doc_id,
+                    chunk_id,
+                    abs_start,
+                    abs_end,
+                    excerpt,
+                    now,
+                    None,
+                ),
+            )
+
+        cur.execute(f"RELEASE {sp_name}")
+        return get_entry(conn, entry_id)
+    except Exception:
+        cur.execute(f"ROLLBACK TO {sp_name}")
+        cur.execute(f"RELEASE {sp_name}")
+        raise
 
 
 def get_entry(conn: sqlite3.Connection, entry_id: str) -> LoreEntry:
@@ -452,13 +487,13 @@ def list_entries(
     """分页查询指定世界下的设定条目列表。"""
     _check_world_active(conn, world_id)
 
-    if not isinstance(limit, int) or limit < 1 or limit > MAX_PAGE_SIZE:
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1 or limit > MAX_PAGE_SIZE:
         raise LoreEntryValidationError(
             "limit",
             f"分页条数 limit 必须在 1 到 {MAX_PAGE_SIZE} 之间。",
             {"min": 1, "max": MAX_PAGE_SIZE, "actual": limit},
         )
-    if not isinstance(offset, int) or offset < 0:
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
         raise LoreEntryValidationError(
             "offset", "分页偏移 offset 不能小于 0。", {"actual": offset}
         )
@@ -485,7 +520,6 @@ def list_entries(
     if total == 0:
         return {"items": [], "total": 0, "limit": limit, "offset": offset}
 
-    # 排序稳定：updated_at DESC, id ASC
     query_sql = f"""
     SELECT id FROM lore_entries
     WHERE {where_sql}
@@ -513,104 +547,155 @@ def update_entry(
     payload: dict[str, Any],
     expected_revision: int,
 ) -> LoreEntry:
-    """部分更新设定条目（带乐观并发版本校验）。
+    """部分更新设定条目（带原子乐观并发校验与保存点回滚）。
 
-    参数:
-        conn: sqlite3 连接。
-        entry_id: 条目 ID。
-        payload: 欲更新字段子集（未传字段保留原值）。
-        expected_revision: 客户端持有的期望版本号。
+    规则依据（ROUND5.md、R5_GEMINI_MA.md）：
+    1. 原子 UPDATE 必须包含 expected_revision 与 deleted_at IS NULL 条件；
+    2. 并发同版本更新最多一个成功，其余 409；
+    3. 已被软删除条目不可更新复活（404）；
+    4. PATCH 若省略 source_links 保持原引用不变；显式数组若为 null 报错 422；
+    5. 显式 source_links 可保留本条目已有且相同的非 active 历史引用，保留原摘录；
+    6. 变更置于 SAVEPOINT 中，失败时原子回滚，不吞真实数据库异常。
     """
     if not isinstance(payload, dict):
         raise LoreEntryValidationError("payload", "请求体必须为 JSON 对象。")
 
     exp_rev = _validate_expected_revision(expected_revision)
 
-    cur = conn.cursor()
-    cur.execute(
-        """SELECT id, world_id, type, title, summary, status, revision, deleted_at
-           FROM lore_entries
-           WHERE id = ? AND deleted_at IS NULL""",
-        (entry_id,),
-    )
-    row = cur.fetchone()
-    if not row:
-        raise LoreEntryNotFoundError(entry_id)
-
-    w_id = row["world_id"] if hasattr(row, "keys") else row[1]
-    cur_type = row["type"] if hasattr(row, "keys") else row[2]
-    cur_title = row["title"] if hasattr(row, "keys") else row[3]
-    cur_summary = row["summary"] if hasattr(row, "keys") else row[4]
-    cur_status = row["status"] if hasattr(row, "keys") else row[5]
-    cur_revision = row["revision"] if hasattr(row, "keys") else row[6]
-
-    _check_world_active(conn, w_id)
-
-    # 乐观并发检查
-    if cur_revision != exp_rev:
-        raise LoreEntryConflictError(exp_rev, cur_revision)
-
-    # 字段增量更新判断
-    new_type = _validate_type(payload["type"]) if "type" in payload else cur_type
-    new_title = _validate_title(payload["title"]) if "title" in payload else cur_title
-    new_summary = (
-        _validate_summary(payload["summary"]) if "summary" in payload else cur_summary
-    )
-    new_status = (
-        _validate_status(payload["status"]) if "status" in payload else cur_status
-    )
-
-    now = _iso_now()
-    new_revision = cur_revision + 1
-
-    # 处理来源引用更新
-    if "source_links" in payload:
-        raw_sources = payload["source_links"]
-        if raw_sources is None:
-            raw_sources = []
-        if not isinstance(raw_sources, list):
-            raise LoreEntryValidationError("source_links", "source_links 必须为数组。")
-
-        prepared_sources = [
-            _validate_and_prepare_source(conn, w_id, s) for s in raw_sources
-        ]
-
-        # 软删除已有来源
-        cur.execute(
-            "UPDATE lore_entry_sources SET deleted_at = ? WHERE entry_id = ? AND deleted_at IS NULL",
-            (now, entry_id),
+    if "source_links" in payload and payload["source_links"] is None:
+        raise LoreEntryValidationError(
+            "source_links", "source_links 不能为 null，无来源时应传空数组 []。"
         )
 
-        # 插入新来源
-        for doc_id, chunk_id, abs_start, abs_end, excerpt in prepared_sources:
+    sp_name = f"sp_update_entry_{uuid.uuid4().hex}"
+    cur = conn.cursor()
+    cur.execute(f"SAVEPOINT {sp_name}")
+    try:
+        # 查询当前条目最新数据
+        cur.execute(
+            """SELECT id, world_id, type, title, summary, status, revision, deleted_at
+               FROM lore_entries
+               WHERE id = ?""",
+            (entry_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise LoreEntryNotFoundError(entry_id)
+
+        w_id = row["world_id"] if hasattr(row, "keys") else row[1]
+        cur_type = row["type"] if hasattr(row, "keys") else row[2]
+        cur_title = row["title"] if hasattr(row, "keys") else row[3]
+        cur_summary = row["summary"] if hasattr(row, "keys") else row[4]
+        cur_status = row["status"] if hasattr(row, "keys") else row[5]
+        cur_revision = row["revision"] if hasattr(row, "keys") else row[6]
+        cur_deleted_at = row["deleted_at"] if hasattr(row, "keys") else row[7]
+
+        # 软删除条目不可更新（不复活）
+        if cur_deleted_at is not None:
+            raise LoreEntryNotFoundError(entry_id)
+
+        _check_world_active(conn, w_id)
+
+        # 乐观并发版本检查
+        if cur_revision != exp_rev:
+            raise LoreEntryConflictError(exp_rev, cur_revision)
+
+        # 字段增量更新判断
+        new_type = _validate_type(payload["type"]) if "type" in payload else cur_type
+        new_title = _validate_title(payload["title"]) if "title" in payload else cur_title
+        new_summary = (
+            _validate_summary(payload["summary"]) if "summary" in payload else cur_summary
+        )
+        new_status = (
+            _validate_status(payload["status"]) if "status" in payload else cur_status
+        )
+
+        now = _iso_now()
+        new_revision = cur_revision + 1
+
+        # 原子 UPDATE：携带 expected_revision 与 deleted_at IS NULL
+        cur.execute(
+            """UPDATE lore_entries
+               SET type = ?, title = ?, summary = ?, status = ?,
+                   revision = ?, updated_at = ?
+               WHERE id = ? AND revision = ? AND deleted_at IS NULL""",
+            (new_type, new_title, new_summary, new_status, new_revision, now, entry_id, exp_rev),
+        )
+        if cur.rowcount == 0:
+            # 存在并发冲突：重新检查最新状态
+            cur.execute("SELECT revision, deleted_at FROM lore_entries WHERE id = ?", (entry_id,))
+            chk = cur.fetchone()
+            if not chk:
+                raise LoreEntryNotFoundError(entry_id)
+            chk_del = chk["deleted_at"] if hasattr(chk, "keys") else chk[1]
+            chk_rev = chk["revision"] if hasattr(chk, "keys") else chk[0]
+            if chk_del is not None:
+                raise LoreEntryNotFoundError(entry_id)
+            raise LoreEntryConflictError(exp_rev, chk_rev)
+
+        # 处理来源引用更新：仅当显式传了 source_links 时才变更来源
+        if "source_links" in payload:
+            raw_sources = payload["source_links"]
+            if not isinstance(raw_sources, list):
+                raise LoreEntryValidationError("source_links", "source_links 必须为数组。")
+
+            # 查询当前条目已有的全部未删除来源，支持保留失效历史引用
             cur.execute(
-                """INSERT INTO lore_entry_sources (
-                    id, entry_id, world_id, document_id, chunk_id,
-                    start_char, end_char, excerpt, created_at, deleted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    str(uuid.uuid4()),
-                    entry_id,
-                    w_id,
-                    doc_id,
-                    chunk_id,
-                    abs_start,
-                    abs_end,
-                    excerpt,
-                    now,
-                    None,
-                ),
+                """SELECT document_id, chunk_id, start_char, end_char, excerpt
+                   FROM lore_entry_sources
+                   WHERE entry_id = ? AND deleted_at IS NULL""",
+                (entry_id,),
+            )
+            existing_rows = cur.fetchall()
+            existing_sources_map: dict[tuple[str, str, int, int], str] = {}
+            for er in existing_rows:
+                if hasattr(er, "keys"):
+                    existing_sources_map[
+                        (er["document_id"], er["chunk_id"], er["start_char"], er["end_char"])
+                    ] = er["excerpt"]
+                else:
+                    existing_sources_map[(er[0], er[1], er[2], er[3])] = er[4]
+
+            prepared_sources = [
+                _validate_and_prepare_source(
+                    conn, w_id, s, existing_sources_cache=existing_sources_map
+                )
+                for s in raw_sources
+            ]
+
+            # 软删除已有来源
+            cur.execute(
+                "UPDATE lore_entry_sources SET deleted_at = ? WHERE entry_id = ? AND deleted_at IS NULL",
+                (now, entry_id),
             )
 
-    cur.execute(
-        """UPDATE lore_entries
-           SET type = ?, title = ?, summary = ?, status = ?,
-               revision = ?, updated_at = ?
-           WHERE id = ?""",
-        (new_type, new_title, new_summary, new_status, new_revision, now, entry_id),
-    )
+            # 插入新来源
+            for doc_id, chunk_id, abs_start, abs_end, excerpt in prepared_sources:
+                cur.execute(
+                    """INSERT INTO lore_entry_sources (
+                        id, entry_id, world_id, document_id, chunk_id,
+                        start_char, end_char, excerpt, created_at, deleted_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        str(uuid.uuid4()),
+                        entry_id,
+                        w_id,
+                        doc_id,
+                        chunk_id,
+                        abs_start,
+                        abs_end,
+                        excerpt,
+                        now,
+                        None,
+                    ),
+                )
 
-    return get_entry(conn, entry_id)
+        cur.execute(f"RELEASE {sp_name}")
+        return get_entry(conn, entry_id)
+    except Exception:
+        cur.execute(f"ROLLBACK TO {sp_name}")
+        cur.execute(f"RELEASE {sp_name}")
+        raise
 
 
 def delete_entry(
@@ -618,44 +703,72 @@ def delete_entry(
     entry_id: str,
     expected_revision: int,
 ) -> None:
-    """软删除设定条目（带乐观并发版本校验）。
+    """软删除设定条目（带原子并发校验与幂等性保障）。
 
-    规则依据（M1_R3_API.md §1.3）：
-    - expected_revision 不匹配返回 409 LORE_ENTRY_CONFLICT；
-    - 首次删除将 deleted_at 置为当前时间；
-    - 针对已删除条目且 revision 匹配时保持幂等（返回 None，对应 204）。
+    规则依据（M1_R3_API.md §1.3、R5_GEMINI_MA.md）：
+    1. 原子 UPDATE ... WHERE id = ? AND revision = ? AND deleted_at IS NULL；
+    2. expected_revision 不匹配返回 409 LORE_ENTRY_CONFLICT；
+    3. 针对已删除条目且 revision 匹配时保持幂等（返回 None，对应 204）；
+    4. 竞争删除保持幂等或 409；
+    5. 关联来源同步软删除。
     """
     exp_rev = _validate_expected_revision(expected_revision)
 
+    sp_name = f"sp_delete_entry_{uuid.uuid4().hex}"
     cur = conn.cursor()
-    cur.execute(
-        "SELECT id, world_id, revision, deleted_at FROM lore_entries WHERE id = ?",
-        (entry_id,),
-    )
-    row = cur.fetchone()
-    if not row:
-        raise LoreEntryNotFoundError(entry_id)
+    cur.execute(f"SAVEPOINT {sp_name}")
+    try:
+        cur.execute(
+            "SELECT id, world_id, revision, deleted_at FROM lore_entries WHERE id = ?",
+            (entry_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise LoreEntryNotFoundError(entry_id)
 
-    w_id = row["world_id"] if hasattr(row, "keys") else row[1]
-    cur_rev = row["revision"] if hasattr(row, "keys") else row[2]
-    deleted_at = row["deleted_at"] if hasattr(row, "keys") else row[3]
+        w_id = row["world_id"] if hasattr(row, "keys") else row[1]
+        cur_rev = row["revision"] if hasattr(row, "keys") else row[2]
+        deleted_at = row["deleted_at"] if hasattr(row, "keys") else row[3]
 
-    _check_world_active(conn, w_id)
+        _check_world_active(conn, w_id)
 
-    if cur_rev != exp_rev:
-        raise LoreEntryConflictError(exp_rev, cur_rev)
+        if cur_rev != exp_rev:
+            raise LoreEntryConflictError(exp_rev, cur_rev)
 
-    if deleted_at is not None:
-        # 重复删除保持幂等
+        if deleted_at is not None:
+            # 已经软删除且 revision 匹配，重复删除保持幂等（204）
+            cur.execute(f"RELEASE {sp_name}")
+            return None
+
+        now = _iso_now()
+        # 原子更新软删除
+        cur.execute(
+            """UPDATE lore_entries
+               SET deleted_at = ?, updated_at = ?
+               WHERE id = ? AND revision = ? AND deleted_at IS NULL""",
+            (now, now, entry_id, exp_rev),
+        )
+        if cur.rowcount == 0:
+            # 并发竞争检测
+            cur.execute("SELECT revision, deleted_at FROM lore_entries WHERE id = ?", (entry_id,))
+            chk = cur.fetchone()
+            if not chk:
+                raise LoreEntryNotFoundError(entry_id)
+            chk_rev = chk["revision"] if hasattr(chk, "keys") else chk[0]
+            chk_del = chk["deleted_at"] if hasattr(chk, "keys") else chk[1]
+            if chk_del is not None and chk_rev == exp_rev:
+                # 另一事务已以同一版本删除 -> 幂等成功
+                cur.execute(f"RELEASE {sp_name}")
+                return None
+            raise LoreEntryConflictError(exp_rev, chk_rev)
+
+        cur.execute(
+            "UPDATE lore_entry_sources SET deleted_at = ? WHERE entry_id = ? AND deleted_at IS NULL",
+            (now, entry_id),
+        )
+        cur.execute(f"RELEASE {sp_name}")
         return None
-
-    now = _iso_now()
-    cur.execute(
-        "UPDATE lore_entries SET deleted_at = ?, updated_at = ? WHERE id = ?",
-        (now, now, entry_id),
-    )
-    cur.execute(
-        "UPDATE lore_entry_sources SET deleted_at = ? WHERE entry_id = ? AND deleted_at IS NULL",
-        (now, entry_id),
-    )
-    return None
+    except Exception:
+        cur.execute(f"ROLLBACK TO {sp_name}")
+        cur.execute(f"RELEASE {sp_name}")
+        raise
