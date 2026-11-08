@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -691,6 +692,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.patch("/api/v1/lore-entries/{entry_id}")
     def update_lore_entry(entry_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         expected = payload.get("expected_revision")
+        if isinstance(expected, bool) or not isinstance(expected, int) or expected < 1:
+            raise ApiError(
+                422,
+                "VALIDATION_ERROR",
+                "expected_revision 必须是正整数。",
+                {"field": "expected_revision"},
+            )
         body = {key: value for key, value in payload.items() if key != "expected_revision"}
         with db(cfg.db_path) as conn:
             return lore_service.update_entry(conn, entry_id, body, expected)
@@ -698,10 +706,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.delete("/api/v1/lore-entries/{entry_id}", status_code=204)
     def delete_lore_entry(
         entry_id: str,
-        expected_revision: int = Query(...),
+        expected_revision: str = Query(...),
     ) -> JSONResponse:
+        # 严格正整数：拒绝 true / 1.5 / "1abc"，不让参数强转混过去
+        if not re.fullmatch(r"[1-9][0-9]*", expected_revision or ""):
+            raise ApiError(
+                422,
+                "VALIDATION_ERROR",
+                "expected_revision 必须是正整数。",
+                {"field": "expected_revision"},
+            )
         with db(cfg.db_path) as conn:
-            lore_service.delete_entry(conn, entry_id, expected_revision)
+            lore_service.delete_entry(conn, entry_id, int(expected_revision))
         return JSONResponse(status_code=204, content=None)
 
     @app.get("/api/v1/capabilities")
