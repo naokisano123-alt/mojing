@@ -69,7 +69,10 @@ def register_routes(app, cfg, get_store, get_builder):
                            '该请求正在生成或已失败，请查询状态；重新生成需使用新的请求标识。')
         try:
             with db(cfg.db_path) as conn:
+                conn.execute('BEGIN')  # Coherent short snapshot of revision, lore and history.
                 run = service.get_adventure(conn, adventure_id)
+                if run['revision'] != reserved['base_revision']:
+                    raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后重新生成。')
                 bundle = get_builder()(conn, run['world_id'], action)
                 recent = service.turns(conn, adventure_id, limit=6)
             history = tuple(HistoryTurn(safe_u16_truncate(t['action'], 500), safe_u16_truncate(t['result']['narrative'], 1400)) for t in recent)
