@@ -69,6 +69,8 @@ def init_db(path: Path | str) -> None:
         from .lore_entries.schema import ensure_lore_entries_schema
 
         ensure_lore_entries_schema(conn)
+        from .adventures.service import SCHEMA as ADVENTURE_SCHEMA
+        conn.executescript(ADVENTURE_SCHEMA)
         conn.commit()
 
 

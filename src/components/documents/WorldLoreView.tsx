@@ -23,6 +23,8 @@ import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
 import { LoreEntriesPanel } from '../../features/lore-entries';
+import { AdventureJournal } from '../../features/adventures/AdventureJournal';
+import type { ModelSessionResponse } from '../../features/narration-preview/types';
 import { NarrationPreview } from '../../features/narration-preview';
 import type { NarrationPreviewApi } from '../../features/narration-preview/types';
 import type {
@@ -52,7 +54,7 @@ export interface WorldLoreViewProps {
   onPlayDemo?: () => void;
 }
 
-type Tab = 'list' | 'search' | 'entries' | 'narration' | 'upload';
+type Tab = 'list' | 'search' | 'entries' | 'narration' | 'journal' | 'upload';
 
 export function WorldLoreView({
   worldId,
@@ -64,6 +66,7 @@ export function WorldLoreView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('list');
+  const [modelSession, setModelSession] = useState<ModelSessionResponse | null>(null);
   const [targetEntryId, setTargetEntryId] = useState<string>();
   const [uploadPolicy, setUploadPolicy] = useState(() => getUploadPolicy());
   const [notice, setNotice] = useState('');
@@ -301,6 +304,7 @@ export function WorldLoreView({
         >
           <FlaskConical size={15} /> 叙事实验
         </button>
+        <button type="button" className={tab === 'journal' ? 'active' : ''} onClick={() => setTab('journal')}>冒险记录</button>
         <button
           type="button"
           className={tab === 'upload' ? 'active' : ''}
@@ -385,6 +389,8 @@ export function WorldLoreView({
         <NarrationPreview
           worldId={worldId}
           api={narrationApi}
+          initialSession={modelSession}
+          onSessionChange={setModelSession}
           onOpenSource={target => {
             if (target.kind === 'entry') {
               setTargetEntryId(target.entry_id);
@@ -402,6 +408,13 @@ export function WorldLoreView({
           }}
         />
       )}
+
+      {tab === 'journal' && <AdventureJournal worldId={worldId} sessionId={modelSession?.session_id}
+        onConfigure={() => setTab('narration')}
+        onOpenSource={source => {
+          if (source.kind === 'entry') { setTargetEntryId(source.entry_id); setTab('entries'); }
+          else if (source.document_id) setViewingDoc({documentId:source.document_id,mode:'chunks',source:{chunkId:source.chunk_id,chunkIndex:source.chunk_index}});
+        }} />}
 
       {tab === 'upload' && (
         <DocumentUpload

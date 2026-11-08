@@ -144,7 +144,7 @@ export function buildUrl(endpoint: string, queryParams?: Record<string, unknown>
 /**
  * 统一网络请求封装（带超时、取消与错误提取）
  */
-async function request<T>(
+export async function request<T>(
   method: string,
   endpoint: string,
   options?: {
