@@ -1,3 +1,5 @@
+> 当前进入[M2-A](M2_PLAN.md)，四助手按[ROUND6](collaboration/ROUND6.md)开工。用户已反馈安卓已测流程正常；Codex已提交草案校验与Fake核心，M2路由/真实模型/UI仍待各包实现。以下为先前M1阶段记录，当前进度以本段与最新报告为准。
+
 > 本轮更新：[来源导航已补齐](reports/codex-source-navigation.md)，当前协作见[ROUND5](collaboration/ROUND5.md)。并发、草稿和解析健壮性继续分块推进，M1尚待完整验收。
 
 > 后续状态补充：[Codex小修复](reports/codex-r4-hotfix.md)已恢复正常PDF/DOCX上传，接通逐格式前端限额并修检索null坐标。R4其余任务继续；以下审阅基线所述上传阻断已被这次修复替代。
