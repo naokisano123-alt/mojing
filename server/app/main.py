@@ -773,9 +773,13 @@ def create_app(
         if narration_store is not None:
             return narration_store
         factory = _load_attr(".model_gateway", "get_store", "default_store")
-        if factory is None:
-            raise ApiError(503, "M2_NOT_READY", "模型网关尚未就绪（缺少 model_gateway 模块）。")
-        narration_store = factory() if callable(factory) else factory
+        if factory is not None:
+            narration_store = factory() if callable(factory) else factory
+        else:
+            store_cls = _load_attr(".model_gateway", "ModelSessionStore")
+            if store_cls is None:
+                raise ApiError(503, "M2_NOT_READY", "模型网关尚未就绪（缺少 model_gateway 模块）。")
+            narration_store = store_cls()
         return narration_store
 
     def _context_builder():
@@ -885,6 +889,14 @@ def create_app(
             "sources": list(bundle.metadata),
         }
 
+
+    @app.on_event("shutdown")
+    def _release_model_sessions() -> None:
+        try:
+            if narration_store is not None and hasattr(narration_store, "clear"):
+                narration_store.clear()
+        except Exception:
+            pass
 
     @app.get("/api/v1/capabilities")
     def capabilities() -> dict[str, Any]:

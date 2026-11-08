@@ -143,8 +143,10 @@ describe('NarrationPreview 组件 UI 行为与交互测试', () => {
     // 验证会话激活面板显示
     expect(await screen.findByTestId('active-session-info')).toBeTruthy();
 
-    // 关键安全验证 1：密码框被清空，原文不残留
-    expect(apiKeyInput).toHaveValue('');
+    // 关键安全验证 1：连接成功后会话面板替换表单，Key 输入框不再存在于 DOM
+    // （集成修正：原断言检查已卸载节点的 value，永远读到旧值；改为断言卸载 + DOM 不含 Key）
+    expect(screen.queryByLabelText(/API Key/)).toBeNull();
+    expect(document.body.innerHTML).not.toContain('sk-super-secret-key-12345');
 
     // 关键安全验证 2：严禁持久化到 localStorage 或 sessionStorage
     expect(localStorage.getItem('api_key')).toBeNull();

@@ -4,6 +4,7 @@ import {
   BookOpen,
   Search,
   ClipboardList,
+  FlaskConical,
   Info,
   Compass,
   AlertCircle,
@@ -22,6 +23,8 @@ import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
 import { LoreEntriesPanel } from '../../features/lore-entries';
+import { NarrationPreview } from '../../features/narration-preview';
+import type { NarrationPreviewApi } from '../../features/narration-preview/types';
 import type {
   LoreEntriesPanelApi,
   LoreEntry as PanelLoreEntry,
@@ -34,6 +37,10 @@ import {
   createLoreEntry,
   updateLoreEntry,
   deleteLoreEntry,
+  createModelSession,
+  deleteModelSession,
+  testModelSession,
+  previewNarration,
 } from '../../api/client';
 import './documents.css';
 import { getUploadPolicy, toLoreSearchItem } from './loreAdapters';
@@ -45,7 +52,7 @@ export interface WorldLoreViewProps {
   onPlayDemo?: () => void;
 }
 
-type Tab = 'list' | 'search' | 'entries' | 'upload';
+type Tab = 'list' | 'search' | 'entries' | 'narration' | 'upload';
 
 export function WorldLoreView({
   worldId,
@@ -58,6 +65,7 @@ export function WorldLoreView({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('list');
   const [uploadPolicy, setUploadPolicy] = useState(() => getUploadPolicy());
+  const [notice, setNotice] = useState('');
 
   // 稳定的草稿容器：切子页签不会丢草稿，不同世界 key 隔离（契约 M1_R4_API §6）
   const draftStoreRef = useRef<LoreEntryDraftStore | null>(null);
@@ -158,6 +166,15 @@ export function WorldLoreView({
     });
     setTab('list');
   }
+
+  // 模型叙事实验 API 适配（M2_A_API v1.0）
+  const narrationApi: NarrationPreviewApi = {
+    createSession: config => createModelSession(config),
+    deleteSession: id => deleteModelSession(id),
+    testSession: id => testModelSession(id),
+    preview: (targetWorldId, payload, signal) =>
+      previewNarration(targetWorldId, payload, signal),
+  };
 
   // 条目面板 API 适配：面板只认注入接口，HTTP 细节留在这一层
   const loreApi: LoreEntriesPanelApi = {
@@ -277,6 +294,13 @@ export function WorldLoreView({
         </button>
         <button
           type="button"
+          className={tab === 'narration' ? 'active' : ''}
+          onClick={() => setTab('narration')}
+        >
+          <FlaskConical size={15} /> 叙事实验
+        </button>
+        <button
+          type="button"
           className={tab === 'upload' ? 'active' : ''}
           onClick={() => setTab('upload')}
         >
@@ -299,6 +323,12 @@ export function WorldLoreView({
             </button>
           </div>
         </div>
+      )}
+
+      {notice && (
+        <p className="muted text-xs" role="status">
+          {notice}
+        </p>
       )}
 
       {tab === 'list' && (
@@ -345,6 +375,28 @@ export function WorldLoreView({
               },
             })
           }
+        />
+      )}
+
+      {tab === 'narration' && (
+        <NarrationPreview
+          worldId={worldId}
+          api={narrationApi}
+          onOpenSource={target => {
+            if (target.kind === 'entry') {
+              setTab('entries');
+              setNotice('该引用来自人工设定条目，已切换到「人工设定」页签。');
+              return;
+            }
+            setViewingDoc({
+              documentId: target.document_id || '',
+              mode: 'chunks',
+              source: {
+                chunkId: target.chunk_id,
+                chunkIndex: target.chunk_index,
+              },
+            });
+          }}
         />
       )}
 

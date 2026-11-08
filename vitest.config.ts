@@ -11,6 +11,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     include: ['tests/ui/**/*.test.tsx', 'tests/integration/**/*.test.tsx'],
+    setupFiles: ['tests/setup/jest-dom.ts'],
     restoreMocks: true,
     css: false,
   },
