@@ -12,6 +12,9 @@ export default defineConfig({
     watch: {
       ignored: [
         '**/server/**',
+        '**/worlds/**',
+        '**/*.tmpdir/**',
+        '**/_build/**',
         '**/.venv/**',
         '**/.incoming/**',
         '**/.outgoing/**',
