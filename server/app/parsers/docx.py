@@ -1,15 +1,18 @@
-"""DOCX 文本提取器。
+"""DOCX 文本提取器（R5-L 增强与逐步预算）。
 
-设计考量与 R3 硬化：
+设计考量与 R5 硬化：
 - 支持标准 Microsoft Word (.docx) 及 Office Open XML 格式；
 - 文档结构顺序：遍历文档 body 元素，严格保持段落与表格的自然穿插顺序；
 - 标题分级保留：识别 Word 内置 Heading/标题样式（1-6 级）并转换为 Markdown ATX 标题（#）；
 - 表格结构提取：将表格行转换为可读 Markdown 格式，保留行与列之间的语义关联；
-- 文本量按 UTF-16 统计（B3）：使用 u16len，超限抛出 422 EXTRACTION_LIMIT；
-- 结构化告警（B4）：输出 TABLES_FLATTENED, HEADERS_FOOTERS_SKIPPED, TEXTBOXES_SKIPPED 等机器码；
+- 逐步累计 UTF-16 预算（R5-L 核心）：
+  * 按正文块（段落/表格）逐块累加 UTF-16 码元（包含块间 "\n\n" 分隔符，占 2 个码元）；
+  * 超过 effective_max_units 即刻停止后续块读取并抛出 ExtractionLimitError，不进行全量拼接；
+  * 说明：单块内部的 XML 解析瞬间 CPU/内存不受此计数硬隔离，不能宣称完全防御资源耗尽。
+- 结构化告警（B4 / R5）：输出 TABLES_FLATTENED（带 count 统计表格数）, HEADERS_FOOTERS_SKIPPED, TEXTBOXES_SKIPPED 等机器码；
 - 安全防护与资源限制：
-  - ZIP 炸弹防御：严格检查压缩条目数（max_zip_entries）、解压总大小（max_uncompressed_bytes）与膨胀率；
-  - 结构合法性校验：必须包含 word/document.xml，拦截伪造或损坏文件。
+  * ZIP 炸弹防御：严格检查压缩条目数（max_zip_entries）、解压总大小（max_uncompressed_bytes）与膨胀率；
+  * 结构合法性校验：必须包含 word/document.xml，拦截伪造或损坏文件。
 """
 
 from __future__ import annotations
@@ -45,11 +48,9 @@ def _detect_heading_level(paragraph: Paragraph) -> int | None:
     try:
         if paragraph.style and paragraph.style.name:
             name = paragraph.style.name.strip()
-            # 匹配英文 Heading 1 ~ Heading 6
             m_en = re.match(r"^Heading\s*([1-6])$", name, re.IGNORECASE)
             if m_en:
                 return int(m_en.group(1))
-            # 匹配中文 标题 1 ~ 标题 6
             m_cn = re.match(r"^标题\s*([1-6])$", name)
             if m_cn:
                 return int(m_cn.group(1))
@@ -86,7 +87,6 @@ def _format_table(table: Table) -> str:
     if max_cols == 0 or not any(any(cell for cell in row) for row in rows_data):
         return ""
 
-    # 规整化列数
     normalized_rows: list[list[str]] = []
     for row in rows_data:
         if len(row) < max_cols:
@@ -109,7 +109,7 @@ def parse_docx(
     filename: str,
     limits: ParseLimits,
 ) -> ParsedDocument:
-    """解析 DOCX 二进制数据并提取结构化正文与表格。"""
+    """解析 DOCX 二进制数据并提取结构化正文与表格，执行逐步文本量预算控制。"""
     if not data:
         raise ParseError(422, "EMPTY_DOCUMENT", "文件是空的，没有可导入的文字。")
 
@@ -131,11 +131,9 @@ def parse_docx(
             {"filename": filename},
         )
 
-    # 安全检查：防御 ZIP 炸弹与检测必要文档核心文件
     try:
         with zipfile.ZipFile(bio, "r") as zf:
             infolist = zf.infolist()
-            # 1. 检查条目数上限（R3 防护要求）
             if len(infolist) > limits.max_zip_entries:
                 raise ParseError(
                     413,
@@ -150,7 +148,6 @@ def parse_docx(
 
             total_uncompressed = sum(info.file_size for info in infolist)
 
-            # 2. 检查解包总大小
             if total_uncompressed > limits.max_uncompressed_bytes:
                 raise ParseError(
                     413,
@@ -163,7 +160,6 @@ def parse_docx(
                     },
                 )
 
-            # 3. 检查压缩膨胀比率
             ratio = total_uncompressed / max(1, len(data))
             if ratio > limits.max_uncompressed_ratio and total_uncompressed > (5 * 1024 * 1024):
                 raise ParseError(
@@ -202,11 +198,13 @@ def parse_docx(
 
     blocks: list[str] = []
     table_count = 0
+    accumulated_units = 0
+    effective_limit = limits.effective_max_units
 
-    # 保持正文段落与表格的原生交替顺序
     try:
         body_elements = doc.element.body
         for child in body_elements:
+            block_text: str | None = None
             if isinstance(child, CT_P):
                 p = Paragraph(child, doc)
                 raw_text = p.text.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -215,18 +213,37 @@ def parse_docx(
 
                 level = _detect_heading_level(p)
                 if level is not None and not raw_text.startswith("#"):
-                    # 格式化为 Markdown 标题，便于后续分块系统识别
-                    blocks.append(f"{'#' * level} {raw_text}")
+                    block_text = f"{'#' * level} {raw_text}"
                 else:
-                    blocks.append(raw_text)
+                    block_text = raw_text
 
             elif isinstance(child, CT_Tbl):
                 tbl = Table(child, doc)
                 tbl_markdown = _format_table(tbl)
                 if tbl_markdown:
-                    blocks.append(tbl_markdown)
+                    block_text = tbl_markdown
                     table_count += 1
+
+            if block_text:
+                block_units = u16len(block_text)
+                delimiter_units = 2 if blocks else 0
+                candidate_units = accumulated_units + delimiter_units + block_units
+
+                if candidate_units > effective_limit:
+                    raise ExtractionLimitError(
+                        limit=effective_limit,
+                        actual=candidate_units,
+                        message=(
+                            f"DOCX 提取正文文本量超出限制（累计约 {candidate_units} 码元，"
+                            f"上限 {effective_limit} 码元）。"
+                        ),
+                    )
+
+                accumulated_units = candidate_units
+                blocks.append(block_text)
     except Exception as exc:
+        if isinstance(exc, ParseError):
+            raise
         raise ParseError(
             422,
             "CORRUPT_DOCUMENT",
@@ -244,16 +261,7 @@ def parse_docx(
             {"filename": filename},
         )
 
-    # 按 UTF-16 code units 统计（B3 契约要求）
-    text_units = u16len(full_text)
-    effective_limit = limits.effective_max_units
-
-    if text_units > effective_limit:
-        raise ExtractionLimitError(
-            limit=effective_limit,
-            actual=text_units,
-            message=f"DOCX 提取后的正文文本量超出限制（当前约 {text_units} 码元，上限 {effective_limit} 码元）。",
-        )
+    final_units = u16len(full_text)
 
     warnings: list[str] = [
         "DOCX 文档中的页眉、页脚、批注、形状与独立绘图文本框不在导入范围内，仅提取正文与表格内容。"
@@ -285,6 +293,6 @@ def parse_docx(
         warnings=warnings,
         warning_records=warning_records,
         page_count=None,
-        extracted_chars=text_units,
-        extracted_units=text_units,
+        extracted_chars=final_units,
+        extracted_units=final_units,
     )
