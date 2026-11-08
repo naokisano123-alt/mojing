@@ -142,6 +142,25 @@
   margin-top: 2px;
 }
 
+/* 中性取消提示横幅 (非错误红字) */
+.upload-neutral-callout {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--muted) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--muted) 35%, var(--line));
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.upload-neutral-callout svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* 文档列表项 */
 .doc-card {
   padding: 18px 20px;
@@ -276,11 +295,28 @@
   background: var(--paper);
   padding: 14px 16px;
   margin-bottom: 12px;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 .chunk-item:hover {
   border-color: color-mix(in srgb, var(--green) 30%, var(--line));
 }
+
+/* 高亮来源切片 */
+.chunk-item.highlighted {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 5%, var(--paper));
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--green) 40%, transparent);
+}
+
+.source-target-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--green);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .chunk-item-top {
   display: flex;
   justify-content: space-between;
@@ -329,6 +365,26 @@
   -webkit-box-orient: vertical;
 }
 
+/* 切片展开错误显式提示 */
+.chunk-expand-error {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, #ba6452 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, #ba6452 25%, transparent);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #ba6452;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 切片分页按需加载容器 */
+.load-more-container {
+  margin-top: 18px;
+  padding-bottom: 12px;
+}
+
 /* 原文分页模式 */
 .raw-text-view {
   font-size: 13px;
@@ -342,6 +398,17 @@
   border-radius: 8px;
   border: 1px solid var(--line);
 }
+
+/* 原文高亮选区 */
+.raw-highlight-mark {
+  background: color-mix(in srgb, var(--green) 25%, var(--accent, #e5a93b));
+  color: inherit;
+  padding: 2px 2px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent);
+  font-weight: 500;
+}
+
 .raw-pagination-bar {
   display: flex;
   justify-content: space-between;
@@ -350,4 +417,41 @@
   padding: 14px 0 0;
   border-top: 1px solid var(--line);
   margin-top: 16px;
+}
+
+/* 旋转动画 */
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 320px 超小屏手机适配 */
+@media (max-width: 360px) {
+  .viewer-modal {
+    width: 100%;
+    max-height: 94dvh;
+  }
+  .viewer-header {
+    padding: 14px 16px;
+  }
+  .viewer-body {
+    padding: 14px 16px;
+  }
+  .raw-pagination-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .raw-pagination-bar .flex {
+    width: 100%;
+    justify-content: space-between;
+  }
 }

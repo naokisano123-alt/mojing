@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   FileText,
   Layers,
@@ -12,6 +12,7 @@ import {
   ArrowRight,
   AlertCircle,
   Hash,
+  RefreshCw,
 } from 'lucide-react';
 import type { LoreChunk, RawTextPage, WorldDocument } from '../../api/types';
 import {
@@ -22,20 +23,35 @@ import {
   ApiClientError,
 } from '../../api/client';
 import { Tag } from '../UI';
+import {
+  splitTextWithHighlight,
+  deduplicateChunks,
+  copyToClipboard,
+} from './viewerUtils';
+
+export interface SourceLocation {
+  chunkIndex?: number;
+  startChar?: number;
+  endChar?: number;
+}
 
 export interface DocumentViewerProps {
   documentId: string;
   initialMode?: 'chunks' | 'raw';
   initialChunkIndex?: number;
+  /** 可选来源高亮区间 (UTF-16 代码单元) */
+  initialSource?: SourceLocation;
   onClose: () => void;
 }
 
+const CHUNK_PAGE_SIZE = 100; // 每页切片拉取上限
 const PAGE_SIZE_RAW = 20_000; // 契约 §4.10 单页 20000 单位
 
 export function DocumentViewer({
   documentId,
   initialMode = 'chunks',
   initialChunkIndex,
+  initialSource,
   onClose,
 }: DocumentViewerProps) {
   const [mode, setMode] = useState<'chunks' | 'raw'>(initialMode);
@@ -45,36 +61,96 @@ export function DocumentViewer({
 
   // Chunks state
   const [chunks, setChunks] = useState<LoreChunk[]>([]);
+  const [totalChunks, setTotalChunks] = useState(0);
+  const [loadingMoreChunks, setLoadingMoreChunks] = useState(false);
+  const [loadMoreChunksError, setLoadMoreChunksError] = useState<string | null>(null);
+
+  // 展开全文状态：独立追踪每个切片的内容与失败状态，严禁将摘要混作全文
   const [expandedChunkMap, setExpandedChunkMap] = useState<Record<number, string>>({});
-  const [loadingChunkIndex, setLoadingChunkIndex] = useState<number | null>(null);
+  const [chunkExpandErrorMap, setChunkExpandErrorMap] = useState<Record<number, string>>({});
+  const [loadingChunkMap, setLoadingChunkMap] = useState<Record<number, boolean>>({});
+
+  // 复制反馈与定时器保护
   const [copiedChunkIndex, setCopiedChunkIndex] = useState<number | null>(null);
+  const [copyFeedbackError, setCopyFeedbackError] = useState<string | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Raw text state
+  // Raw text state 与精确历史回退栈
   const [rawPage, setRawPage] = useState<RawTextPage | null>(null);
-  const [rawOffset, setRawOffset] = useState(0);
+  const [rawOffset, setRawOffset] = useState(() => {
+    if (initialSource?.startChar !== undefined) {
+      return Math.floor(initialSource.startChar / PAGE_SIZE_RAW) * PAGE_SIZE_RAW;
+    }
+    return 0;
+  });
+  const [offsetHistory, setOffsetHistory] = useState<number[]>([0]);
   const [loadingRaw, setLoadingRaw] = useState(false);
+  const [rawError, setRawError] = useState<string | null>(null);
 
-  // 加载文档元信息与初始分块
+  // 高亮来源引用
+  const [activeHighlight, setActiveHighlight] = useState<SourceLocation | undefined>(
+    initialSource || (initialChunkIndex !== undefined ? { chunkIndex: initialChunkIndex } : undefined),
+  );
+
+  const highlightElementRef = useRef<HTMLElement | null>(null);
+
+  // 清理复制反馈定时器
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
+
+  // 监听 ESC 键关闭弹窗
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  // 加载文档元信息与初始分块（严格隔离切文档状态，防止迟到响应串文档）
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
 
+    // 切换文档时立即清空旧状态
+    setDoc(null);
+    setChunks([]);
+    setTotalChunks(0);
+    setExpandedChunkMap({});
+    setChunkExpandErrorMap({});
+    setLoadingChunkMap({});
+    setRawPage(null);
+    setRawOffset(initialSource?.startChar ? Math.floor(initialSource.startChar / PAGE_SIZE_RAW) * PAGE_SIZE_RAW : 0);
+    setOffsetHistory([0]);
+    setError(null);
+    setLoadMoreChunksError(null);
+    setRawError(null);
+    setLoading(true);
+
     async function loadMetaAndChunks() {
-      setLoading(true);
-      setError(null);
       try {
         const [docData, chunksData] = await Promise.all([
           getDocument(documentId, controller.signal),
-          getDocumentChunks(documentId, { limit: 100, include_text: false }, controller.signal),
+          getDocumentChunks(documentId, { limit: CHUNK_PAGE_SIZE, offset: 0, include_text: false }, controller.signal),
         ]);
         if (!active) return;
+
         setDoc(docData);
         setChunks(chunksData.items);
+        setTotalChunks(chunksData.total);
         setLoading(false);
 
         // 若指定了初始展开块
-        if (initialChunkIndex !== undefined) {
-          expandChunk(initialChunkIndex, controller.signal);
+        const targetIndex = initialSource?.chunkIndex ?? initialChunkIndex;
+        if (targetIndex !== undefined) {
+          expandChunk(targetIndex, controller.signal);
         }
       } catch (err: unknown) {
         if (!active) return;
@@ -94,7 +170,34 @@ export function DocumentViewer({
     };
   }, [documentId]);
 
-  // 加载原文分页
+  // 按需加载更多切片（突破 100 块上限，展示服务端真实 total）
+  async function handleLoadMoreChunks() {
+    if (loadingMoreChunks || chunks.length >= totalChunks) return;
+
+    setLoadingMoreChunks(true);
+    setLoadMoreChunksError(null);
+
+    try {
+      const res = await getDocumentChunks(documentId, {
+        limit: CHUNK_PAGE_SIZE,
+        offset: chunks.length,
+        include_text: false,
+      });
+
+      setChunks(prev => deduplicateChunks(prev, res.items));
+      setTotalChunks(res.total);
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError) {
+        setLoadMoreChunksError(err.friendlyMessage);
+      } else {
+        setLoadMoreChunksError('加载后续切片失败，请检查网络后重试。');
+      }
+    } finally {
+      setLoadingMoreChunks(false);
+    }
+  }
+
+  // 加载原文分页（严格使用实际 offset 与 next_offset）
   useEffect(() => {
     if (mode !== 'raw') return;
     let active = true;
@@ -102,6 +205,7 @@ export function DocumentViewer({
 
     async function loadRaw() {
       setLoadingRaw(true);
+      setRawError(null);
       try {
         const data = await getDocumentRaw(
           documentId,
@@ -116,9 +220,9 @@ export function DocumentViewer({
         if (!active) return;
         setLoadingRaw(false);
         if (err instanceof ApiClientError) {
-          setError(err.friendlyMessage);
+          setRawError(err.friendlyMessage);
         } else {
-          setError('读取原文分页失败。');
+          setRawError('读取原文分页失败。');
         }
       }
     }
@@ -130,9 +234,17 @@ export function DocumentViewer({
     };
   }, [documentId, mode, rawOffset]);
 
+  // 自动滚动至高亮区域
+  useEffect(() => {
+    if (highlightElementRef.current) {
+      highlightElementRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [mode, rawPage, expandedChunkMap]);
+
+  // 展开切片全文（显式错误处理，拒绝把摘要伪装为正文）
   async function expandChunk(chunkIndex: number, signal?: AbortSignal) {
     if (expandedChunkMap[chunkIndex] !== undefined) {
-      // 已展开，点击则收起
+      // 已展开，点击收起
       setExpandedChunkMap(prev => {
         const next = { ...prev };
         delete next[chunkIndex];
@@ -141,33 +253,74 @@ export function DocumentViewer({
       return;
     }
 
-    setLoadingChunkIndex(chunkIndex);
+    setLoadingChunkMap(prev => ({ ...prev, [chunkIndex]: true }));
+    setChunkExpandErrorMap(prev => {
+      const next = { ...prev };
+      delete next[chunkIndex];
+      return next;
+    });
+
     try {
       const fullChunk = await getChunkByIndex(documentId, chunkIndex, signal);
+      const textContent = fullChunk.text || fullChunk.text_preview;
       setExpandedChunkMap(prev => ({
         ...prev,
-        [chunkIndex]: fullChunk.text || fullChunk.text_preview,
+        [chunkIndex]: textContent,
       }));
-    } catch {
-      // 容错降级展示 preview
-      const preview = chunks.find(c => c.chunk_index === chunkIndex)?.text_preview || '';
-      setExpandedChunkMap(prev => ({ ...prev, [chunkIndex]: preview }));
+    } catch (err: unknown) {
+      const msg = err instanceof ApiClientError ? err.friendlyMessage : '获取全文失败，请重试。';
+      setChunkExpandErrorMap(prev => ({
+        ...prev,
+        [chunkIndex]: msg,
+      }));
+      // 严禁在此处将 preview 填入 expandedChunkMap，保持正文真实性
     } finally {
-      setLoadingChunkIndex(null);
+      setLoadingChunkMap(prev => ({ ...prev, [chunkIndex]: false }));
     }
   }
 
-  function handleCopySnippet(chunkIndex: number, text: string) {
-    navigator.clipboard?.writeText(text);
-    setCopiedChunkIndex(chunkIndex);
-    setTimeout(() => setCopiedChunkIndex(null), 2000);
+  // 复制切片正文：正确 await 异步结果并提供权限被拒时的错误提示
+  async function handleCopySnippet(chunkIndex: number, text: string) {
+    setCopyFeedbackError(null);
+    const res = await copyToClipboard(text);
+    if (res.success) {
+      setCopiedChunkIndex(chunkIndex);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(() => {
+        setCopiedChunkIndex(null);
+      }, 2000);
+    } else {
+      setCopyFeedbackError(res.errorMessage || '复制失败');
+    }
   }
 
-  function jumpToRawOffset(startChar: number) {
-    // 计算包含 startChar 的分页 offset
+  // 跳转原文定位
+  function jumpToRawOffset(startChar: number, endChar?: number) {
     const targetOffset = Math.floor(startChar / PAGE_SIZE_RAW) * PAGE_SIZE_RAW;
+    setOffsetHistory([0, targetOffset]);
     setRawOffset(targetOffset);
+    setActiveHighlight({ startChar, endChar });
     setMode('raw');
+  }
+
+  // 原文分页：下一页
+  function handleNextRawPage() {
+    if (!rawPage || rawPage.next_offset === null) return;
+    setOffsetHistory(prev => [...prev, rawOffset]);
+    setRawOffset(rawPage.next_offset);
+  }
+
+  // 原文分页：上一页（从历史回退栈准确还原，避免假定边界固定减 20000）
+  function handlePrevRawPage() {
+    if (offsetHistory.length <= 1) {
+      setRawOffset(0);
+      return;
+    }
+    const newHistory = [...offsetHistory];
+    newHistory.pop(); // 弹出当前
+    const prevOffset = newHistory[newHistory.length - 1] ?? 0;
+    setOffsetHistory(newHistory);
+    setRawOffset(prevOffset);
   }
 
   return (
@@ -213,7 +366,7 @@ export function DocumentViewer({
             className={`viewer-mode-btn ${mode === 'chunks' ? 'active' : ''}`}
             onClick={() => setMode('chunks')}
           >
-            <Layers size={15} /> 章节切片 ({chunks.length})
+            <Layers size={15} /> 章节切片 ({chunks.length}{totalChunks > chunks.length ? ` / ${totalChunks}` : ''})
           </button>
           <button
             type="button"
@@ -239,6 +392,13 @@ export function DocumentViewer({
             </div>
           )}
 
+          {copyFeedbackError && (
+            <div className="upload-error-callout" style={{ margin: '10px 0' }}>
+              <AlertCircle size={16} />
+              <div>{copyFeedbackError}</div>
+            </div>
+          )}
+
           {!loading && !error && mode === 'chunks' && (
             <div className="chunks-list">
               {chunks.length === 0 && (
@@ -249,13 +409,23 @@ export function DocumentViewer({
               {chunks.map(c => {
                 const isExpanded = expandedChunkMap[c.chunk_index] !== undefined;
                 const fullText = expandedChunkMap[c.chunk_index];
-                const isLoadingThis = loadingChunkIndex === c.chunk_index;
+                const isLoadingThis = Boolean(loadingChunkMap[c.chunk_index]);
+                const expandError = chunkExpandErrorMap[c.chunk_index];
+                const isTargetHighlight = activeHighlight?.chunkIndex === c.chunk_index;
 
                 return (
-                  <article key={c.id || c.chunk_index} className="chunk-item">
+                  <article
+                    key={c.id || c.chunk_index}
+                    id={`chunk-item-${c.chunk_index}`}
+                    ref={isTargetHighlight ? (el => { highlightElementRef.current = el; }) : undefined}
+                    className={`chunk-item ${isTargetHighlight ? 'highlighted' : ''}`}
+                  >
                     <div className="chunk-item-top">
                       <div className="chunk-heading-path">
                         <Tag># {c.chunk_index + 1}</Tag>
+                        {isTargetHighlight && (
+                          <span className="source-target-badge">来源定位命中</span>
+                        )}
                         {c.heading_path?.length > 0 ? (
                           c.heading_path.map((h, i) => (
                             <span key={i} className="chunk-heading-tag">
@@ -278,6 +448,21 @@ export function DocumentViewer({
                     ) : (
                       <div className="chunk-text-content">
                         {fullText}
+                      </div>
+                    )}
+
+                    {expandError && (
+                      <div className="chunk-expand-error">
+                        <AlertCircle size={14} />
+                        <span>{expandError}</span>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ color: '#ba6452', textDecoration: 'underline' }}
+                          onClick={() => expandChunk(c.chunk_index)}
+                        >
+                          重试展开
+                        </button>
                       </div>
                     )}
 
@@ -316,7 +501,7 @@ export function DocumentViewer({
                           className="text-button"
                           style={{ color: 'var(--muted)', fontSize: '11px' }}
                           title="在全文中定位该段落"
-                          onClick={() => jumpToRawOffset(c.start_char)}
+                          onClick={() => jumpToRawOffset(c.start_char, c.end_char)}
                         >
                           <Hash size={12} /> 原文定位
                         </button>
@@ -325,6 +510,30 @@ export function DocumentViewer({
                   </article>
                 );
               })}
+
+              {/* 切片更多加载入口 */}
+              {chunks.length < totalChunks && (
+                <div className="load-more-container">
+                  {loadMoreChunksError && (
+                    <div className="upload-error-callout mb-2">
+                      <AlertCircle size={14} />
+                      <span>{loadMoreChunksError}</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className="secondary full"
+                    disabled={loadingMoreChunks}
+                    onClick={handleLoadMoreChunks}
+                  >
+                    {loadingMoreChunks ? (
+                      <><RefreshCw size={14} className="spin" /> 正在加载后续切片...</>
+                    ) : (
+                      `加载更多切片（当前 ${chunks.length} / 共 ${totalChunks} 块）`
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -334,10 +543,46 @@ export function DocumentViewer({
                 <div className="empty" style={{ padding: '30px 0' }}>
                   <p>正在读取原文段落...</p>
                 </div>
+              ) : rawError ? (
+                <div className="upload-error-callout" style={{ margin: '20px 0' }}>
+                  <AlertCircle size={18} />
+                  <div>
+                    <div>{rawError}</div>
+                    <button
+                      type="button"
+                      className="text-button mt-2"
+                      style={{ color: '#ba6452', textDecoration: 'underline' }}
+                      onClick={() => setRawOffset(rawOffset)}
+                    >
+                      重试加载该页
+                    </button>
+                  </div>
+                </div>
               ) : rawPage ? (
                 <>
                   <div className="raw-text-view">
-                    {rawPage.text || '（此页无文本内容）'}
+                    {(() => {
+                      const segments = splitTextWithHighlight(
+                        rawPage.text || '',
+                        rawPage.offset,
+                        activeHighlight?.startChar,
+                        activeHighlight?.endChar,
+                      );
+                      return segments.map((seg, idx) => {
+                        if (seg.isHighlight) {
+                          return (
+                            <mark
+                              key={idx}
+                              ref={el => { highlightElementRef.current = el; }}
+                              className="raw-highlight-mark"
+                            >
+                              {seg.text}
+                            </mark>
+                          );
+                        }
+                        return <span key={idx}>{seg.text}</span>;
+                      });
+                    })()}
                   </div>
                   <div className="raw-pagination-bar">
                     <span className="muted text-xs">
@@ -348,8 +593,8 @@ export function DocumentViewer({
                         type="button"
                         className="secondary"
                         style={{ minHeight: '36px', padding: '6px 14px' }}
-                        disabled={rawOffset <= 0}
-                        onClick={() => setRawOffset(Math.max(0, rawOffset - PAGE_SIZE_RAW))}
+                        disabled={rawOffset <= 0 && offsetHistory.length <= 1}
+                        onClick={handlePrevRawPage}
                       >
                         <ArrowLeft size={14} /> 上一页
                       </button>
@@ -358,7 +603,7 @@ export function DocumentViewer({
                         className="secondary"
                         style={{ minHeight: '36px', padding: '6px 14px' }}
                         disabled={rawPage.next_offset === null}
-                        onClick={() => rawPage.next_offset !== null && setRawOffset(rawPage.next_offset)}
+                        onClick={handleNextRawPage}
                       >
                         下一页 <ArrowRight size={14} />
                       </button>
