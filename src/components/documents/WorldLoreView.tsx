@@ -40,17 +40,23 @@ export function WorldLoreView({
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
 
   useEffect(() => {
-    loadWorld();
+    const controller = new AbortController();
+    setViewingDoc(null);
+    void loadWorld(controller.signal);
+    return () => controller.abort();
   }, [worldId]);
 
-  async function loadWorld() {
+  async function loadWorld(signal?: AbortSignal) {
     setLoading(true);
     setError(null);
+    setWorldDetail(null);
     try {
-      const data = await getWorld(worldId);
+      const data = await getWorld(worldId, signal);
+      if (signal?.aborted) return;
       setWorldDetail(data);
       setLoading(false);
     } catch (err: unknown) {
+      if (signal?.aborted) return;
       setLoading(false);
       if (err instanceof ApiClientError) {
         setError(err.friendlyMessage);
@@ -111,7 +117,7 @@ export function WorldLoreView({
         <Info size={18} />
         <div>
           <strong>【世界资料库模式】</strong>
-          设定已导入并持久化；AI 角色与剧情生成将在 M2 开启。当前可检索设定、浏览章节切片并核对原文。
+          设定已导入并持久化；AI 角色与剧情生成将在 M2 开启。当前可浏览章节切片、核对原文；检索能力将在本轮接入。
         </div>
       </div>
 
@@ -120,7 +126,7 @@ export function WorldLoreView({
         <div className="lore-demo-bar">
           <div className="flex items-center gap-2">
             <Compass size={16} />
-            <span>想在此世界观下体验交互？可开启本地模拟试玩。</span>
+            <span>想试试交互？可开启本地模拟试玩（不会使用本世界的设定）。</span>
           </div>
           <button
             type="button"
@@ -159,7 +165,7 @@ export function WorldLoreView({
               type="button"
               className="text-button mt-1"
               style={{ color: '#ba6452', textDecoration: 'underline' }}
-              onClick={loadWorld}
+              onClick={() => void loadWorld()}
             >
               重新加载
             </button>

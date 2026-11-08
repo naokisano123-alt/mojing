@@ -22,14 +22,15 @@ const nav = [
   { page: 'saves' as Page, label: '存档', icon: Bookmark },
 ];
 const allowed: Page[] = ['cover', 'home', 'create', 'story', 'character', 'atlas', 'saves', 'lore', 'settings'];
-function hashPage(): Page {
-  const page = location.hash.slice(1) as Page;
-  return allowed.includes(page) ? page : 'home';
+function hashRoute(): { page: Page; loreId?: string } {
+  const [name, id] = location.hash.slice(1).split('/');
+  const page: Page = allowed.includes(name as Page) ? (name as Page) : 'home';
+  return { page, loreId: page === 'lore' && id ? id : undefined };
 }
 
 export default function App() {
   const [state, setState] = useState(loadState);
-  const [page, setPage] = useState<Page>(hashPage);
+  const [page, setPage] = useState<Page>(() => hashRoute().page);
   const [direction, setDirection] = useState<SwipeDirection>('left');
   const [busy, setBusy] = useState(false);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -39,7 +40,10 @@ export default function App() {
   const [remoteWorlds, setRemoteWorlds] = useState<WorldSummary[]>([]);
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remoteError, setRemoteError] = useState('');
-  const [loreWorld, setLoreWorld] = useState<{ id: string; name: string } | null>(null);
+  const [loreWorld, setLoreWorld] = useState<{ id: string; name: string } | null>(() => {
+    const route = hashRoute();
+    return route.loreId ? { id: route.loreId, name: '' } : null;
+  });
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
   const pending = useRef<{ key: string; action: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,8 +65,10 @@ export default function App() {
 
   useEffect(() => {
     const changed = () => {
+      const route = hashRoute();
       setDirection('right');
-      setPage(hashPage());
+      setPage(route.page);
+      setLoreWorld(route.loreId ? { id: route.loreId, name: '' } : null);
       setFateOpen(false);
       window.scrollTo(0, 0);
     };
@@ -162,13 +168,16 @@ export default function App() {
     const created = await createRemoteWorld({ name, description });
     setRemoteWorlds(current => [...current, created]);
     setRemoteStatus('ready');
-    setLoreWorld({ id: created.id, name: created.name });
-    go('lore');
+    openLore(created);
     setToast('世界资料库已创建，可以导入 TXT / Markdown 了。');
   }
   function openLore(target: WorldSummary) {
     setLoreWorld({ id: target.id, name: target.name });
-    go('lore');
+    history.pushState(null, '', '#lore/' + target.id);
+    setDirection('left');
+    setPage('lore');
+    setFateOpen(false);
+    window.scrollTo(0, 0);
   }
   function playDemoFromLore() {
     const demo = state.worlds[0];
@@ -238,7 +247,7 @@ export default function App() {
           }} />}
           {page === 'settings' && <Settings state={state} update={s => setState(prev => ({ ...prev, ...s }))} back={() => go('home', 'right')} />}
           {page === 'lore' && (loreWorld
-            ? <WorldLoreView worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => go('home', 'right')} onPlayDemo={playDemoFromLore} />
+            ? <WorldLoreView worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} onPlayDemo={playDemoFromLore} />
             : <div className="narrow"><button className="text-button back" onClick={() => go('home', 'right')}>← 返回我的世界</button><p className="muted">请从“我的世界”中选择一个世界资料库进入。</p></div>)}
         </div>
       </div>
