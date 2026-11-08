@@ -1,3 +1,17 @@
+# 墨境｜当前协作任务入口
+
+**当前生效：[第三轮四助手任务总表](ROUND3.md)**。
+
+- [本轮审阅与问题依据](ROUND3_REVIEW.md)
+- [DeepSeekHarness：公共契约与集成](R3_DEEPSEEKHARNESS.md)
+- [Gemini（Marcin）：人工条目前端及上传/警告](R3_GEMINI_MARCIN.md)
+- [Gemini（Li）：四格式导入质量](R3_GEMINI_LI.md)
+- [Gemini（Ma）：人工条目后端与来源](R3_GEMINI_MA.md)
+
+请四方先读ROUND3；三Gemini使用包含第三轮任务书的同一完整快照，包均经用户转DSH。下方保留历史，不继续按R2目录所有权开工。
+
+---
+
 # 墨境｜协作任务入口
 
 **当前生效：[第二轮四助手任务总表](ROUND2.md)**。人员为 DeepSeekHarness、Gemini（Marcin）、Gemini（Li）、Gemini（Ma）；三个 Gemini 使用同一完整快照，文件包均经用户交 DeepSeekHarness 核验集成。先读总表再读个人任务书。

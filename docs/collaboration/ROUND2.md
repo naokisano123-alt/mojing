@@ -1,3 +1,5 @@
+> 历史轮次：R2已随PR #2合并。最新人员任务与文件所有权请读 [ROUND3.md](ROUND3.md)，不要重复执行旧任务。
+
 # 墨境｜第二轮四助手任务总表（当前生效）
 日期：2026-11-08。产品负责人：用户。本轮执行助手：DeepSeekHarness、Gemini（Marcin）、Gemini（Li）、Gemini（Ma）。Codex 本轮只审阅与分派，不占用四人的实现目录。
 
