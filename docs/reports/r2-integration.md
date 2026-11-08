@@ -42,7 +42,7 @@
 | `#lore` 刷新后丢上下文 | 路由改为 `#lore/<worldId>`，刷新可恢复；返回列表时刷新文档计数 |
 | 文案暗示检索已上线 | "当前可检索设定" → "当前可浏览章节切片、核对原文；检索能力将在本轮接入" |
 | 降级文案可能暗示用了导入设定 | 改为"开启本地模拟试玩（不会使用本世界的设定）" |
-| 缺少可复现 CI | 新增 `.github/workflows/ci.yml`（Node 22.18 + Python 3.11，前端测试/构建 + 后端 pytest）与 `scripts/check.ps1` 本地一键检查 |
+| 缺少可复现 CI | 新增 `.github/workflows/ci.yml`（Node 22.18 + Python 3.11，前端测试/构建 + 后端 pytest）与 `scripts/check.ps1` 本地一键检查。首次推送被 GitHub 拒绝（PAT 缺 `workflow` scope），用户授予 **Workflows: Read and write** 后推送成功 |
 
 ### 2.3 DTO 可加性扩展
 
@@ -55,6 +55,7 @@
 | `npm test` | 22 passed / 0 failed |
 | `npm run build` | 通过，1595 modules，JS 313.42 kB（gzip 98.16 kB） |
 | `pytest`（server） | **39 passed**（原 37 + 本轮 2 个 importer 回归） |
+| GitHub Actions（[`run 42461243527`](https://github.com/naokisano123-alt/mojing/actions/runs/42461243527)） | **success**：`frontend`（npm ci → npm test → build）与 `backend`（pip install → pytest）两个 job 全绿 |
 
 > 22 / 37 是上一轮报告的基线；本轮的 39 是加了两条回归用例后的实际数字。旧用例一条没删。
 
