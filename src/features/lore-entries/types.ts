@@ -1,6 +1,6 @@
 /**
  * 人工设定条目（Lore Entries）前端数据类型定义
- * 依据 M1_R3_API.md (1.0-r3) §1.1、§1.4 及 R3_GEMINI_MARCIN.md
+ * 依据 M1_R3_API.md (1.0-r3)、M1_R4_API (1.0-r4) 与 R5_GEMINI_MARCIN
  */
 
 export type EntryType = 'character' | 'location' | 'faction' | 'rule' | 'other';
@@ -14,6 +14,7 @@ export interface LoreEntrySource {
   end_char: number;   // 全文 UTF-16 半开区间终点
   excerpt: string;    // 服务端生成的真实文本摘要（≤120 UTF-16）
   availability: SourceAvailability;
+  document_filename?: string;
 }
 
 export interface LoreEntry {
@@ -43,7 +44,25 @@ export interface LoreEntryDraft {
     start_char: number;
     end_char: number;
     excerpt?: string;
+    availability?: SourceAvailability;
+    document_filename?: string;
   }>;
+}
+
+/**
+ * 外部注入的草稿持久化存储契约（R4/R5）
+ * key 为 worldId:entryId 或 worldId:new
+ * value 含 draft 和保存草稿时的基准 revision（新建为 null）
+ */
+export interface DraftStoreValue {
+  draft: LoreEntryDraft;
+  baseRevision: number | null;
+}
+
+export interface LoreEntryDraftStore {
+  get(key: string): DraftStoreValue | undefined;
+  set(key: string, value: DraftStoreValue): void;
+  delete(key: string): void;
 }
 
 export interface SourceCandidate {
@@ -73,7 +92,7 @@ export interface LoreEntriesPanelApi {
   create(worldId: string, payload: LoreEntryDraft): Promise<LoreEntry>;
   update(
     entryId: string,
-    payload: LoreEntryDraft,
+    payload: Partial<LoreEntryDraft>,
     expectedRevision: number
   ): Promise<LoreEntry>;
   remove(entryId: string, expectedRevision: number): Promise<void>;
@@ -87,6 +106,7 @@ export interface LoreEntriesPanelApi {
 export interface LoreEntriesPanelProps {
   worldId: string;
   api: LoreEntriesPanelApi;
+  draftStore?: LoreEntryDraftStore;
   onOpenSource?: (target: {
     documentId: string;
     chunkId?: string;
@@ -109,4 +129,3 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   draft: '草稿',
   confirmed: '已确认',
 };
-

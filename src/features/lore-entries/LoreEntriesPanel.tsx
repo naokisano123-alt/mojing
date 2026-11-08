@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FileText,
   Plus,
@@ -14,6 +14,8 @@ import {
   ExternalLink,
   RefreshCw,
   Info,
+  GitCompare,
+  ArrowRight,
 } from 'lucide-react';
 import type {
   EntryStatus,
@@ -21,6 +23,8 @@ import type {
   LoreEntriesPanelProps,
   LoreEntry,
   LoreEntryDraft,
+  LoreEntryDraftStore,
+  DraftStoreValue,
   SourceCandidate,
 } from './types';
 import { ENTRY_STATUS_LABELS, ENTRY_TYPE_LABELS } from './types';
@@ -36,9 +40,27 @@ const EMPTY_DRAFT: LoreEntryDraft = {
   source_links: [],
 };
 
+function areSourceLinksEqual(
+  a: Array<{ chunk_id: string; start_char: number; end_char: number }>,
+  b: Array<{ chunk_id: string; start_char: number; end_char: number }>,
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].chunk_id !== b[i].chunk_id ||
+      a[i].start_char !== b[i].start_char ||
+      a[i].end_char !== b[i].end_char
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function LoreEntriesPanel({
   worldId,
   api,
+  draftStore,
   onOpenSource,
   className = '',
 }: LoreEntriesPanelProps) {
@@ -58,17 +80,21 @@ export function LoreEntriesPanel({
   const [isCreating, setIsCreating] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState<LoreEntry | null>(null);
 
-  // 表单状态
+  // 表单状态与基准版本
   const [formData, setFormData] = useState<LoreEntryDraft>(EMPTY_DRAFT);
+  const [baseRevision, setBaseRevision] = useState<number | null>(null);
+  const [baselineEntry, setBaselineEntry] = useState<LoreEntry | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // 草稿防丢与冲突处理
+  // 草稿防丢与 409 冲突对比
   const [localDraftNotice, setLocalDraftNotice] = useState<string | null>(null);
   const [conflictData, setConflictData] = useState<{
     expectedRevision: number;
     currentEntry?: LoreEntry;
   } | null>(null);
+  const [conflictRemoteEntry, setConflictRemoteEntry] = useState<LoreEntry | null>(null);
+  const [fetchingConflictRemote, setFetchingConflictRemote] = useState(false);
 
   // 来源检索状态
   const [showSourceSearch, setShowSourceSearch] = useState(false);
@@ -77,15 +103,59 @@ export function LoreEntriesPanel({
   const [searchingSources, setSearchingSources] = useState(false);
   const [sourceSearchError, setSourceSearchError] = useState<string | null>(null);
 
-  // 草稿暂存区 (worldId:entryId -> draft)
-  const draftsMapRef = useRef<Map<string, LoreEntryDraft>>(new Map());
+  // 内部默认草稿存储区（当外部未注入 draftStore 时使用）
+  const fallbackDraftStoreRef = useRef<Map<string, DraftStoreValue>>(new Map());
+
+  // 世代控制与生命周期取消
+  const generationRef = useRef<number>(0);
+  const worldIdRef = useRef<string>(worldId);
   const listAbortRef = useRef<AbortController | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
-  const isMountedRef = useRef(true);
+  const submittingRef = useRef<boolean>(false);
+  const isMountedRef = useRef<boolean>(true);
 
-  // 切换世界时，重置所有视图状态并取消在途请求，防止跨世界串扰
+  // 统一草稿存取辅助函数
+  const getStoredDraft = useCallback(
+    (key: string): DraftStoreValue | undefined => {
+      return draftStore ? draftStore.get(key) : fallbackDraftStoreRef.current.get(key);
+    },
+    [draftStore],
+  );
+
+  const setStoredDraft = useCallback(
+    (key: string, value: DraftStoreValue): void => {
+      if (draftStore) {
+        draftStore.set(key, value);
+      } else {
+        fallbackDraftStoreRef.current.set(key, value);
+      }
+    },
+    [draftStore],
+  );
+
+  const deleteStoredDraft = useCallback(
+    (key: string): void => {
+      if (draftStore) {
+        draftStore.delete(key);
+      } else {
+        fallbackDraftStoreRef.current.delete(key);
+      }
+    },
+    [draftStore],
+  );
+
+  // 计算当前草稿 key
+  const getCurrentDraftKey = useCallback((): string | null => {
+    if (isCreating) return `${worldId}:new`;
+    if (isEditing && viewingEntry) return `${worldId}:${viewingEntry.id}`;
+    return null;
+  }, [worldId, isCreating, isEditing, viewingEntry]);
+
+  // 切换世界时，重置所有视图状态、递增世代，并取消在途请求，彻底防止跨世界串扰
   useEffect(() => {
     isMountedRef.current = true;
+    generationRef.current += 1;
+    worldIdRef.current = worldId;
 
     // 清理在途请求
     if (listAbortRef.current) {
@@ -104,8 +174,11 @@ export function LoreEntriesPanel({
     setIsCreating(false);
     setDeletingEntry(null);
     setFormData(EMPTY_DRAFT);
+    setBaseRevision(null);
+    setBaselineEntry(null);
     setFormError(null);
     setConflictData(null);
+    setConflictRemoteEntry(null);
     setLocalDraftNotice(null);
     setShowSourceSearch(false);
     setSourceCandidates([]);
@@ -128,7 +201,7 @@ export function LoreEntriesPanel({
     loadEntries(0, newType, newStatus);
   }
 
-  // 加载条目列表
+  // 加载条目列表（带世代判断）
   async function loadEntries(
     targetPage: number,
     typeFilter: EntryType | 'all',
@@ -139,6 +212,9 @@ export function LoreEntriesPanel({
     }
     const controller = new AbortController();
     listAbortRef.current = controller;
+
+    const currentGen = generationRef.current;
+    const currentWorld = worldId;
 
     setLoading(true);
     setListError(null);
@@ -153,17 +229,35 @@ export function LoreEntriesPanel({
         signal: controller.signal,
       });
 
-      if (!isMountedRef.current) return;
+      // 世代与挂载检查：旧世界的迟到响应不能污染当前状态
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
+
       setEntries(res.items || []);
       setTotal(res.total || 0);
       setPage(targetPage);
     } catch (err: any) {
-      if (!isMountedRef.current || err?.name === 'AbortError' || err?.code === 'ABORT_ERROR') {
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld ||
+        err?.name === 'AbortError' ||
+        err?.code === 'ABORT_ERROR'
+      ) {
         return;
       }
       setListError(err?.message || '获取设定条目列表失败，请重试。');
     } finally {
-      if (isMountedRef.current) {
+      if (
+        isMountedRef.current &&
+        generationRef.current === currentGen &&
+        worldIdRef.current === currentWorld
+      ) {
         setLoading(false);
       }
     }
@@ -173,17 +267,21 @@ export function LoreEntriesPanel({
   function handleOpenCreate() {
     setFormError(null);
     setConflictData(null);
+    setConflictRemoteEntry(null);
     setLocalDraftNotice(null);
     setShowSourceSearch(false);
     setSourceCandidates([]);
+    setBaselineEntry(null);
 
     const draftKey = `${worldId}:new`;
-    const saved = draftsMapRef.current.get(draftKey);
+    const saved = getStoredDraft(draftKey);
     if (saved) {
-      setFormData(saved);
+      setFormData(saved.draft);
+      setBaseRevision(null);
       setLocalDraftNotice('已恢复上次未保存的新建草稿');
     } else {
       setFormData(EMPTY_DRAFT);
+      setBaseRevision(null);
     }
 
     setIsCreating(true);
@@ -195,16 +293,27 @@ export function LoreEntriesPanel({
   function handleOpenEdit(entry: LoreEntry) {
     setFormError(null);
     setConflictData(null);
+    setConflictRemoteEntry(null);
     setLocalDraftNotice(null);
     setShowSourceSearch(false);
     setSourceCandidates([]);
+    setBaselineEntry(entry);
 
     const draftKey = `${worldId}:${entry.id}`;
-    const saved = draftsMapRef.current.get(draftKey);
+    const saved = getStoredDraft(draftKey);
 
     if (saved) {
-      setFormData(saved);
-      setLocalDraftNotice('已恢复上次未保存的本地修改草稿');
+      setFormData(saved.draft);
+      // 恢复草稿不自动绑定最新 revision，保留原草稿的 baseRevision
+      const effectiveBase = saved.baseRevision !== null ? saved.baseRevision : entry.revision;
+      setBaseRevision(effectiveBase);
+      if (effectiveBase !== entry.revision) {
+        setLocalDraftNotice(
+          `已恢复本地修改草稿（原基准 rev.${effectiveBase}，远端当前为 rev.${entry.revision}）`,
+        );
+      } else {
+        setLocalDraftNotice(`已恢复本地修改草稿（基于 rev.${effectiveBase}）`);
+      }
     } else {
       setFormData({
         type: entry.type,
@@ -217,50 +326,88 @@ export function LoreEntriesPanel({
           start_char: s.start_char,
           end_char: s.end_char,
           excerpt: s.excerpt,
+          availability: s.availability,
+          document_filename: s.document_filename,
         })),
       });
+      setBaseRevision(entry.revision);
     }
 
     setIsEditing(true);
     setIsCreating(false);
   }
 
-  // 取消表单，暂存未提交内容到内存
-  function handleCancelForm() {
-    const isDirty = formData.title.trim().length > 0 || formData.summary.trim().length > 0;
-    if (isDirty) {
-      const draftKey = isCreating ? `${worldId}:new` : `${worldId}:${viewingEntry?.id}`;
-      draftsMapRef.current.set(draftKey, formData);
+  // 内部表单字段修改处理函数：每次编辑及时保存到 draftStore
+  function handleFormChange(updated: LoreEntryDraft) {
+    setFormData(updated);
+
+    const key = getCurrentDraftKey();
+    if (!key) return;
+
+    // 脏检查：空标题但修改了分类、状态、摘要或来源引用，均视为脏草稿，不丢失
+    let isDirty = false;
+    if (isCreating) {
+      isDirty =
+        updated.title.trim().length > 0 ||
+        updated.summary.trim().length > 0 ||
+        updated.type !== 'character' ||
+        updated.status !== 'draft' ||
+        updated.source_links.length > 0;
+    } else if (isEditing && baselineEntry) {
+      isDirty =
+        updated.title !== baselineEntry.title ||
+        updated.summary !== baselineEntry.summary ||
+        updated.type !== baselineEntry.type ||
+        updated.status !== baselineEntry.status ||
+        !areSourceLinksEqual(updated.source_links, baselineEntry.source_links);
     }
+
+    if (isDirty) {
+      setStoredDraft(key, { draft: updated, baseRevision });
+    }
+  }
+
+  // 取消表单：草稿已在编辑过程中及时暂存，无需重复设置
+  function handleCancelForm() {
     setIsCreating(false);
     setIsEditing(false);
     setFormError(null);
     setConflictData(null);
+    setConflictRemoteEntry(null);
     setShowSourceSearch(false);
   }
 
-  // 放弃暂存草稿
+  // 放弃暂存草稿：显式从 draftStore 中移除
   function handleDiscardDraft() {
-    const draftKey = isCreating ? `${worldId}:new` : `${worldId}:${viewingEntry?.id}`;
-    draftsMapRef.current.delete(draftKey);
-    if (viewingEntry && isEditing) {
+    const key = getCurrentDraftKey();
+    if (key) {
+      deleteStoredDraft(key);
+    }
+
+    if (viewingEntry && isEditing && baselineEntry) {
       setFormData({
-        type: viewingEntry.type,
-        title: viewingEntry.title,
-        summary: viewingEntry.summary,
-        status: viewingEntry.status,
-        source_links: viewingEntry.source_links.map(s => ({
+        type: baselineEntry.type,
+        title: baselineEntry.title,
+        summary: baselineEntry.summary,
+        status: baselineEntry.status,
+        source_links: baselineEntry.source_links.map(s => ({
           document_id: s.document_id,
           chunk_id: s.chunk_id,
           start_char: s.start_char,
           end_char: s.end_char,
           excerpt: s.excerpt,
+          availability: s.availability,
+          document_filename: s.document_filename,
         })),
       });
+      setBaseRevision(baselineEntry.revision);
     } else {
       setFormData(EMPTY_DRAFT);
+      setBaseRevision(null);
     }
     setLocalDraftNotice(null);
+    setConflictData(null);
+    setConflictRemoteEntry(null);
   }
 
   // 检索切片来源
@@ -273,6 +420,9 @@ export function LoreEntriesPanel({
     const controller = new AbortController();
     searchAbortRef.current = controller;
 
+    const currentGen = generationRef.current;
+    const currentWorld = worldId;
+
     setSearchingSources(true);
     setSourceSearchError(null);
 
@@ -282,15 +432,32 @@ export function LoreEntriesPanel({
         query: sourceQuery.trim(),
         signal: controller.signal,
       });
-      if (!isMountedRef.current) return;
+
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
       setSourceCandidates(results || []);
     } catch (err: any) {
-      if (!isMountedRef.current || err?.name === 'AbortError' || err?.code === 'ABORT_ERROR') {
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld ||
+        err?.name === 'AbortError' ||
+        err?.code === 'ABORT_ERROR'
+      ) {
         return;
       }
       setSourceSearchError(err?.message || '搜索资料切片失败');
     } finally {
-      if (isMountedRef.current) {
+      if (
+        isMountedRef.current &&
+        generationRef.current === currentGen &&
+        worldIdRef.current === currentWorld
+      ) {
         setSearchingSources(false);
       }
     }
@@ -309,24 +476,30 @@ export function LoreEntriesPanel({
       start_char: candidate.start_char,
       end_char: candidate.end_char,
       excerpt: candidate.snippet,
+      availability: 'active' as const,
+      document_filename: candidate.document_filename || candidate.filename,
     };
 
-    setFormData(prev => ({
-      ...prev,
-      source_links: [...prev.source_links, newLink],
-    }));
+    const nextForm = {
+      ...formData,
+      source_links: [...formData.source_links, newLink],
+    };
+    handleFormChange(nextForm);
   }
 
   // 移除引用
   function handleRemoveSource(index: number) {
-    setFormData(prev => ({
-      ...prev,
-      source_links: prev.source_links.filter((_, i) => i !== index),
-    }));
+    const nextForm = {
+      ...formData,
+      source_links: formData.source_links.filter((_, i) => i !== index),
+    };
+    handleFormChange(nextForm);
   }
 
-  // 保存（新建或编辑）
+  // 保存（新建或差异更新 PATCH）
   async function handleSaveEntry() {
+    if (submittingRef.current) return;
+
     const cleanTitle = formData.title.trim();
     if (!cleanTitle) {
       setFormError('条目标题不能为空。');
@@ -341,9 +514,14 @@ export function LoreEntriesPanel({
       return;
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     setFormError(null);
     setConflictData(null);
+
+    const currentGen = generationRef.current;
+    const currentWorld = worldId;
+    const currentDraftKey = getCurrentDraftKey();
 
     try {
       if (isCreating) {
@@ -352,77 +530,252 @@ export function LoreEntriesPanel({
           title: cleanTitle,
           summary: formData.summary.trim(),
         });
-        // 清理新建草稿
-        draftsMapRef.current.delete(`${worldId}:new`);
+
+        if (
+          !isMountedRef.current ||
+          generationRef.current !== currentGen ||
+          worldIdRef.current !== currentWorld
+        ) {
+          return;
+        }
+
+        // 保存成功，仅清空对应条目的草稿
+        if (currentDraftKey) {
+          deleteStoredDraft(currentDraftKey);
+        }
         setIsCreating(false);
         setViewingEntry(created);
         loadEntries(page, selectedType, selectedStatus);
       } else if (isEditing && viewingEntry) {
-        const updated = await api.update(
-          viewingEntry.id,
-          {
-            ...formData,
-            title: cleanTitle,
-            summary: formData.summary.trim(),
-          },
-          viewingEntry.revision,
+        // 计算差异 PATCH Payload，仅发送变更字段；来源未变不重发
+        const patchPayload: Partial<LoreEntryDraft> = {};
+        if (cleanTitle !== (baselineEntry?.title || '')) {
+          patchPayload.title = cleanTitle;
+        }
+        if (formData.type !== baselineEntry?.type) {
+          patchPayload.type = formData.type;
+        }
+        if (formData.status !== baselineEntry?.status) {
+          patchPayload.status = formData.status;
+        }
+        if (formData.summary.trim() !== (baselineEntry?.summary || '')) {
+          patchPayload.summary = formData.summary.trim();
+        }
+
+        const sourcesChanged = !areSourceLinksEqual(
+          formData.source_links,
+          baselineEntry?.source_links || [],
         );
-        // 清理编辑草稿
-        draftsMapRef.current.delete(`${worldId}:${viewingEntry.id}`);
+        if (sourcesChanged) {
+          patchPayload.source_links = formData.source_links.map(s => ({
+            document_id: s.document_id,
+            chunk_id: s.chunk_id,
+            start_char: s.start_char,
+            end_char: s.end_char,
+            excerpt: s.excerpt,
+          }));
+        }
+
+        // 若完全未做任何修改，直接关闭
+        if (Object.keys(patchPayload).length === 0) {
+          if (currentDraftKey) {
+            deleteStoredDraft(currentDraftKey);
+          }
+          setIsEditing(false);
+          return;
+        }
+
+        const expectedRevision = baseRevision ?? viewingEntry.revision;
+        const updated = await api.update(viewingEntry.id, patchPayload, expectedRevision);
+
+        if (
+          !isMountedRef.current ||
+          generationRef.current !== currentGen ||
+          worldIdRef.current !== currentWorld
+        ) {
+          return;
+        }
+
+        // 保存成功，仅清空本条目草稿
+        if (currentDraftKey) {
+          deleteStoredDraft(currentDraftKey);
+        }
         setIsEditing(false);
         setViewingEntry(updated);
         loadEntries(page, selectedType, selectedStatus);
       }
     } catch (err: any) {
-      if (!isMountedRef.current) return;
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
 
       if (err?.status === 409 || err?.code === 'LORE_ENTRY_CONFLICT') {
-        // 发生 409 乐观锁冲突
+        // 捕获 409 乐观锁冲突：用户文字与原 baseRevision 均保留
+        const conflictBase = baseRevision ?? viewingEntry?.revision ?? 1;
         setConflictData({
-          expectedRevision: viewingEntry?.revision || 1,
+          expectedRevision: conflictBase,
         });
         setFormError('内容已被他人修改（版本冲突）：当前条目已被更新，请对比后重新提交。');
       } else {
         setFormError(err?.friendlyMessage || err?.message || '保存条目失败，请检查网络后重试。');
       }
     } finally {
-      if (isMountedRef.current) {
+      submittingRef.current = false;
+      if (
+        isMountedRef.current &&
+        generationRef.current === currentGen &&
+        worldIdRef.current === currentWorld
+      ) {
         setSubmitting(false);
       }
     }
   }
 
-  // 冲突解决：拉取最新远程版本
+  // 冲突解决：拉取远端最新版本仅作对照，用户文字和原 baseRevision 保持不动
   async function handleFetchLatestConflict() {
-    if (!viewingEntry) return;
+    if (!viewingEntry || fetchingConflictRemote) return;
+
+    setFetchingConflictRemote(true);
+    const currentGen = generationRef.current;
+    const currentWorld = worldId;
+
     try {
       const latest = await api.get(viewingEntry.id);
-      setViewingEntry(latest);
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
+
+      setConflictRemoteEntry(latest);
       setConflictData(prev => (prev ? { ...prev, currentEntry: latest } : null));
     } catch (err: any) {
-      setFormError('获取最新条目失败：' + (err?.message || '未知错误'));
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
+      setFormError('获取远端最新条目失败：' + (err?.message || '未知错误'));
+    } finally {
+      if (
+        isMountedRef.current &&
+        generationRef.current === currentGen &&
+        worldIdRef.current === currentWorld
+      ) {
+        setFetchingConflictRemote(false);
+      }
     }
+  }
+
+  // 冲突解决显式确认：用户确认以当前草稿覆盖，并将 revision 基准升级到远端最新版本
+  function handleAdoptRemoteRevisionAndRebase() {
+    if (!conflictRemoteEntry) return;
+
+    // 显式将基线更新为远端最新 revision
+    const newBaseRev = conflictRemoteEntry.revision;
+    setBaseRevision(newBaseRev);
+    setBaselineEntry(conflictRemoteEntry);
+    setConflictData(null);
+    setConflictRemoteEntry(null);
+    setFormError(null);
+
+    // 及时同步更新草稿中的 baseRevision
+    const key = getCurrentDraftKey();
+    if (key) {
+      setStoredDraft(key, { draft: formData, baseRevision: newBaseRev });
+    }
+    setLocalDraftNotice(`已确认采纳 rev.${newBaseRev} 作为新提交基准；可重新点击“保存修改”。`);
+  }
+
+  // 冲突解决显式放弃：直接采纳远端最新版本，放弃本地修改
+  function handleDiscardAndUseRemote() {
+    if (!conflictRemoteEntry) return;
+
+    const key = getCurrentDraftKey();
+    if (key) {
+      deleteStoredDraft(key);
+    }
+
+    setFormData({
+      type: conflictRemoteEntry.type,
+      title: conflictRemoteEntry.title,
+      summary: conflictRemoteEntry.summary,
+      status: conflictRemoteEntry.status,
+      source_links: conflictRemoteEntry.source_links.map(s => ({
+        document_id: s.document_id,
+        chunk_id: s.chunk_id,
+        start_char: s.start_char,
+        end_char: s.end_char,
+        excerpt: s.excerpt,
+        availability: s.availability,
+        document_filename: s.document_filename,
+      })),
+    });
+    setBaseRevision(conflictRemoteEntry.revision);
+    setBaselineEntry(conflictRemoteEntry);
+    setViewingEntry(conflictRemoteEntry);
+    setConflictData(null);
+    setConflictRemoteEntry(null);
+    setFormError(null);
+    setLocalDraftNotice(null);
   }
 
   // 确认软删除
   async function handleConfirmDelete() {
-    if (!deletingEntry) return;
+    if (!deletingEntry || submittingRef.current) return;
+
+    submittingRef.current = true;
     setSubmitting(true);
+    const currentGen = generationRef.current;
+    const currentWorld = worldId;
+
     try {
       await api.remove(deletingEntry.id, deletingEntry.revision);
+
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
+
       // 清除本地草稿
-      draftsMapRef.current.delete(`${worldId}:${deletingEntry.id}`);
+      deleteStoredDraft(`${worldId}:${deletingEntry.id}`);
       setDeletingEntry(null);
       setViewingEntry(null);
       loadEntries(page, selectedType, selectedStatus);
     } catch (err: any) {
+      if (
+        !isMountedRef.current ||
+        generationRef.current !== currentGen ||
+        worldIdRef.current !== currentWorld
+      ) {
+        return;
+      }
+
       if (err?.status === 409 || err?.code === 'LORE_ENTRY_CONFLICT') {
         setFormError('删除失败：该条目已被其他操作修改，请刷新列表后再操作。');
       } else {
         setFormError(err?.message || '删除条目失败。');
       }
     } finally {
-      setSubmitting(false);
+      submittingRef.current = false;
+      if (
+        isMountedRef.current &&
+        generationRef.current === currentGen &&
+        worldIdRef.current === currentWorld
+      ) {
+        setSubmitting(false);
+      }
     }
   }
 
@@ -838,23 +1191,101 @@ export function LoreEntriesPanel({
                 </div>
               )}
 
-              {/* 409 乐观锁冲突告警 */}
+              {/* 409 乐观锁冲突告警与对照区 */}
               {conflictData && (
                 <div className="lore-entries-banner conflict" role="alert">
                   <AlertTriangle size={18} style={{ color: '#ba6452' }} />
                   <div style={{ flex: 1 }}>
                     <strong>条目已在外部被更新（版本冲突）</strong>
                     <p style={{ margin: '4px 0 8px 0', fontSize: '11px' }}>
-                      你当前基于版本 rev.{conflictData.expectedRevision} 进行修改，但服务端已有更新版本。禁止覆盖提交。
+                      你当前基于版本 rev.{conflictData.expectedRevision} 进行修改，但服务端已有更新版本。禁止盲目覆盖提交。
                     </p>
-                    <button
-                      type="button"
-                      className="secondary"
-                      style={{ fontSize: '11px', minHeight: '28px', padding: '2px 8px' }}
-                      onClick={handleFetchLatestConflict}
-                    >
-                      拉取并查看最新版本
-                    </button>
+
+                    {!conflictRemoteEntry && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ fontSize: '11px', minHeight: '28px', padding: '2px 8px' }}
+                        disabled={fetchingConflictRemote}
+                        onClick={handleFetchLatestConflict}
+                      >
+                        <GitCompare size={12} /> {fetchingConflictRemote ? '正在拉取远端...' : '拉取远端最新版本对比'}
+                      </button>
+                    )}
+
+                    {/* 远端最新对照视图 */}
+                    {conflictRemoteEntry && (
+                      <div className="lore-conflict-diff-box">
+                        <div className="lore-conflict-diff-title">
+                          <GitCompare size={13} /> 版本冲突对比（本地修改 vs 远端最新）
+                        </div>
+                        <div className="lore-conflict-diff-table">
+                          <div className="lore-conflict-diff-row header">
+                            <span className="diff-col-field">字段</span>
+                            <span className="diff-col-val">你的草稿修改</span>
+                            <span className="diff-col-val">远端最新 (rev.{conflictRemoteEntry.revision})</span>
+                          </div>
+
+                          <div className="lore-conflict-diff-row">
+                            <span className="diff-col-field">标题</span>
+                            <span className={`diff-col-val ${formData.title !== conflictRemoteEntry.title ? 'changed' : ''}`}>
+                              {formData.title}
+                            </span>
+                            <span className="diff-col-val">{conflictRemoteEntry.title}</span>
+                          </div>
+
+                          <div className="lore-conflict-diff-row">
+                            <span className="diff-col-field">分类</span>
+                            <span className={`diff-col-val ${formData.type !== conflictRemoteEntry.type ? 'changed' : ''}`}>
+                              {ENTRY_TYPE_LABELS[formData.type]}
+                            </span>
+                            <span className="diff-col-val">{ENTRY_TYPE_LABELS[conflictRemoteEntry.type]}</span>
+                          </div>
+
+                          <div className="lore-conflict-diff-row">
+                            <span className="diff-col-field">状态</span>
+                            <span className={`diff-col-val ${formData.status !== conflictRemoteEntry.status ? 'changed' : ''}`}>
+                              {ENTRY_STATUS_LABELS[formData.status]}
+                            </span>
+                            <span className="diff-col-val">{ENTRY_STATUS_LABELS[conflictRemoteEntry.status]}</span>
+                          </div>
+
+                          <div className="lore-conflict-diff-row">
+                            <span className="diff-col-field">摘要</span>
+                            <span className={`diff-col-val ${formData.summary !== conflictRemoteEntry.summary ? 'changed' : ''}`}>
+                              {formData.summary || '（空）'}
+                            </span>
+                            <span className="diff-col-val">{conflictRemoteEntry.summary || '（空）'}</span>
+                          </div>
+
+                          <div className="lore-conflict-diff-row">
+                            <span className="diff-col-field">引用切片</span>
+                            <span className="diff-col-val">{formData.source_links.length} 处</span>
+                            <span className="diff-col-val">{conflictRemoteEntry.source_links.length} 处</span>
+                          </div>
+                        </div>
+
+                        {/* 显式确认按钮 */}
+                        <div className="flex gap-2 mt-3 flex-wrap">
+                          <button
+                            type="button"
+                            className="primary"
+                            style={{ fontSize: '11px', minHeight: '30px', padding: '4px 10px' }}
+                            onClick={handleAdoptRemoteRevisionAndRebase}
+                          >
+                            <ArrowRight size={12} /> 采纳远端 rev.{conflictRemoteEntry.revision} 作为新基准并覆盖提交
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{ fontSize: '11px', minHeight: '30px', padding: '4px 10px' }}
+                            onClick={handleDiscardAndUseRemote}
+                          >
+                            放弃我的修改，完全加载远端内容
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -879,7 +1310,7 @@ export function LoreEntriesPanel({
                   placeholder="例如：乌木短刀、旧港巷口、苍龙行会..."
                   value={formData.title}
                   maxLength={80}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
+                  onChange={e => handleFormChange({ ...formData, title: e.target.value })}
                 />
               </div>
 
@@ -890,7 +1321,9 @@ export function LoreEntriesPanel({
                   <select
                     className="lore-form-select"
                     value={formData.type}
-                    onChange={e => setFormData({ ...formData, type: e.target.value as EntryType })}
+                    onChange={e =>
+                      handleFormChange({ ...formData, type: e.target.value as EntryType })
+                    }
                   >
                     {(Object.keys(ENTRY_TYPE_LABELS) as EntryType[]).map(t => (
                       <option key={t} value={t}>
@@ -906,7 +1339,7 @@ export function LoreEntriesPanel({
                     className="lore-form-select"
                     value={formData.status}
                     onChange={e =>
-                      setFormData({ ...formData, status: e.target.value as EntryStatus })
+                      handleFormChange({ ...formData, status: e.target.value as EntryStatus })
                     }
                   >
                     <option value="draft">草稿 (Draft · 正在构思)</option>
@@ -926,7 +1359,7 @@ export function LoreEntriesPanel({
                   placeholder="作者手写描述或背景设定（最多 500 字）..."
                   value={formData.summary}
                   maxLength={500}
-                  onChange={e => setFormData({ ...formData, summary: e.target.value })}
+                  onChange={e => handleFormChange({ ...formData, summary: e.target.value })}
                 />
               </div>
 
@@ -946,6 +1379,10 @@ export function LoreEntriesPanel({
                   </button>
                 </div>
 
+                <div className="muted text-xs" style={{ margin: '4px 0 8px 0', lineHeight: '1.6' }}>
+                  提示：已有历史引用（即使原文档已删除或失效）仍将完整保留其历史证据；您无需强制移除历史引用即可修改标题或摘要。
+                </div>
+
                 {formData.source_links.length === 0 && (
                   <div className="muted text-xs">
                     当前未关联任何文档切片（保存后将标注为“人工录入 · 无文档引用”）。
@@ -958,15 +1395,24 @@ export function LoreEntriesPanel({
                     <div className="lore-source-top">
                       <span className="muted text-xs">
                         切片: {src.chunk_id.slice(0, 8)}... (区间 {src.start_char}..{src.end_char})
+                        {src.document_filename && ` · ${src.document_filename}`}
                       </span>
-                      <button
-                        type="button"
-                        className="text-button"
-                        style={{ color: '#ba6452', fontSize: '11px' }}
-                        onClick={() => handleRemoveSource(idx)}
-                      >
-                        <X size={12} /> 移除引用
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {src.availability === 'deleted' && (
+                          <span className="lore-source-badge-deleted">原文档已删除</span>
+                        )}
+                        {src.availability === 'unavailable' && (
+                          <span className="lore-source-badge-unavailable">切片不可用</span>
+                        )}
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ color: '#ba6452', fontSize: '11px' }}
+                          onClick={() => handleRemoveSource(idx)}
+                        >
+                          <X size={12} /> 移除引用
+                        </button>
+                      </div>
                     </div>
                     {src.excerpt && (
                       <div className="lore-source-excerpt">“{src.excerpt}”</div>
@@ -1004,11 +1450,14 @@ export function LoreEntriesPanel({
                     </div>
 
                     {sourceSearchError && (
-                      <div className="error text-xs">{sourceSearchError}</div>
+                      <div className="error text-xs mt-1">{sourceSearchError}</div>
                     )}
 
                     {sourceCandidates.length > 0 && (
-                      <div className="flex flex-col gap-2 mt-2" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                      <div
+                        className="flex flex-col gap-2 mt-2"
+                        style={{ maxHeight: '180px', overflowY: 'auto' }}
+                      >
                         {sourceCandidates.map((c, i) => (
                           <div
                             key={i}
@@ -1019,7 +1468,7 @@ export function LoreEntriesPanel({
                               <strong>{c.filename || c.document_filename || '文档切片'}</strong>
                               <span className="muted">区间 {c.start_char}..{c.end_char}</span>
                             </div>
-                            <div className="muted text-xs">{c.snippet}</div>
+                            <div className="muted text-xs mt-1">{c.snippet}</div>
                           </div>
                         ))}
                       </div>
@@ -1042,7 +1491,7 @@ export function LoreEntriesPanel({
                 type="button"
                 className="primary"
                 onClick={handleSaveEntry}
-                disabled={submitting}
+                disabled={submitting || (conflictData !== null && !conflictRemoteEntry)}
               >
                 {submitting ? '正在提交...' : isCreating ? '确认创建' : '保存修改'}
               </button>
@@ -1060,7 +1509,15 @@ export function LoreEntriesPanel({
             onClick={e => e.stopPropagation()}
             role="alertdialog"
           >
-            <h3 style={{ fontSize: '17px', color: '#ba6452', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h3
+              style={{
+                fontSize: '17px',
+                color: '#ba6452',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
               <AlertTriangle size={18} /> 确认软删除该设定条目？
             </h3>
             <p className="mt-3 text-xs" style={{ lineHeight: '1.7', color: 'var(--text)' }}>
@@ -1093,4 +1550,3 @@ export function LoreEntriesPanel({
     </div>
   );
 }
-
