@@ -130,7 +130,7 @@ def test_preview_maps_context_error(stub_app):
 def test_live_without_session_is_expired(stub_app):
     client, _, _ = stub_app
     response = client.post("/api/v1/worlds/w1/narration-preview", json={"action": "看看", "mode": "live"})
-    assert response.status_code == 404
+    assert response.status_code == 409
     assert response.json()["error"]["code"] == "MODEL_SESSION_EXPIRED"
 
 
@@ -204,3 +204,106 @@ def test_missing_modules_return_not_ready(tmp_path, monkeypatch):
     )
     assert preview.status_code == 503
     assert preview.json()["error"]["code"] == "M2_NOT_READY"
+
+
+# --------------------------------------------------------------------------
+# R7：客户端断开必须取消上游任务（真实 ASGI 消息，不直接 cancel 服务函数）
+# --------------------------------------------------------------------------
+
+
+def test_client_disconnect_cancels_generation(tmp_path):
+    import asyncio
+    import json as jsonlib
+
+    from app.narration.core import ContextSource
+
+    class SlowClient:
+        def __init__(self):
+            self.cancelled = False
+
+        async def generate(self, request):
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            return {"narrative": "不应到达", "references": []}
+
+    slow = SlowClient()
+
+    class Store:
+        def get_client(self, session_id):
+            return slow
+
+        def create(self, *args):  # pragma: no cover - 不走这里
+            raise AssertionError
+
+        def delete(self, *args):  # pragma: no cover
+            pass
+
+        def test(self, *args):  # pragma: no cover
+            pass
+
+    class Bundle:
+        sources = (ContextSource("chunk:c1", "chunk", "资料"),)
+        metadata = ({"source_id": "chunk:c1", "kind": "chunk", "title": "资料"},)
+
+    app = create_app(
+        Settings(db_path=tmp_path / "disc.db"),
+        narration_store=Store(),
+        context_builder=lambda conn, world_id, action: Bundle(),
+    )
+
+    body = jsonlib.dumps({"action": "慢慢想", "mode": "live", "session_id": "s1"}).encode()
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/v1/worlds/w1/narration-preview",
+        "raw_path": b"/api/v1/worlds/w1/narration-preview",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"content-length", str(len(body)).encode()),
+        ],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+    }
+
+    async def scenario():
+        state = {"body_sent": False, "disconnected": False}
+        sent = []
+
+        async def mark_disconnected():
+            await asyncio.sleep(0.3)
+            state["disconnected"] = True
+
+        async def receive():
+            # Starlette 的 is_disconnected 只读取“立即可用”的消息：
+            # 这里不要 await，先用 request 消息占位，断开后用 disconnect 消息。
+            if not state["body_sent"]:
+                state["body_sent"] = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            if state["disconnected"]:
+                return {"type": "http.disconnect"}
+            return {"type": "http.request", "body": b"", "more_body": True}
+
+        async def send(message):
+            sent.append(message)
+
+        flip = asyncio.ensure_future(mark_disconnected())
+        try:
+            await asyncio.wait_for(app(scope, receive, send), timeout=5)
+        finally:
+            flip.cancel()
+        return sent
+
+    sent = asyncio.run(scenario())
+    assert slow.cancelled is True
+    assert not any(
+        m.get("type") == "http.response.body" and b"narrative" in m.get("body", b"")
+        for m in sent
+    )

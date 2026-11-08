@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Query, Response, UploadFile
+from fastapi import FastAPI, File, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -797,6 +797,34 @@ def create_app(
         status = 422 if code in {"ACTION_INVALID", "CONTEXT_INVALID"} else 502
         return ApiError(status, code, str(exc))
 
+    async def _await_with_disconnect(request: Request, awaitable, timeout: float):
+        """等待上游任务，同时监听客户端断开；断开/超时都取消并等待清理。"""
+        task = asyncio.ensure_future(awaitable)
+
+        async def _watch_disconnect() -> None:
+            while True:
+                if await request.is_disconnected():
+                    return
+                await asyncio.sleep(0.05)
+
+        watcher = asyncio.ensure_future(_watch_disconnect())
+        try:
+            done, _pending = await asyncio.wait(
+                {task, watcher},
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if task in done:
+                return task.result()
+            if watcher in done:
+                raise ApiError(499, "CLIENT_DISCONNECTED", "客户端已断开，生成已取消。")
+            raise asyncio.TimeoutError
+        finally:
+            for pending in (task, watcher):
+                if not pending.done():
+                    pending.cancel()
+            await asyncio.gather(task, watcher, return_exceptions=True)
+
     @app.post("/api/v1/model-sessions", status_code=201)
     async def create_model_session(payload: dict[str, Any]) -> dict[str, Any]:
         store = _store()
@@ -825,18 +853,24 @@ def create_app(
         return Response(status_code=204)
 
     @app.post("/api/v1/model-sessions/{session_id}/test")
-    async def test_model_session(session_id: str) -> dict[str, Any]:
+    async def test_model_session(request: Request, session_id: str) -> dict[str, Any]:
         store = _store()
         try:
-            result = store.test(session_id)
-            if hasattr(result, "__await__"):
-                result = await result
+            pending = store.test(session_id)
+            if hasattr(pending, "__await__"):
+                result = await _await_with_disconnect(request, pending, timeout=60)
+            else:
+                result = pending
+        except asyncio.TimeoutError:
+            raise ApiError(504, "MODEL_TIMEOUT", "连接测试超过 60 秒，已取消。")
+        except ApiError:
+            raise
         except Exception as exc:
             raise _gateway_error(exc)
         return result
 
     @app.post("/api/v1/worlds/{world_id}/narration-preview")
-    async def narration_preview(world_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def narration_preview(request: Request, world_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         action = payload.get("action")
         mode = payload.get("mode", "fake")
         session_id = payload.get("session_id")
@@ -855,7 +889,7 @@ def create_app(
 
         if mode == "live":
             if not isinstance(session_id, str) or not session_id:
-                raise ApiError(404, "MODEL_SESSION_EXPIRED", "模型会话无效或已过期。")
+                raise ApiError(409, "MODEL_SESSION_EXPIRED", "模型会话无效或已过期。")
             try:
                 client = _store().get_client(session_id)
             except Exception as exc:
@@ -863,7 +897,7 @@ def create_app(
         else:
             client = FakeModelClient()
 
-        request = NarrationRequest(
+        narration_request = NarrationRequest(
             action=action,
             sources=tuple(
                 ContextSource(source_id=s.source_id, kind=s.kind, text=s.text)
@@ -871,7 +905,9 @@ def create_app(
             ),
         )
         try:
-            draft = await asyncio.wait_for(generate_draft(request, client), timeout=60)
+            draft = await _await_with_disconnect(
+                request, generate_draft(narration_request, client), timeout=60
+            )
         except asyncio.TimeoutError:
             raise ApiError(504, "MODEL_TIMEOUT", "模型响应超过 60 秒，已取消。")
         except asyncio.CancelledError:
