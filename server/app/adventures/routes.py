@@ -14,6 +14,9 @@ from . import service
 
 
 def register_routes(app, cfg, get_store, get_builder):
+    from .checkpoints import register_checkpoint_routes
+    register_checkpoint_routes(app, cfg)
+
     @app.get('/api/v1/worlds/{world_id}/adventures')
     def list_adventures(world_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
         with db(cfg.db_path) as conn:

@@ -25,6 +25,7 @@ export interface JournalResult extends NarrationPreviewResponse {
   changes_accepted?: boolean;
 }
 export interface Run {
+  origin_checkpoint_id?: string | null;
   character?: CharacterState | null;
   id: string;
   world_id: string;

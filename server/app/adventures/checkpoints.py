@@ -1,0 +1,100 @@
+"""Immutable checkpoints, restored into new independent narrative journals."""
+import json
+import re
+import time
+from uuid import uuid4
+
+from fastapi import Query
+from ..db import db
+from ..errors import ApiError
+from . import service
+
+SCHEMA = '''
+CREATE TABLE IF NOT EXISTS adventure_checkpoints (
+ id TEXT PRIMARY KEY, adventure_id TEXT NOT NULL REFERENCES adventures(id),
+ request_id TEXT NOT NULL, name TEXT NOT NULL, revision INTEGER NOT NULL,
+ character_json TEXT, mode TEXT NOT NULL, created_at REAL NOT NULL,
+ UNIQUE(adventure_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON adventure_checkpoints(adventure_id,created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_restore_request ON adventures(origin_checkpoint_id,restore_request_id);
+'''
+
+
+def validate_input(name, request_id):
+    if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
+        raise ApiError(422, 'VALIDATION_ERROR', '名称须为1–80字。')
+    try:
+        name.encode('utf-16-le')
+    except UnicodeEncodeError:
+        raise ApiError(422, 'VALIDATION_ERROR', '名称包含不完整字符。') from None
+    if not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', request_id):
+        raise ApiError(422, 'VALIDATION_ERROR', '请求标识格式无效。')
+    return name.strip()
+
+
+def checkpoint_dict(row):
+    result = dict(row)
+    result['character'] = json.loads(result.pop('character_json') or 'null')
+    result.pop('request_id', None)
+    return result
+
+
+def create_checkpoint(conn, adventure_id, name, request_id, revision):
+    name = validate_input(name, request_id)
+    service.revision_number(revision)
+    conn.execute('BEGIN IMMEDIATE')
+    run = service.get_adventure(conn, adventure_id)
+    old = conn.execute('SELECT * FROM adventure_checkpoints WHERE adventure_id=? AND request_id=?', (adventure_id, request_id)).fetchone()
+    if old:
+        if old['name'] != name or old['revision'] != revision:
+            raise ApiError(409, 'REQUEST_CONFLICT', '同一请求不能用于不同的存档。')
+        return checkpoint_dict(old)
+    if run['revision'] != revision:
+        raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后再存档。')
+    id = str(uuid4())
+    conn.execute('INSERT INTO adventure_checkpoints VALUES(?,?,?,?,?,?,?,?)',
+                 (id, adventure_id, request_id, name, revision, json.dumps(run['character'], ensure_ascii=False), run['mode'], time.time()))
+    return checkpoint_dict(conn.execute('SELECT * FROM adventure_checkpoints WHERE id=?', (id,)).fetchone())
+
+
+def restore(conn, checkpoint_id, name, request_id):
+    name = validate_input(name, request_id)
+    conn.execute('BEGIN IMMEDIATE')
+    checkpoint = conn.execute('SELECT * FROM adventure_checkpoints WHERE id=?', (checkpoint_id,)).fetchone()
+    if not checkpoint:
+        raise ApiError(404, 'CHECKPOINT_NOT_FOUND', '存档不存在。')
+    source = service.get_adventure(conn, checkpoint['adventure_id'])
+    old = conn.execute('SELECT * FROM adventures WHERE origin_checkpoint_id=? AND restore_request_id=?', (checkpoint_id, request_id)).fetchone()
+    if old:
+        if old['name'] != name:
+            raise ApiError(409, 'REQUEST_CONFLICT', '重复恢复不能改变分支名称。')
+        return service.run_dict(old)
+    # Every inherited turn is immutable and belongs to this checkpoint's prefix.
+    count = conn.execute('SELECT COUNT(*) FROM adventure_turns WHERE adventure_id=? AND sequence<=?', (source['id'], checkpoint['revision'])).fetchone()[0]
+    if count != checkpoint['revision']:
+        raise ApiError(409, 'CHECKPOINT_HISTORY_INVALID', '存档历史不完整，不能安全恢复。')
+    id = str(uuid4())
+    conn.execute('INSERT INTO adventures(id,world_id,name,mode,revision,created_at,character_json,origin_checkpoint_id,restore_request_id) VALUES(?,?,?,?,?,?,?,?,?)',
+                 (id, source['world_id'], name, checkpoint['mode'], checkpoint['revision'], time.time(), checkpoint['character_json'], checkpoint_id, request_id))
+    conn.execute("INSERT INTO adventure_turns SELECT ?,sequence,'inherited:'||sequence,action,result,created_at FROM adventure_turns WHERE adventure_id=? AND sequence<=?",
+                 (id, source['id'], checkpoint['revision']))
+    return service.get_adventure(conn, id)
+
+
+def register_checkpoint_routes(app, cfg):
+    @app.get('/api/v1/adventures/{adventure_id}/checkpoints')
+    def list_checkpoints(adventure_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
+        with db(cfg.db_path) as conn:
+            service.get_adventure(conn, adventure_id)
+            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT * FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
+
+    @app.post('/api/v1/adventures/{adventure_id}/checkpoints', status_code=201)
+    def save(adventure_id: str, payload: dict):
+        with db(cfg.db_path) as conn:
+            return create_checkpoint(conn, adventure_id, payload.get('name'), payload.get('request_id'), payload.get('expected_revision'))
+
+    @app.post('/api/v1/checkpoints/{checkpoint_id}/restore', status_code=201)
+    def fork(checkpoint_id: str, payload: dict):
+        with db(cfg.db_path) as conn:
+            return restore(conn, checkpoint_id, payload.get('name'), payload.get('request_id'))

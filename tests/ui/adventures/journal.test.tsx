@@ -70,7 +70,16 @@ function setup(withState = false) {
   };
   return { api, ready };
 }
-const props = { worldId: "w", onConfigure: vi.fn(), onOpenSource: vi.fn() };
+const props = {
+  worldId: "w",
+  onConfigure: vi.fn(),
+  onOpenSource: vi.fn(),
+  checkpointApi: {
+    list: vi.fn(async () => ({ items: [] })),
+    save: vi.fn(),
+    restore: vi.fn(),
+  },
+};
 
 it("generation is a draft until the player explicitly confirms it", async () => {
   const { api } = setup();

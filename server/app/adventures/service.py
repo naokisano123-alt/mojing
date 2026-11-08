@@ -42,6 +42,7 @@ def get_adventure(conn, adventure_id):
 
 def run_dict(row):
     value = dict(row)
+    value.pop('restore_request_id', None)
     value['character'] = json.loads(value.pop('character_json', None) or 'null')
     return value
 
