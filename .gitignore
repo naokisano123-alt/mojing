@@ -4,6 +4,14 @@ dist/
 *.tsbuildinfo
 .env*
 
+# Python 后端本地环境与产物
+.venv/
+.pip-cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+server/data/
+
 # 协作交换区（本地打包/解包，不入库）
 .incoming/
 .outgoing/

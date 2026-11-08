@@ -114,4 +114,17 @@ mojing-m0/
 
 ## 项目交接与下一阶段
 
-请先阅读 [完整项目说明与 M1 方案](docs/PROJECT_HANDOFF.md)。本仓库当前完成 M0，使用本地模拟数据。
+请先阅读 [完整项目说明与 M1 方案](docs/PROJECT_HANDOFF.md)。本仓库当前完成 M0，并使用本地模拟数据；M1-A/B 后端（世界持久化 + TXT/MD 真实导入）已实现，前端接线尚未完成。
+
+## 后端（M1-A/B）
+
+`server/` 是 M1 的最小后端：FastAPI + SQLite，接口契约见 [docs/contracts/M1_AB_API.md](docs/contracts/M1_AB_API.md)。本批只做世界持久化与 TXT/MD 导入、原文与章节来源，**不接模型，真实世界不能驱动 AI 冒险**。
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r server\requirements.txt
+cd server
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+测试：`cd server` 后 `..\.venv\Scripts\python.exe -m pytest`（37 例）。M0 演示数据（localStorage `mojing-m0-v1`）与后端 SQLite 完全隔离，互不迁移、互不覆盖。
