@@ -19,9 +19,11 @@ import {
   getDocument,
   getDocumentChunks,
   getChunkByIndex,
+  getChunkById,
   getDocumentRaw,
   ApiClientError,
 } from '../../api/client';
+import { loadSourceChunk } from './sourceNavigation';
 import { Tag } from '../UI';
 import {
   splitTextWithHighlight,
@@ -30,6 +32,7 @@ import {
 } from './viewerUtils';
 
 export interface SourceLocation {
+  chunkId?: string;
   chunkIndex?: number;
   startChar?: number;
   endChar?: number;
@@ -92,6 +95,8 @@ export function DocumentViewer({
   // Chunks state
   const [chunks, setChunks] = useState<LoreChunk[]>([]);
   const [totalChunks, setTotalChunks] = useState(0);
+  const nextChunkOffset = useRef(0);
+  const viewRequest = useRef<AbortController | null>(null);
   const [loadingMoreChunks, setLoadingMoreChunks] = useState(false);
   const [loadMoreChunksError, setLoadMoreChunksError] = useState<string | null>(null);
 
@@ -148,6 +153,11 @@ export function DocumentViewer({
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    viewRequest.current = controller;
+    nextChunkOffset.current = 0;
+    setLoadingMoreChunks(false);
+    setMode(initialMode);
+    setActiveHighlight(initialSource || (initialChunkIndex !== undefined ? { chunkIndex: initialChunkIndex } : undefined));
 
     // 切换文档时立即清空旧状态
     setDoc(null);
@@ -166,21 +176,23 @@ export function DocumentViewer({
 
     async function loadMetaAndChunks() {
       try {
-        const [docData, chunksData] = await Promise.all([
+        const [docData, chunksData, target] = await Promise.all([
           getDocument(documentId, controller.signal),
           getDocumentChunks(documentId, { limit: CHUNK_PAGE_SIZE, offset: 0, include_text: false }, controller.signal),
+          loadSourceChunk(documentId, initialSource || { chunkIndex: initialChunkIndex },
+            { byId: getChunkById, byIndex: getChunkByIndex }, controller.signal),
         ]);
         if (!active) return;
 
         setDoc(docData);
-        setChunks(chunksData.items);
+        setChunks(target ? deduplicateChunks(chunksData.items, [target]) : chunksData.items);
+        nextChunkOffset.current = chunksData.items.length;
         setTotalChunks(chunksData.total);
         setLoading(false);
 
-        // 若指定了初始展开块
-        const targetIndex = initialSource?.chunkIndex ?? initialChunkIndex;
-        if (targetIndex !== undefined) {
-          expandChunk(targetIndex, controller.signal);
+        if (target) {
+          setExpandedChunkMap({ [target.chunk_index]: target.text! });
+          setActiveHighlight({ ...initialSource, chunkIndex: target.chunk_index });
         }
       } catch (err: unknown) {
         if (!active) return;
@@ -198,32 +210,37 @@ export function DocumentViewer({
       active = false;
       controller.abort();
     };
-  }, [documentId]);
+  }, [documentId, initialMode, initialChunkIndex, initialSource?.chunkId, initialSource?.chunkIndex, initialSource?.startChar, initialSource?.endChar]);
 
   // 按需加载更多切片（突破 100 块上限，展示服务端真实 total）
   async function handleLoadMoreChunks() {
     if (loadingMoreChunks || chunks.length >= totalChunks) return;
 
+    const signal = viewRequest.current?.signal;
+    if (!signal || signal.aborted) return;
     setLoadingMoreChunks(true);
     setLoadMoreChunksError(null);
 
     try {
       const res = await getDocumentChunks(documentId, {
         limit: CHUNK_PAGE_SIZE,
-        offset: chunks.length,
+        offset: nextChunkOffset.current,
         include_text: false,
-      });
+      }, signal);
+      if (signal.aborted) return;
+      nextChunkOffset.current += res.items.length;
 
       setChunks(prev => deduplicateChunks(prev, res.items));
       setTotalChunks(res.total);
     } catch (err: unknown) {
+      if (signal.aborted) return;
       if (err instanceof ApiClientError) {
         setLoadMoreChunksError(err.friendlyMessage);
       } else {
         setLoadMoreChunksError('加载后续切片失败，请检查网络后重试。');
       }
     } finally {
-      setLoadingMoreChunks(false);
+      if (!signal.aborted) setLoadingMoreChunks(false);
     }
   }
 
@@ -272,7 +289,8 @@ export function DocumentViewer({
   }, [mode, rawPage, expandedChunkMap]);
 
   // 展开切片全文（显式错误处理，拒绝把摘要伪装为正文）
-  async function expandChunk(chunkIndex: number, signal?: AbortSignal) {
+  async function expandChunk(chunkIndex: number, signal = viewRequest.current?.signal) {
+    if (!signal || signal.aborted) return;
     if (expandedChunkMap[chunkIndex] !== undefined) {
       // 已展开，点击收起
       setExpandedChunkMap(prev => {
@@ -292,12 +310,15 @@ export function DocumentViewer({
 
     try {
       const fullChunk = await getChunkByIndex(documentId, chunkIndex, signal);
-      const textContent = fullChunk.text || fullChunk.text_preview;
+      if (signal.aborted) return;
+      if (typeof fullChunk.text !== 'string') throw new Error('来源全文不可用');
+      const textContent = fullChunk.text;
       setExpandedChunkMap(prev => ({
         ...prev,
         [chunkIndex]: textContent,
       }));
     } catch (err: unknown) {
+      if (signal.aborted) return;
       const msg = err instanceof ApiClientError ? err.friendlyMessage : '获取全文失败，请重试。';
       setChunkExpandErrorMap(prev => ({
         ...prev,
@@ -305,7 +326,7 @@ export function DocumentViewer({
       }));
       // 严禁在此处将 preview 填入 expandedChunkMap，保持正文真实性
     } finally {
-      setLoadingChunkMap(prev => ({ ...prev, [chunkIndex]: false }));
+      if (!signal.aborted) setLoadingChunkMap(prev => ({ ...prev, [chunkIndex]: false }));
     }
   }
 
@@ -506,7 +527,12 @@ export function DocumentViewer({
                       <p className="chunk-preview-line">{c.text_preview}</p>
                     ) : (
                       <div className="chunk-text-content">
-                        {fullText}
+                        {splitTextWithHighlight(fullText, c.start_char,
+                          isTargetHighlight ? activeHighlight?.startChar : undefined,
+                          isTargetHighlight ? activeHighlight?.endChar : undefined,
+                        ).map((part, index) => part.isHighlight
+                          ? <mark key={index}>{part.text}</mark>
+                          : <span key={index}>{part.text}</span>)}
                       </div>
                     )}
 
@@ -677,3 +703,4 @@ export function DocumentViewer({
     </div>
   );
 }
+

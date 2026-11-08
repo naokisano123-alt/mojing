@@ -1,3 +1,5 @@
+> 本轮更新：[来源导航已补齐](reports/codex-source-navigation.md)，当前协作见[ROUND5](collaboration/ROUND5.md)。并发、草稿和解析健壮性继续分块推进，M1尚待完整验收。
+
 > 后续状态补充：[Codex小修复](reports/codex-r4-hotfix.md)已恢复正常PDF/DOCX上传，接通逐格式前端限额并修检索null坐标。R4其余任务继续；以下审阅基线所述上传阻断已被这次修复替代。
 
 # 墨境｜当前项目状态与新助手入场说明
