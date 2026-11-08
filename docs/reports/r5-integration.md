@@ -8,48 +8,45 @@
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| R5-D 契约 | **WRITTEN** | 修正 R3 来源坐标笔误；chunk_index、PATCH 三态、原子 revision、严格 DELETE、警告标准化、draftStore |
-| UI 测试基础设施 | **DONE** | Vitest 3.2 + jsdom 26 + RTL 16，`npm run test:ui`，CI 同时跑 node:test 与 Vitest |
-| 严格 revision 校验 | **DONE** | PATCH/DELETE 拒绝 bool/小数/非数字，`422 VALIDATION_ERROR` |
-| DTO 可加性 | **DONE** | `LoreEntrySourceLink.chunk_index` |
-| draftStore 注入 | **PENDING** | 等 Marcin R5 面板可选 prop |
-| R5-M（Marcin） | **ASSIGNED** | 未收到包 |
-| R5-L（Li） | **ASSIGNED** | 未收到包 |
-| R5-A（Ma） | **ASSIGNED** | 未收到包 |
+| R5-D 契约 | **DONE** | 修正坐标笔误、chunk_index、PATCH 三态、原子 revision、严格 DELETE、警告标准化、draftStore |
+| UI 测试基础设施 | **DONE** | Vitest 3.2 + jsdom 26 + RTL 16 + user-event；CI 同时跑两套 |
+| R5-M（Marcin） | **IMPORTED / TESTED** | `import/r5-marcin` @ `f307cf1`，6 文件，7 条组件测试 |
+| R5-L（Li） | **IMPORTED / TESTED** | `import/r5-li` @ `7d45cf7`，10 文件，警告标准化 + 逐步预算 + 导入矩阵 |
+| R5-A（Ma） | **IMPORTED / TESTED** | `import/r5-ma` @ `907aef2`，5 文件，原子 revision + 严格坐标 |
+| 集成 | **TESTED** | 三支已合并；draftStore、警告标准化已接 |
 | 真机验收 | **未验收** | 见 `docs/M1_ACCEPTANCE.md` |
 | 线上部署 | **未部署** | 本地闭环 |
 
-## 2. 本轮完成
+## 2. 收包核验
 
-| 文件 | 改动 |
+| 包 | 分支 | 提交 | 校验 | 备注 |
+| --- | --- | --- | --- | --- |
+| gemini-marcin-r5-delivery | import/r5-marcin | f307cf1 | 6/6 sha256 一致，apply 通过 | 压缩包内多一层目录，按实际路径核验 |
+| gemini-li-R5-1e5ea77 | import/r5-li | 7d45cf7 | 10/10 一致，apply 通过 | |
+| gemini-ma-r5-delivery | import/r5-ma | 907aef2 | 5/5 一致，apply 通过 | manifest 用 `entries` 键而非 `files`，按实际结构核验 |
+
+三支 `--no-ff` 合并，作者保留，无覆盖、无强推。
+
+## 3. 共享接线
+
+| 位置 | 改动 |
 | --- | --- |
-| `docs/contracts/M1_R4_API.md` | 新增（1.0-r4） |
-| `vitest.config.ts` | 新增，include `tests/ui/**/*.test.tsx`、`tests/integration/**/*.test.tsx` |
-| `package.json` | 新增 `test:ui`；devDependencies 增加 vitest/jsdom/RTL |
-| `.github/workflows/ci.yml` | frontend job 增加 `npm run test:ui` |
-| `server/app/main.py` | PATCH/DELETE 严格正整数校验 |
-| `src/api/types.ts` | `chunk_index` 可加性 |
-| `tests/integration/ui-smoke.test.tsx` | 证明 Vitest + jsdom + RTL 能真实渲染组件 |
-| `docs/M1_ACCEPTANCE.md` / `docs/M2_PLAN.md` | 新增 |
-| `README.md` / `server/README.md` | 更新当前功能、启动、限制 |
+| `server/app/main.py` | 警告改用 Li 的 `normalize_warning_records`，删掉本地 dict 复制与中文关键字猜码 |
+| `src/components/documents/WorldLoreView.tsx` | 用稳定 `useRef` Map 注入 `draftStore`（切子页签不丢草稿、按 world key 隔离）；条目面板接收 |
+| `tests/integration/world-lore-view.test.tsx` | 新增 3 条装配测试：详情渲染、四页签真实挂载、切世界清空旧数据 |
 
-## 3. 回归（本次实际执行）
+## 4. 回归（本次实际执行）
 
 | 命令 | 结果 |
 | --- | --- |
-| `pytest` | 见提交时的实际输出（本轮新增严格校验用例前为 130 passed） |
-| `npm test` | 60 passed |
-| `npm run test:ui` | 基础设施冒烟通过 |
-| `npm run build` | 通过 |
+| `pytest`（server） | **159 passed** |
+| `npm test`（node:test） | **62 passed** |
+| `npm run test:ui`（Vitest） | **11 passed**（3 文件：Marcin 7 + DSH 装配 3 + 基础设施 1） |
+| `npm run build` | 通过，1606 modules，JS 363.46 kB（gzip 111.53 kB） |
 
-> 精确数字见提交记录与 CI；本文件不固化"永远通过"的数量。
+## 5. 偏差与遗留
 
-## 4. 待收包
-
-按 `ROUND5.md`，还需接收 Marcin / Li / Ma 三个 R5 包：
-
-1. Li：警告标准化纯模块 + 逐步预算 + HTTP 导入矩阵
-2. Ma：原子 revision、严格绝对坐标、历史引用可编辑
-3. Marcin：草稿/冲突对比/异步生命周期 + 真实组件测试
-
-收包后按 import 分支核验、三方合并，最后跑全量并更新本文件与 `M1_ACCEPTANCE.md`。
+- Marcin 压缩包根目录多一层 `gemini-marcin-r5-delivery/`，不影响 apply，记录备查。
+- Ma 的 manifest 使用 `entries` 键、字段为 `base_sha256`/`new_sha256`，与其他人不同；已按实际结构核验，未要求返工。
+- 真机（安卓软键盘、手势、320px）未验收。
+- 线上 Python 后端未部署。

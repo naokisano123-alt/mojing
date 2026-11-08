@@ -26,6 +26,7 @@ from .db import db, init_db
 from .errors import ApiError
 from .importer import chunk_text, decode_document, normalize, preview, slice_u16, u16len
 from .import_policy.policy import get_max_bytes_for_suffix
+from .import_policy.warnings import normalize_warning_records
 from .lore_entries import service as lore_service
 from .lore_entries.errors import LoreEntryError
 from .lore_search.service import search_chunks
@@ -459,12 +460,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             encoding = parsed.encoding
             media_type = parsed.media_type
             encoding_semantics = "extracted_text"
-            records = getattr(parsed, "warning_records", None) or []
-            if records:
-                # DocumentWarningRecord is a TypedDict; count is optional.
-                warnings = [dict(record) for record in records]
-            else:
-                warnings = [_warning_payload(item) for item in parsed.warnings]
+            warnings = normalize_warning_records(
+                getattr(parsed, "warning_records", None) or [],
+                parsed.warnings or (),
+            )
 
         if not text.strip():
             raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")

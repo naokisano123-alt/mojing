@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Upload,
   BookOpen,
@@ -22,7 +22,12 @@ import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
 import { LoreEntriesPanel } from '../../features/lore-entries';
-import type { LoreEntriesPanelApi, LoreEntry as PanelLoreEntry } from '../../features/lore-entries/types';
+import type {
+  LoreEntriesPanelApi,
+  LoreEntry as PanelLoreEntry,
+  LoreEntryDraftStore,
+  DraftStoreValue,
+} from '../../features/lore-entries/types';
 import {
   listLoreEntries,
   getLoreEntry,
@@ -53,6 +58,22 @@ export function WorldLoreView({
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('list');
   const [uploadPolicy, setUploadPolicy] = useState(() => getUploadPolicy());
+
+  // 稳定的草稿容器：切子页签不会丢草稿，不同世界 key 隔离（契约 M1_R4_API §6）
+  const draftStoreRef = useRef<LoreEntryDraftStore | null>(null);
+  if (!draftStoreRef.current) {
+    const drafts = new Map<string, DraftStoreValue>();
+    draftStoreRef.current = {
+      get: key => drafts.get(key),
+      set: (key, value) => {
+        drafts.set(key, value);
+      },
+      delete: key => {
+        drafts.delete(key);
+      },
+    };
+  }
+  const draftStore = draftStoreRef.current;
 
   // 当前打开查看器的文档（可带来源区间，用于检索回跳高亮）
   const [viewingDoc, setViewingDoc] = useState<{
@@ -311,6 +332,7 @@ export function WorldLoreView({
         <LoreEntriesPanel
           worldId={worldId}
           api={loreApi}
+          draftStore={draftStore}
           onOpenSource={target =>
             setViewingDoc({
               documentId: target.documentId,
