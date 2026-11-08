@@ -278,6 +278,9 @@ def _count_documents(conn: sqlite3.Connection, world_id: str) -> int:
 
 def _load_attr(module_name: str, *attrs: str):
     """延迟加载可选模块；缺失时返回 None，路由据此返回明确的未就绪错误。"""
+    if module_name.startswith("."):
+        # importlib 不接受相对名，补上当前包名
+        module_name = (__package__ or "app") + module_name
     try:
         module = importlib.import_module(module_name)
     except ImportError:

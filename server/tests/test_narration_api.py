@@ -183,3 +183,24 @@ def test_preview_does_not_write_database(stub_app, tmp_path):
     with sqlite3.connect(db_path) as conn:
         after = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("worlds", "documents", "chunks")}
     assert before == after
+
+
+def test_missing_modules_return_not_ready(tmp_path, monkeypatch):
+    """没有 model_gateway / narration_context 时必须明确未就绪，而不是 500 或假装成功。"""
+    import app.main as main_module
+
+    monkeypatch.setattr(main_module, "_load_attr", lambda *args, **kwargs: None)
+    client = TestClient(create_app(Settings(db_path=tmp_path / "m2b.db")))
+
+    session = client.post(
+        "/api/v1/model-sessions",
+        json={"base_url": "https://example.invalid/v1", "model": "m", "api_key": "k"},
+    )
+    assert session.status_code == 503
+    assert session.json()["error"]["code"] == "M2_NOT_READY"
+
+    preview = client.post(
+        "/api/v1/worlds/w1/narration-preview", json={"action": "看看", "mode": "fake"}
+    )
+    assert preview.status_code == 503
+    assert preview.json()["error"]["code"] == "M2_NOT_READY"
