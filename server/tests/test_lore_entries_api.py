@@ -115,3 +115,32 @@ def test_list_and_filter_entries(client):
     assert listing["total"] == 3
     drafts = client.get(f"/api/v1/worlds/{world['id']}/lore-entries", params={"status": "draft"}).json()
     assert drafts["total"] == 2
+
+
+def test_patch_rejects_non_integer_revision(client):
+    world = create_world(client)
+    entry = client.post(
+        f"/api/v1/worlds/{world['id']}/lore-entries",
+        json={"type": "rule", "title": "严格版本", "summary": "", "status": "draft"},
+    ).json()
+    for bad in (True, 1.5, "1"):
+        response = client.patch(
+            f"/api/v1/lore-entries/{entry['id']}",
+            json={"title": "改", "expected_revision": bad},
+        )
+        assert response.status_code == 422, bad
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_delete_rejects_coerced_revision(client):
+    world = create_world(client)
+    entry = client.post(
+        f"/api/v1/worlds/{world['id']}/lore-entries",
+        json={"type": "rule", "title": "严格删除", "summary": "", "status": "draft"},
+    ).json()
+    for bad in ("true", "1.5", "1abc", "0", "-1"):
+        response = client.delete(
+            f"/api/v1/lore-entries/{entry['id']}", params={"expected_revision": bad}
+        )
+        assert response.status_code == 422, bad
+    assert client.get(f"/api/v1/lore-entries/{entry['id']}").status_code == 200

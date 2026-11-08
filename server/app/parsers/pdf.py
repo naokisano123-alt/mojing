@@ -1,11 +1,17 @@
-"""PDF 文本提取器。
+"""PDF 文本提取器（R5-L 增强与语义修正）。
 
-设计考量与 R3 硬化：
+设计考量与 R5 硬化：
 - 仅支持文本型 PDF，使用纯 Python 库 pypdf 提取页面文本；
 - 严禁假成功与私自调用 OCR：纯图片扫描件或未提取到文字的 PDF 明确报错拒收；
 - 混合型 PDF（部分页面为空白/无文字）：提取可用页面，必须明确产出 PARTIAL_TEXT 结构化告警；
-- 无法区分是否扫描件时，诚实说明“无法确定是否空页或纯图片扫描件”，不编造检测结果；
-- 文本量按 UTF-16 统计（B3）：使用 u16len，超限时抛出 422 EXTRACTION_LIMIT；
+- 诚实告警语义（R5-L 修正）：
+  * 纠正原先“无法分离页眉页脚却输出 HEADERS_FOOTERS_SKIPPED”的不实语义；
+    改用 COLUMN_ORDER_UNCERTAIN 与 EXTRACTION_WARNING 诚实表达提取限制；
+  * 异常页或无文本页诚实描述为“可能为空白页、格式异常或未嵌入文字的图片”，不武断判定为扫描件；
+- 逐步累计 UTF-16 预算（R5-L 核心）：
+  * 按页累计 UTF-16 文本量（包含页面拼接使用的 "\n\n" 分隔符，各占 2 个码元）；
+  * 一旦累积超过 effective_max_units 立即中断并抛出 ExtractionLimitError，不进行后续无谓页面提取与全量 join；
+  * 说明：单页解析内部的瞬间 CPU / 内存开销不受此计数硬隔离，不夸大宣称绝对防御资源耗尽。
 - 加密支持：允许空密码可读文档，真实密码加密文档诚实报 422 ENCRYPTED_DOCUMENT；
 - 页面顺序：按自然页码顺序拼接正文（双换行分隔）。
 """
@@ -34,7 +40,7 @@ def parse_pdf(
     filename: str,
     limits: ParseLimits,
 ) -> ParsedDocument:
-    """从二进制数据中提取 PDF 文本并执行安全与格式检查。"""
+    """从二进制数据中提取 PDF 文本并执行安全、逐步限额与格式检查。"""
     if not data:
         raise ParseError(422, "EMPTY_DOCUMENT", "文件是空的，没有可导入的文字。")
 
@@ -90,7 +96,16 @@ def parse_pdf(
                 {"filename": filename, "error_detail": str(exc)},
             ) from exc
 
-    total_pages = len(reader.pages)
+    try:
+        total_pages = len(reader.pages)
+    except Exception as exc:
+        raise ParseError(
+            422,
+            "CORRUPT_DOCUMENT",
+            "无法读取 PDF 页面列表，文档可能损坏。",
+            {"filename": filename, "error_detail": str(exc)},
+        ) from exc
+
     if total_pages == 0:
         raise ParseError(
             422,
@@ -109,26 +124,48 @@ def parse_pdf(
 
     pages_text: list[str] = []
     empty_pages: list[int] = []
+    accumulated_units = 0
+    effective_limit = limits.effective_max_units
 
-    for page_idx, page in enumerate(reader.pages, start=1):
+    for page_idx in range(1, total_pages + 1):
         try:
+            page = reader.pages[page_idx - 1]
             raw_text = page.extract_text() or ""
         except Exception:
             empty_pages.append(page_idx)
             continue
 
         normalized_page = raw_text.replace("\r\n", "\n").replace("\r", "\n").strip()
-        if normalized_page:
-            pages_text.append(normalized_page)
-        else:
+        if not normalized_page:
             empty_pages.append(page_idx)
+            continue
 
-    # 纯扫描件或全空白页拒绝
+        # 逐步累计 UTF-16 文本量预算（段间以 "\n\n" 拼接，占 2 个 UTF-16 码元）
+        page_units = u16len(normalized_page)
+        delimiter_units = 2 if pages_text else 0
+        candidate_units = accumulated_units + delimiter_units + page_units
+
+        # 超限立即中断解析并报错，不执行后续无谓抽取
+        if candidate_units > effective_limit:
+            raise ExtractionLimitError(
+                limit=effective_limit,
+                actual=candidate_units,
+                message=(
+                    f"PDF 提取正文文本量超出限制（在第 {page_idx} 页累计约 {candidate_units} 码元，"
+                    f"上限 {effective_limit} 码元）。"
+                ),
+            )
+
+        accumulated_units = candidate_units
+        pages_text.append(normalized_page)
+
+    # 纯扫描件、异常或全空白页拒绝
     if not pages_text:
         raise ParseError(
             422,
             "SCANNED_OR_EMPTY_PDF",
-            "PDF 中未检测到可提取的文本内容（可能是纯图片扫描件或空白文件）。系统暂不支持 OCR 识别，请导入包含可选中文本的文档。",
+            "PDF 中未检测到可提取的文本内容（可能是纯图片扫描件、空白页或提取异常）。"
+            "系统暂不支持 OCR 识别，请导入包含可选中文本的文档。",
             {"filename": filename, "total_pages": total_pages},
         )
 
@@ -142,12 +179,12 @@ def parse_pdf(
             empty_desc = ", ".join(str(p) for p in empty_pages[:8]) + f" 等共 {len(empty_pages)} 页"
 
         msg_partial = (
-            f"PDF 共有 {total_pages} 页，其中第 {empty_desc} 未提取到文本（无法确定是否空页或纯图片扫描件）；"
-            "已提取可用页面的文本（部分内容可能缺失）。"
+            f"PDF 共有 {total_pages} 页，其中第 {empty_desc} 页未提取到文本"
+            "（可能为空白页、格式异常或未嵌入文字的图片）；已提取可用页面的文本（部分内容可能缺失）。"
         )
         warnings.append(msg_partial)
 
-        # 结构化告警：必须产出 PARTIAL_TEXT 与 EMPTY_PAGES（B4 契约要求）
+        # 结构化告警：保持 PARTIAL_TEXT 与 EMPTY_PAGES
         warning_records.append(
             {
                 "code": WarningCode.PARTIAL_TEXT,
@@ -158,12 +195,16 @@ def parse_pdf(
         warning_records.append(
             {
                 "code": WarningCode.EMPTY_PAGES,
-                "message": f"第 {empty_desc} 页未提取到文本（无法确定是否空页或扫描件）",
+                "message": f"第 {empty_desc} 页未提取到文本（可能为空白页、异常或扫描件）",
                 "count": len(empty_pages),
             }
         )
 
-    msg_layout = "PDF 文本提取受排版顺序影响（如多栏排版可能按数据流顺序读取）；不支持页眉、页脚及复杂矢量标注的分离。"
+    # 诚实呈现版面限制：去除原先不实的 HEADERS_FOOTERS_SKIPPED，准确表达流顺序与无法分离页眉页脚
+    msg_layout = (
+        "PDF 文本提取受排版顺序影响（多栏可能按流顺序读取）；"
+        "不支持页眉、页脚及复杂矢量标注与正文的结构化分离。"
+    )
     warnings.append(msg_layout)
     warning_records.append(
         {
@@ -173,22 +214,13 @@ def parse_pdf(
     )
     warning_records.append(
         {
-            "code": WarningCode.HEADERS_FOOTERS_SKIPPED,
-            "message": "不支持页眉、页脚及复杂矢量标注的分离",
+            "code": WarningCode.EXTRACTION_WARNING,
+            "message": "不支持页眉、页脚及复杂矢量标注与正文的独立分离",
         }
     )
 
     full_text = "\n\n".join(pages_text)
-    # 按 UTF-16 code units 统计（B3 契约要求）
-    text_units = u16len(full_text)
-    effective_limit = limits.effective_max_units
-
-    if text_units > effective_limit:
-        raise ExtractionLimitError(
-            limit=effective_limit,
-            actual=text_units,
-            message=f"PDF 提取后的正文文本量超出限制（当前约 {text_units} 码元，上限 {effective_limit} 码元）。",
-        )
+    final_units = u16len(full_text)
 
     return ParsedDocument(
         text=full_text,
@@ -197,6 +229,6 @@ def parse_pdf(
         warnings=warnings,
         warning_records=warning_records,
         page_count=total_pages,
-        extracted_chars=text_units,
-        extracted_units=text_units,
+        extracted_chars=final_units,
+        extracted_units=final_units,
     )

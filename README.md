@@ -1,4 +1,4 @@
-> 当前协作入口：[第四轮四助手任务](docs/collaboration/ROUND4.md)；[项目当前状态与启动](docs/PROJECT_STATUS.md)；[本轮审阅](docs/collaboration/ROUND4_REVIEW.md)。
+> 当前协作入口：[第五轮任务](docs/collaboration/ROUND5.md)；[项目当前状态与启动](docs/PROJECT_STATUS.md)；[M1 验收记录](docs/M1_ACCEPTANCE.md)；[M2 规划](docs/M2_PLAN.md)。
 >
 > R3 已合并：项目现有 M0 本地试玩 + FastAPI/SQLite 世界资料库、文档检索与人工设定。R4 收口真实导入成功路径、并发与来源正确性，不能把 CI 通过等同 M1 全部验收。M2 尚未接模型。下方 M0 原型说明及历史阶段记录按各自时点阅读；当前限制以 PROJECT_STATUS 和最新集成报告为准。
 
@@ -120,20 +120,28 @@ mojing-m0/
 
 请先阅读 [完整项目说明与 M1 方案](docs/PROJECT_HANDOFF.md)。本仓库当前完成 M0，并使用本地模拟数据；M1-A/B 后端（世界持久化 + TXT/MD 真实导入）已实现，前端接线尚未完成。
 
-## 后端（M1-A/B）
+## 后端（M1 资料库）
 
-`server/` 是 M1 的最小后端：FastAPI + SQLite，接口契约见 [docs/contracts/M1_AB_API.md](docs/contracts/M1_AB_API.md)。本批只做世界持久化与 TXT/MD 导入、原文与章节来源，**不接模型，真实世界不能驱动 AI 冒险**。
+`server/` 是 FastAPI + SQLite 的本地后端，提供：世界持久化、TXT/MD/PDF/DOCX 导入与分块、原文与来源定位、中文子串检索、人工设定条目（草稿/确认、revision 乐观并发、来源引用与失效提示）。**不接模型，真实世界不能驱动 AI 冒险。**
+
+- 契约：[M1_AB_API](docs/contracts/M1_AB_API.md) v0.2 → [M1_R2_API](docs/contracts/M1_R2_API.md) 1.0-r2 → [M1_R3_API](docs/contracts/M1_R3_API.md) 1.0-r3 → [M1_R4_API](docs/contracts/M1_R4_API.md) 1.0-r4（逐轮追加，旧端点不变）
+- 代码：`server/app/{main,db,config,importer}.py`、`parsers/`、`import_policy/`、`lore_search/`、`lore_entries/`
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r server\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r server\requirements.txt -r server\requirements-parsers.txt
 cd server
 ..\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-测试：`cd server` 后 `..\.venv\Scripts\python.exe -m pytest`（37 例）。M0 演示数据（localStorage `mojing-m0-v1`）与后端 SQLite 完全隔离，互不迁移、互不覆盖。
+前端开发期由 Vite 代理 `/api` → `http://127.0.0.1:8000`，无需处理跨域。
+
+测试（后端）：`cd server` 后 `..\.venv\Scripts\python.exe -m pytest`。
+测试（前端逻辑 + 组件）：根目录 `npm test`（node:test）与 `npm run test:ui`（Vitest + jsdom + React Testing Library）。
+
+限制：PDF/DOCX 只做文本提取（无 OCR）；搜索是字面子串、不做分词；线上未部署 Python 后端，本地闭环不等于线上可用。M0 演示数据（localStorage `mojing-m0-v1`）与后端 SQLite 完全隔离。
 
 
 ## 当前四助手协作任务
 
-M1-A/B 已合并。第二轮按 DeepSeekHarness + Gemini（Marcin/Li/Ma）分工，请从 [最新任务总表](docs/collaboration/ROUND2.md) 开始，先核对快照 SHA 与文件所有权，禁止旧代码包整包覆盖。
+以 [ROUND5](docs/collaboration/ROUND5.md) 为准（R4 任务仍有效处见 [ROUND4](docs/collaboration/ROUND4.md)）。开工前核对快照 SHA 与文件所有权，禁止旧代码包整包覆盖。

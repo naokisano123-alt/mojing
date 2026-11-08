@@ -175,6 +175,8 @@ export type SourceAvailability = 'active' | 'deleted' | 'unavailable';
 
 export interface LoreEntrySourceLink {
   document_id: Uuid;
+  /** 真实块序号；查不到时为 null（契约 M1_R4_API §1.2） */
+  chunk_index?: number | null;
   chunk_id: Uuid;
   start_char: number;
   end_char: number;
