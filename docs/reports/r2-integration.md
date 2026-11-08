@@ -16,7 +16,7 @@
 | R2-M（Marcin）包 | **IMPORTED** | `import/r2-marcin` @ `a5f0ff2`，8 文件，作者保留 |
 | R2-L（Li）包 | **IMPORTED** | `import/r2-li` @ `bd57ec3`，13 文件，作者保留 |
 | R2-A（Ma）包 | **IMPORTED** | `import/r2-ma` @ `c9f966c`，12 文件，作者保留；其 `patch.diff` 损坏，改用 manifest 校验通过的 `files/` 落地 |
-| R2 集成 | **IN PROGRESS** | 三包已合并入 `feat/r2-integration`，共享接线与全量回归进行中 |
+| R2 集成 | **TESTED** | 三包已合并入 `feat/r2-integration`，共享接线完成；前端 41 / 后端 82 通过，CI 绿（[run 42462286424](https://github.com/naokisano123-alt/mojing/actions/runs/42462286424)） |
 | 线上部署 | **未部署** | 本轮只有本地闭环；静态站点不能跑 Python 后端，不声称后端已上线 |
 
 ## 2. 本轮已完成（不依赖三个包的部分）
@@ -55,7 +55,8 @@
 | `npm test` | 22 passed / 0 failed |
 | `npm run build` | 通过，1595 modules，JS 313.42 kB（gzip 98.16 kB） |
 | `pytest`（server） | **39 passed**（原 37 + 本轮 2 个 importer 回归） |
-| GitHub Actions（[`run 42461243527`](https://github.com/naokisano123-alt/mojing/actions/runs/42461243527)） | **success**：`frontend`（npm ci → npm test → build）与 `backend`（pip install → pytest）两个 job 全绿 |
+| GitHub Actions（[`run 42461243527`](https://github.com/naokisano123-alt/mojing/actions/runs/42461243527)） | **success**：契约阶段的两个 job 全绿 |
+| GitHub Actions（[`run 42462286424`](https://github.com/naokisano123-alt/mojing/actions/runs/42462286424)） | **success**：集成提交 `375a5d5` 上 `frontend` 与 `backend` 均通过 |
 
 > 22 / 37 是上一轮报告的基线；本轮的 39 是加了两条回归用例后的实际数字。旧用例一条没删。
 
