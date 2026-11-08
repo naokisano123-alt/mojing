@@ -1,3 +1,5 @@
+> Codex 后续小修复：R4-01（富文档上传异常）、R4-05（检索null坐标）、R4-06（逐格式前端限额）已处理，见 [修复交接](../reports/codex-r4-hotfix.md)。四助手继续其余任务；DSH合包须保留这些修复，旧快照产物做三方合并。
+
 # 第四轮仓库审阅：已合并不等于闭环已验收
 
 日期：2026-11-08；代码基线 `8296630705a7e61de95fbf532b8a38846dd82c78`；PR #3 已合并，当前无开放 PR（本次读取时）。[CI run 42468032481](https://github.com/naokisano123-alt/mojing/actions/runs/42468032481) 的 frontend/backend 两项及其 test/build 步骤均 success。

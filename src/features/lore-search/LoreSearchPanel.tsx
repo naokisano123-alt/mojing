@@ -16,6 +16,7 @@ import type {
   LoreSearchItem,
 } from './types';
 import './lore-search.css';
+import { toLoreSourceTarget } from './sourceTarget';
 
 const DEFAULT_QUICK_KEYWORDS = ['人物', '陆平', '旧街', '红枫', '码头', '苏晚'];
 
@@ -347,14 +348,7 @@ export function LoreSearchPanel({
                     <button
                       type="button"
                       className="lore-search-source-btn"
-                      onClick={() =>
-                        onOpenSource({
-                          documentId: item.document_id,
-                          chunkIndex: item.chunk_index,
-                          startChar: item.match_start_char ?? item.start_char,
-                          endChar: item.match_end_char ?? item.end_char,
-                        })
-                      }
+                      onClick={() => onOpenSource(toLoreSourceTarget(item))}
                       title="打开文档切片并定位原文"
                     >
                       <span>定位原文</span>
@@ -399,3 +393,4 @@ export function LoreSearchPanel({
     </div>
   );
 }
+
