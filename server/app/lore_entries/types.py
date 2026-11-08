@@ -2,6 +2,7 @@
 
 依据：
 - docs/contracts/M1_R3_API.md §1.1 数据模型规范
+- docs/collaboration/ROUND5.md、docs/collaboration/R5_GEMINI_MA.md
 """
 
 from __future__ import annotations
@@ -25,11 +26,12 @@ class LoreEntrySourceDraft(TypedDict, total=False):
     end_char: int
 
 
-class LoreEntrySource(TypedDict):
+class LoreEntrySource(TypedDict, total=False):
     """持久化并返回的完整来源引用结构。"""
 
     document_id: str
     chunk_id: str
+    chunk_index: int  # additive 可选字段，提供切片序号
     start_char: int  # 文档全文 UTF-16 绝对起点
     end_char: int  # 文档全文 UTF-16 绝对终点
     excerpt: str  # 服务端从真实块文本提取，<=120 UTF-16 单位
