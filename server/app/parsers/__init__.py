@@ -1,18 +1,29 @@
-"""文档提取引擎模块导出。
+"""文档提取模块公共导出。"""
 
-对外部调用方（如 DSH 集成层）提供稳定接口：
-- `extract_document`: 统一提取函数
-- `ParsedDocument`: 结构化解析输出
-- `ParseLimits`: 资源限制与安全配额
-- `ParseError`: 统一解析异常
-"""
+from __future__ import annotations
 
+from .docx import parse_docx
 from .extractor import extract_document
-from .types import ParsedDocument, ParseError, ParseLimits
+from .pdf import parse_pdf
+from .types import (
+    DocumentWarningRecord,
+    ExtractionLimitError,
+    ParsedDocument,
+    ParseError,
+    ParseLimits,
+    WarningCode,
+    u16len,
+)
 
 __all__ = [
     "extract_document",
+    "parse_pdf",
+    "parse_docx",
     "ParsedDocument",
-    "ParseLimits",
     "ParseError",
+    "ParseLimits",
+    "ExtractionLimitError",
+    "DocumentWarningRecord",
+    "WarningCode",
+    "u16len",
 ]
