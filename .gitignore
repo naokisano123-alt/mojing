@@ -4,4 +4,8 @@ dist/
 *.tsbuildinfo
 .env*
 
+# 协作交换区（本地打包/解包，不入库）
+.incoming/
+.outgoing/
+
 qa-mobile.html
