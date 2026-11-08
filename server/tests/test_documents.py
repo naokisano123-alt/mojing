@@ -298,3 +298,27 @@ def test_data_survives_restart(db_path):
         assert again.json()["chunk_count"] == doc["chunk_count"]
         listing = second.get(f"/api/v1/worlds/{world['id']}/documents").json()
         assert listing["total"] == 1
+
+def test_pdf_between_2_and_8_mib_passes_size_gate(client):
+    """合法大小但内容损坏的 PDF：应报解析错误，而不是被 2 MiB 前置限制挡住。"""
+    world = create_world(client)
+    payload = b"%PDF-1.4\n" + b"0" * (3 * 1024 * 1024)
+    response = upload(client, world["id"], "三兆.pdf", payload)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] in {"PDF_CORRUPTED", "EMPTY_DOCUMENT"}
+
+
+def test_pdf_over_8_mib_rejected_with_format_limit(client):
+    world = create_world(client)
+    payload = b"%PDF-1.4\n" + b"0" * (8 * 1024 * 1024 + 16)
+    response = upload(client, world["id"], "超大.pdf", payload)
+    assert response.status_code == 413
+    assert response.json()["error"]["details"]["max_bytes"] == 8 * 1024 * 1024
+
+
+def test_txt_over_2_mib_still_rejected(client):
+    world = create_world(client)
+    payload = b"a" * (2 * 1024 * 1024 + 16)
+    response = upload(client, world["id"], "大.txt", payload, "text/plain")
+    assert response.status_code == 413
+    assert response.json()["error"]["details"]["max_bytes"] == 2 * 1024 * 1024

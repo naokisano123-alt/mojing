@@ -146,7 +146,9 @@ export interface SearchResultItem {
   start_char: number;
   end_char: number;
   snippet: string;
-  /** 命中在块内的区间（UTF-16），无法定位时为 null */
+  /** 命中字段：正文 / 标题 / 文件名（契约 M1_R3_API §2.3） */
+  match_field: 'text' | 'heading' | 'filename';
+  /** 命中在块内的区间（UTF-16），非正文命中时为 null */
   match_start: number | null;
   match_end: number | null;
 }

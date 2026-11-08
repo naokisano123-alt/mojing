@@ -389,15 +389,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         file: UploadFile = File(...),
         allow_duplicate: bool = Query(False),
     ) -> dict[str, Any]:
-        data = await file.read(cfg.max_upload_bytes + 1)
-        if len(data) > cfg.max_upload_bytes:
-            raise ApiError(
-                413,
-                "FILE_TOO_LARGE",
-                f"文件超过 {cfg.max_upload_bytes // 1024 // 1024} MiB 上限。",
-                {"max_bytes": cfg.max_upload_bytes, "received_bytes": len(data)},
-            )
-
+        # 先按扩展名确定该格式的真实上限，再按上限限量读取（B1）
         filename = _sanitize_filename(file.filename)
         suffix = Path(filename).suffix.lower()
         if suffix not in ALLOWED_SUFFIXES:
@@ -406,6 +398,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "UNSUPPORTED_MEDIA_TYPE",
                 "本批支持 TXT、Markdown、PDF 与 DOCX 文件。",
                 {"allowed": list(ALLOWED_SUFFIXES)},
+            )
+
+        limit = cfg.max_upload_bytes if suffix in TEXT_SUFFIXES else cfg.max_doc_bytes
+        data = await file.read(limit + 1)
+        if len(data) > limit:
+            raise ApiError(
+                413,
+                "FILE_TOO_LARGE",
+                f"文件超过 {limit // 1024 // 1024} MiB 上限。",
+                {"max_bytes": limit, "received_bytes": len(data)},
             )
 
         if suffix in TEXT_SUFFIXES:
@@ -443,6 +445,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         if not text.strip():
             raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")
+
+        text_units = u16len(text)
+        if text_units > cfg.max_text_units:
+            raise ApiError(
+                422,
+                "EXTRACTION_LIMIT",
+                f"提取文本超过 {cfg.max_text_units} 个 UTF-16 单位的上限。",
+                {"limit": cfg.max_text_units, "actual": text_units},
+            )
 
         digest = hashlib.sha256(data).hexdigest()
         chunks = chunk_text(text)
@@ -666,6 +677,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "start_char": item["start_char"],
                 "end_char": item["end_char"],
                 "snippet": item["snippet"],
+                "match_field": item.get("match_field", "text"),
                 "match_start": item.get("match_chunk_start_char"),
                 "match_end": item.get("match_chunk_end_char"),
             }
