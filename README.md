@@ -128,3 +128,8 @@ cd server
 ```
 
 测试：`cd server` 后 `..\.venv\Scripts\python.exe -m pytest`（37 例）。M0 演示数据（localStorage `mojing-m0-v1`）与后端 SQLite 完全隔离，互不迁移、互不覆盖。
+
+
+## 当前四助手协作任务
+
+M1-A/B 已合并。第二轮按 DeepSeekHarness + Gemini（Marcin/Li/Ma）分工，请从 [最新任务总表](docs/collaboration/ROUND2.md) 开始，先核对快照 SHA 与文件所有权，禁止旧代码包整包覆盖。

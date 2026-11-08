@@ -1,3 +1,17 @@
+# 墨境｜协作任务入口
+
+**当前生效：[第二轮四助手任务总表](ROUND2.md)**。人员为 DeepSeekHarness、Gemini（Marcin）、Gemini（Li）、Gemini（Ma）；三个 Gemini 使用同一完整快照，文件包均经用户交 DeepSeekHarness 核验集成。先读总表再读个人任务书。
+
+- [本轮仓库审阅](ROUND2_REVIEW.md)
+- [DeepSeekHarness](R2_DEEPSEEKHARNESS.md)
+- [Gemini（Marcin）](R2_GEMINI_MARCIN.md)
+- [Gemini（Li）](R2_GEMINI_LI.md)
+- [Gemini（Ma）](R2_GEMINI_MA.md)
+
+---
+
+以下为上一轮协议存档；人员、阶段、文件所有权如与本轮冲突，以 ROUND2.md 为准。禁止从旧快照整包覆盖最新代码。
+
 # 墨境｜三方协作与防覆写协议
 
 日期：2026-11-08。代码仓库：naokisano123-alt/mojing（公开）。分配任务时的 GitHub 功能基线：06088df564033a8903187489d3d1549971ada50d。
