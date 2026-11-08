@@ -41,3 +41,6 @@ Codex独立接手。四端点和预览界面已接通；缺失/过期session统�
 明确finish_reason=length/content_filter/tool_calls等不能成功；缺省字段兼容，仍须非空文本及草案结构/引用校验。生成max_tokens=2048，测试32，不自动重试或降级。metadata additive的selection_reason/truncated描述选择过程，不是相关性评分。
 
 前端session操作可接AbortSignal；取消等待不证明会话未创建，过时创建尽力清理；删除失败必须可重试。POST结果始终为预览，无正式状态提交。下一阶段M2-B另行定义回合协议。
+
+
+角色旅程扩展：仅当程序提供character上下文时，允许可选proposed_changes，字段/结算见[CHARACTER_STATE](CHARACTER_STATE.md)。纯叙事实验与无角色旅程仍使用原先两字段约束，模型仍不得直接写库。

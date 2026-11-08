@@ -9,7 +9,7 @@ React + TypeScript + Vite + Tailwind CSS，配合 FastAPI + SQLite 本地资料�
 
 - **M2-A 叙事实验**：资料库内可选Fake测试或配置OpenAI兼容服务生成Live草案；支持连接测试、停止/重试和引用原文回跳。Key仅放后端内存会话，闲置30分钟后失效。
 
-**冒险记录**支持连续剧情：草案经确认后持久保存，下一步行动参考已确认历史。当前不结算角色属性、金钱或时间，也不修改M0存档。Python后端尚未部署；现有静态站点不代表完整M2版本。PDF/DOCX无OCR，检索为字面匹配。
+**冒险记录**支持连续剧情：草案经确认后持久保存，下一步行动参考已确认历史。新旅程可初始化独立角色，并选择采用模型提出且经范围校验的状态变化；M0存档不受影响。Python后端尚未部署；现有静态站点不代表完整M2版本。PDF/DOCX无OCR，检索为字面匹配。
 
 ## 启动
 
@@ -80,6 +80,12 @@ M0使用浏览器localStorage键mojing-m0-v1；M1使用SQLite，二者隔离。�
 
 接口与限制见[M2-B说明](docs/contracts/M2_B_API.md)，验证见[本轮交付](docs/reports/codex-adventure-history.md)。
 
+## 角色与状态
+
+新建旅程可填写角色姓名、起始位置与铜币；体力/精神默认100。生成后的状态提议单独标明“尚未生效”，默认只保存叙事；勾选采用后，确认按钮才同时保存状态变化。每回合留有状态前后快照，重复确认不会重复扣款或加时间。
+
+旧旅程继续原有叙事，新建旅程才能初始化角色。当前只校验数值范围，不判断行动的经济/移动合理性，需自行核对提议；背包、技能、战斗和死亡等尚未实现。[接口与边界](docs/contracts/CHARACTER_STATE.md) · [本轮验证](docs/reports/codex-character-state.md)。
+
 ## 当前进度
 
-Codex已独立接手，旧四助手任务仅作历史；不再等待交包。见[本轮交付](docs/reports/codex-solo-m2.md)、[M2验收](docs/M2_ACCEPTANCE.md)与[下一阶段](docs/M2_PLAN.md)。M0/M1原数据保留，叙事回合已能确认保存，角色与世界状态结算留待下一阶段。
+Codex已独立接手，旧四助手任务仅作历史；不再等待交包。见[本轮交付](docs/reports/codex-solo-m2.md)、[M2验收](docs/M2_ACCEPTANCE.md)与[下一阶段](docs/M2_PLAN.md)。M0/M1原数据保留，叙事回合已能确认保存，角色基础账本已接通，正式行动与世界规则仍待后续实现。

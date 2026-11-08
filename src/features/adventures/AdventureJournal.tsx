@@ -6,6 +6,7 @@ import {
   type Run,
   type Turn,
 } from "./api";
+import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
 
@@ -22,6 +23,10 @@ export function AdventureJournal({
   onOpenSource: (source: NarrationSource) => void;
   api?: typeof adventureApi;
 }) {
+  const [characterName, setCharacterName] = useState("旅人");
+  const [initialCoins, setInitialCoins] = useState(0);
+  const [initialLocation, setInitialLocation] = useState("起点");
+  const [applyChanges, setApplyChanges] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]),
     [run, setRun] = useState<Detail | null>(null);
@@ -29,6 +34,7 @@ export function AdventureJournal({
     [mode, setMode] = useState<"fake" | "live">("fake");
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
+  useEffect(() => setApplyChanges(false), [draft?.id]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const epoch = useRef(0),
@@ -149,7 +155,9 @@ export function AdventureJournal({
     operate(async () => {
       if (!run || !draft) return;
       const generation = epoch.current;
-      await api.commit(run.id, draft.id);
+      if (applyChanges)
+        await api.commit(run.id, draft.id, { apply_changes: true });
+      else await api.commit(run.id, draft.id);
       if (valid(generation)) {
         await refresh(run.id);
         if (valid(generation)) setAction("");
@@ -166,6 +174,16 @@ export function AdventureJournal({
   const renderResult = (result: Turn["result"]) => (
     <>
       <div className="journal-prose">{result.narrative}</div>
+      {result.state_after && (
+        <CharacterCard
+          state={result.state_after}
+          title={
+            result.changes_accepted
+              ? "本回合确认后的状态"
+              : "本回合仅记录叙事，状态保持原样"
+          }
+        />
+      )}
       <div className="journal-sources">
         {result.references.map((id) => {
           const source = result.sources.find((s) => s.source_id === id);
@@ -186,7 +204,7 @@ export function AdventureJournal({
   return (
     <section className="adventure-journal" aria-label="冒险记录">
       <p className="muted">
-        连续剧情仅参考已确认回合。此阶段记录叙事，不结算属性、时间或财物。
+        模型只提交状态提议，程序校验后由你决定是否采用。确认回合才会一起保存叙事与状态。
       </p>
       <div className="journal-create">
         <input
@@ -195,6 +213,33 @@ export function AdventureJournal({
           maxLength={80}
           onChange={(e) => setName(e.target.value)}
         />
+        <input
+          aria-label="角色姓名"
+          value={characterName}
+          maxLength={80}
+          onChange={(e) => setCharacterName(e.target.value)}
+        />
+        <input
+          aria-label="初始位置"
+          value={initialLocation}
+          maxLength={80}
+          onChange={(e) => setInitialLocation(e.target.value)}
+        />
+        <label>
+          初始铜币
+          <input
+            aria-label="初始铜币"
+            type="number"
+            min={0}
+            max={1000000000}
+            step={1}
+            value={initialCoins}
+            onChange={(e) => setInitialCoins(Number(e.target.value))}
+          />
+        </label>
+        <p className="muted">
+          新角色体力100、精神100，累计耗时从0分钟开始。初始化只在创建旅程时生效。
+        </p>
         <select
           aria-label="新冒险模式"
           value={mode}
@@ -209,7 +254,11 @@ export function AdventureJournal({
           onClick={() =>
             operate(async () => {
               const generation = epoch.current,
-                created = await api.create(worldId, name, mode);
+                created = await api.create(worldId, name, mode, {
+                  name: characterName,
+                  location: initialLocation,
+                  coins: initialCoins,
+                });
               if (valid(generation)) {
                 setRuns((prev) => [created, ...prev]);
                 await refresh(created.id);
@@ -282,6 +331,13 @@ export function AdventureJournal({
           >
             刷新记录 / 恢复草案
           </button>
+          {run.character ? (
+            <CharacterCard state={run.character} title="当前角色状态" />
+          ) : (
+            <p className="muted">
+              旧旅程未初始化角色，继续仅记录叙事。新建旅程可使用角色状态。
+            </p>
+          )}
           {run.turns[0]?.sequence > 1 && (
             <button className="text-button" disabled={busy} onClick={older}>
               更早的回合
@@ -307,6 +363,23 @@ export function AdventureJournal({
               <strong>待确认草案 · 尚未写入回合</strong>
               <p>{draft.action}</p>
               {renderResult(draft.result)}
+              {draft.result.projected_state && (
+                <>
+                  <CharacterCard
+                    state={draft.result.projected_state}
+                    title="模型状态提议 · 尚未生效"
+                  />
+                  <label className="journal-apply">
+                    <input
+                      type="checkbox"
+                      checked={applyChanges}
+                      disabled={busy}
+                      onChange={(e) => setApplyChanges(e.target.checked)}
+                    />
+                    采用这份状态提议（默认只保存叙事）
+                  </label>
+                </>
+              )}
               <button className="primary" disabled={busy} onClick={accept}>
                 确认并写入回合
               </button>

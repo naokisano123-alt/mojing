@@ -1,4 +1,6 @@
 import json
+from dataclasses import asdict
+from .state import character, project, StateError
 import re
 import time
 from uuid import uuid4
@@ -35,16 +37,26 @@ def get_adventure(conn, adventure_id):
     if row is None:
         raise ApiError(404, 'ADVENTURE_NOT_FOUND', '冒险记录不存在。')
     world_active(conn, row['world_id'])
-    return dict(row)
+    return run_dict(row)
 
 
-def create_adventure(conn, world_id, name, mode):
+def run_dict(row):
+    value = dict(row)
+    value['character'] = json.loads(value.pop('character_json', None) or 'null')
+    return value
+
+
+def create_adventure(conn, world_id, name, mode, initial_character=None):
     world_active(conn, world_id)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or mode not in ('fake', 'live'):
         raise ApiError(422, 'VALIDATION_ERROR', '请填写1–80字的名称并选择生成模式。')
+    try:
+        state = asdict(character(initial_character if initial_character is not None else {}))
+    except (StateError, TypeError) as exc:
+        raise ApiError(422, 'CHARACTER_INVALID', str(exc)) from None
     id = str(uuid4())
-    conn.execute('INSERT INTO adventures(id,world_id,name,mode,created_at) VALUES(?,?,?,?,?)',
-                 (id, world_id, name.strip(), mode, time.time()))
+    conn.execute('INSERT INTO adventures(id,world_id,name,mode,created_at,character_json) VALUES(?,?,?,?,?,?)',
+                 (id, world_id, name.strip(), mode, time.time(), json.dumps(state, ensure_ascii=False)))
     return get_adventure(conn, id)
 
 
@@ -101,19 +113,38 @@ def fail(conn, adventure_id, id):
     conn.execute("UPDATE adventure_drafts SET status='failed' WHERE adventure_id=? AND id=? AND status='pending'", (adventure_id, id))
 
 
-def commit(conn, adventure_id, id):
+def commit(conn, adventure_id, id, apply_changes=False):
+    if type(apply_changes) is not bool:
+        raise ApiError(422, 'VALIDATION_ERROR', 'apply_changes须为布尔值。')
     conn.execute('BEGIN IMMEDIATE')
     run = get_adventure(conn, adventure_id)
     draft = get_draft(conn, adventure_id, id)
     if draft['status'] == 'committed':
+        saved = conn.execute('SELECT result FROM adventure_turns WHERE adventure_id=? AND draft_id=?', (adventure_id,id)).fetchone()
+        if json.loads(saved['result']).get('changes_accepted', False) != apply_changes:
+            raise ApiError(409, 'COMMIT_CONFLICT', '重复确认不能改变已保存的状态选择。')
         return run  # Lost response retries never append another turn.
     if draft['status'] != 'ready':
         raise ApiError(409, 'DRAFT_NOT_READY', '草案尚未就绪或已失败。')
-    cur = conn.execute('UPDATE adventures SET revision=revision+1 WHERE id=? AND revision=?', (adventure_id, draft['base_revision']))
+    result = dict(draft['result'])
+    before = run['character']
+    if result.get('state_before') != before:
+        raise ApiError(409, 'STATE_CONFLICT', '角色状态已变化，请重新生成。')
+    after = before
+    if apply_changes:
+        if before is None or result.get('proposed_changes') is None:
+            raise ApiError(422, 'STATE_PROPOSAL_MISSING', '本草案没有可采用的状态提议。')
+        try:
+            after = asdict(project(character(before), result['proposed_changes']))
+        except StateError as exc:
+            raise ApiError(422, 'STATE_INVALID', str(exc)) from None
+    result.update(state_before=before, state_after=after, changes_accepted=apply_changes)
+    cur = conn.execute('UPDATE adventures SET revision=revision+1,character_json=? WHERE id=? AND revision=?',
+                       (json.dumps(after, ensure_ascii=False) if after else None, adventure_id, draft['base_revision']))
     if cur.rowcount != 1:
         raise ApiError(409, 'ADVENTURE_CONFLICT', '已有另一回合被确认，请重新生成。')
     conn.execute('INSERT INTO adventure_turns VALUES(?,?,?,?,?,?)',
-                 (adventure_id, run['revision'] + 1, id, draft['action'], json.dumps(draft['result'], ensure_ascii=False), time.time()))
+                 (adventure_id, run['revision'] + 1, id, draft['action'], json.dumps(result, ensure_ascii=False), time.time()))
     conn.execute("UPDATE adventure_drafts SET status='committed' WHERE adventure_id=? AND id=?", (adventure_id, id))
     return get_adventure(conn, adventure_id)
 
