@@ -1,3 +1,5 @@
+> 当前阶段：M2-A开发中。[第六轮独立任务](docs/collaboration/ROUND6.md) · [M2接口](docs/contracts/M2_A_API.md) · [Codex本轮交付](docs/reports/codex-m2-core.md)。用户已反馈安卓已测流程正常；目前新增草案校验/Fake核心，真实模型与预览界面尚未接线。
+
 # 墨境 · 手机端文字冒险世界模拟器
 
 React + TypeScript + Vite + Tailwind CSS，配合 FastAPI + SQLite 本地资料库。优先适配安卓手机浏览器，支持浅色和深色主题。
@@ -64,6 +66,6 @@ M0使用浏览器localStorage键mojing-m0-v1；M1使用SQLite，二者隔离。�
 
 第五轮三包已通过PR #6合并，详情见[R5集成报告](docs/reports/r5-integration.md)。本次复核补齐调用方事务回滚保护，见[审阅与整理报告](docs/reports/codex-r5-review.md)。
 
-四助手任务入口：[ROUND5](docs/collaboration/ROUND5.md)。已有成果优先核对集成报告，避免重复实施；工作包必须带真实快照SHA和哈希清单，由DeepSeekHarness三方合并，禁止旧ZIP直接覆盖。
+四助手任务入口：[ROUND6](docs/collaboration/ROUND6.md)。已有成果优先核对集成报告，避免重复实施；工作包必须带真实快照SHA和哈希清单，由DeepSeekHarness三方合并，禁止旧ZIP直接覆盖。
 
 [项目说明](docs/PROJECT_STATUS.md) · [M2提案](docs/M2_PLAN.md) · [M0历史原型记录](docs/history/M0_README.md)。M2仍处于规划阶段。
