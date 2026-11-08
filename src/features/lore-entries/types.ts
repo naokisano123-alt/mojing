@@ -89,7 +89,8 @@ export interface LoreEntriesPanelProps {
   api: LoreEntriesPanelApi;
   onOpenSource?: (target: {
     documentId: string;
-    chunkIndex: number;
+    chunkId?: string;
+    chunkIndex?: number;
     startChar: number;
     endChar: number;
   }) => void;
@@ -108,3 +109,4 @@ export const ENTRY_STATUS_LABELS: Record<EntryStatus, string> = {
   draft: '草稿',
   confirmed: '已确认',
 };
+

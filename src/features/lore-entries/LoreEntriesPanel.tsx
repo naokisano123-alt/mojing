@@ -750,7 +750,7 @@ export function LoreEntriesPanel({
                                 onClick={() => {
                                   onOpenSource({
                                     documentId: src.document_id,
-                                    chunkIndex: 0,
+                                    chunkId: src.chunk_id,
                                     startChar: src.start_char,
                                     endChar: src.end_char,
                                   });
@@ -1093,3 +1093,4 @@ export function LoreEntriesPanel({
     </div>
   );
 }
+

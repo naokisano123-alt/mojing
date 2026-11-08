@@ -58,7 +58,7 @@ export function WorldLoreView({
   const [viewingDoc, setViewingDoc] = useState<{
     documentId: string;
     mode?: 'chunks' | 'raw';
-    source?: { chunkIndex?: number; startChar?: number; endChar?: number };
+    source?: { chunkId?: string; chunkIndex?: number; startChar?: number; endChar?: number };
   } | null>(null);
 
   // M0 降级试玩确认弹窗 (契约 §7.1)
@@ -316,6 +316,7 @@ export function WorldLoreView({
               documentId: target.documentId,
               mode: 'chunks',
               source: {
+                chunkId: target.chunkId,
                 chunkIndex: target.chunkIndex,
                 startChar: target.startChar,
                 endChar: target.endChar,
