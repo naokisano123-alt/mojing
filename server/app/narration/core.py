@@ -33,9 +33,16 @@ class ContextSource:
 
 
 @dataclass(frozen=True)
+class HistoryTurn:
+    action: str
+    narrative: str
+
+
+@dataclass(frozen=True)
 class NarrationRequest:
     action: str
     sources: tuple[ContextSource, ...] = ()
+    history: tuple[HistoryTurn, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -49,6 +56,8 @@ def validate_request(request: NarrationRequest) -> None:
         raise DraftError('ACTION_INVALID', '请先输入行动。')
     if _units(request.action) > MAX_ACTION_UNITS:
         raise DraftError('ACTION_INVALID', '行动超过 2000 个 UTF-16 单位。')
+    if len(request.history) > 6 or sum(_units(h.action) + _units(h.narrative) for h in request.history) > 12000:
+        raise DraftError('CONTEXT_INVALID', '历史剧情超过上下文预算。')
     if len(request.sources) > MAX_SOURCES:
         raise DraftError('CONTEXT_INVALID', '引用资料过多。')
     ids: set[str] = set()

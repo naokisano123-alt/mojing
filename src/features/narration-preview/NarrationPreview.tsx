@@ -28,12 +28,18 @@ export function NarrationPreview({
   api,
   onOpenSource,
   initialMode = 'fake',
+  initialSession = null,
+  onSessionChange,
 }: NarrationPreviewProps) {
   // 模式：fake | live
   const [mode, setMode] = useState<NarrationMode>(initialMode);
 
   // Live 模式会话状态（仅保存在组件内存与状态中，严禁持久化到 localStorage）
-  const [session, setSession] = useState<ModelSessionResponse | null>(null);
+  const [session, setSessionState] = useState<ModelSessionResponse | null>(initialSession);
+  const setSession = (next: ModelSessionResponse | null) => {
+    setSessionState(next);
+    onSessionChange?.(next);
+  };
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
   const [modelName, setModelName] = useState('gpt-4o-mini');
   const [apiKey, setApiKey] = useState('');

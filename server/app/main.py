@@ -964,6 +964,8 @@ def create_app(
             "offset": result["offset"],
         }
 
+    from .adventures.routes import register_routes
+    register_routes(app, cfg, _store, _context_builder)
     return app
 
 
