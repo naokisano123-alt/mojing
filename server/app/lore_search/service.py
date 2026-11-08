@@ -1,11 +1,13 @@
 """中文资料检索服务核心实现。
 
-特性：
+特性与规范依据（ROUND3.md、M1_R3_API.md §2.3，关闭 B6–B8）：
 1. 参数化 SQL + SQLite instr 字面子串检索，支持中文 1–2 字短词、人名、标点、emoji及各种符号。
-2. 严格排除软删除世界（worlds.deleted_at IS NOT NULL）与软删除文档（documents.deleted_at IS NOT NULL）。
-3. 严格数据隔离：只查询参数中明确指定的 world_id，跨世界零泄漏。
-4. 准确定位并计算 UTF-16 绝对起点/终点坐标（用于前端高亮与跳转）。
-5. 明确生成摘要 snippet，不把摘要冒充为全文。
+2. 修复 B6：heading_path 检索使用 json_each 展开数组元素逐项比对，彻底杜绝匹配 JSON 语法符号（如 '['、'"'、','）；
+   大小写转换严格采用 ASCII 不区分策略，与 SQLite 内置 lower() 语义完全一致，杜绝 Unicode lower() 产生长度扩增导致 UTF-16 偏移错位。
+3. 修复 B7：正文命中返回真实 UTF-16 区间；标题或文件名命中时 match_start/end 与 match_chunk_start/end 严格返回 None (JSON null)，绝不虚构前 80 字或补 0。
+4. 修复 B8：排序规则严格对齐契约：match_field 优先级 text(1) > heading(2) > filename(3)，次级排序按 document_id ASC, chunk_index ASC。
+5. 严格排除软删除世界（worlds.deleted_at IS NOT NULL）与软删除文档（documents.deleted_at IS NOT NULL）。
+6. 严格数据隔离：只查询参数中明确指定的 world_id，跨世界零泄漏。
 """
 
 from __future__ import annotations
@@ -26,6 +28,16 @@ MAX_QUERY_LENGTH = 100
 DEFAULT_LIMIT = 20
 MAX_LIMIT = 100
 SNIPPET_CONTEXT_CHARS = 45
+
+# ASCII 大小写转换表：A-Z -> a-z，其余字符原样保留（与 SQLite lower() 行为完全一致，且长度 1:1 恒等）
+_ASCII_LOWER_TABLE = str.maketrans(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz"
+)
+
+
+def _ascii_lower(text: str) -> str:
+    """仅对 ASCII 字符做小写转换，保证字符数、码点与 UTF-16 偏移绝不偏移。"""
+    return text.translate(_ASCII_LOWER_TABLE)
 
 
 def u16len(text: str) -> int:
@@ -110,14 +122,16 @@ def _build_snippet_and_coords(
     chunk_start_char: int,
     chunk_end_char: int,
     query: str,
-) -> tuple[str, MatchField, int, int, int, int]:
+) -> tuple[str, MatchField, int | None, int | None, int | None, int | None]:
     """生成摘要片段及 UTF-16 坐标。
 
-    返回:
-    (snippet, match_field, match_start_char, match_end_char, match_chunk_start_char, match_chunk_end_char)
+    契约规范（M1_R3_API.md §2.3）：
+    - 正文命中：match_field='text'，返回真实计算的 UTF-16 绝对与相对坐标；
+    - 标题命中：match_field='heading'，坐标统一返回 None，禁止补 0 或虚构前 80 字；
+    - 文件名命中：match_field='filename'，坐标统一返回 None，禁止补 0 或虚构前 80 字。
     """
-    lower_text = chunk_text.lower()
-    lower_query = query.lower()
+    lower_text = _ascii_lower(chunk_text)
+    lower_query = _ascii_lower(query)
     pos = lower_text.find(lower_query)
 
     if pos != -1:
@@ -144,32 +158,43 @@ def _build_snippet_and_coords(
             chunk_rel_end,
         )
 
-    # 检查标题路径是否命中
-    heading_str = " > ".join(heading_path)
-    if lower_query in heading_str.lower():
-        body_preview = chunk_text[:80] + ("..." if len(chunk_text) > 80 else "")
-        snippet = f"【标题命中: {heading_str}】 {body_preview}"
-        rel_end = min(u16len(chunk_text), u16len(chunk_text[:80]))
-        return (
-            snippet,
-            "heading",
-            chunk_start_char,
-            chunk_start_char + rel_end,
-            0,
-            rel_end,
-        )
+    # 检查标题路径是否命中（逐个标题项精确检查，杜绝 JSON 符号伪命中）
+    for heading in heading_path:
+        if lower_query in _ascii_lower(heading):
+            heading_str = " > ".join(heading_path)
+            body_preview = chunk_text[:80] + ("..." if len(chunk_text) > 80 else "")
+            snippet = f"【标题命中: {heading_str}】 {body_preview}"
+            return (
+                snippet,
+                "heading",
+                None,
+                None,
+                None,
+                None,
+            )
 
     # 文档名称命中
+    if lower_query in _ascii_lower(filename):
+        body_preview = chunk_text[:80] + ("..." if len(chunk_text) > 80 else "")
+        snippet = f"【文档命中: {filename}】 {body_preview}"
+        return (
+            snippet,
+            "filename",
+            None,
+            None,
+            None,
+            None,
+        )
+
+    # 兜底降级
     body_preview = chunk_text[:80] + ("..." if len(chunk_text) > 80 else "")
-    snippet = f"【文档命中: {filename}】 {body_preview}"
-    rel_end = min(u16len(chunk_text), u16len(chunk_text[:80]))
     return (
-        snippet,
-        "filename",
-        chunk_start_char,
-        chunk_start_char + rel_end,
-        0,
-        rel_end,
+        body_preview,
+        "text",
+        None,
+        None,
+        None,
+        None,
     )
 
 
@@ -202,6 +227,7 @@ def search_chunks(
     cur = conn.cursor()
 
     # 统计总数：软删除排除 + world_id 隔离
+    # 修复 B6：heading_path 检索使用 json_each 展开元素，防止匹配 JSON 存储符号 '['、'"'、','
     count_sql = """
     SELECT COUNT(*) AS total_count
     FROM chunks c
@@ -212,7 +238,10 @@ def search_chunks(
       AND d.deleted_at IS NULL
       AND (
           instr(lower(c.text), lower(?)) > 0
-          OR instr(lower(c.heading_path), lower(?)) > 0
+          OR EXISTS (
+              SELECT 1 FROM json_each(c.heading_path)
+              WHERE instr(lower(json_each.value), lower(?)) > 0
+          )
           OR instr(lower(d.filename), lower(?)) > 0
       )
     """
@@ -228,7 +257,8 @@ def search_chunks(
             "offset": valid_offset,
         }
 
-    # 检索条目，根据正文匹配度优先排序，分页稳定
+    # 检索条目
+    # 修复 B8：排序严格为 text(1) > heading(2) > filename(3)，之后按 c.document_id ASC, c.chunk_index ASC 稳定分页
     query_sql = """
     SELECT
         c.id AS chunk_id,
@@ -248,13 +278,19 @@ def search_chunks(
       AND d.deleted_at IS NULL
       AND (
           instr(lower(c.text), lower(?)) > 0
-          OR instr(lower(c.heading_path), lower(?)) > 0
+          OR EXISTS (
+              SELECT 1 FROM json_each(c.heading_path)
+              WHERE instr(lower(json_each.value), lower(?)) > 0
+          )
           OR instr(lower(d.filename), lower(?)) > 0
       )
     ORDER BY
         CASE
             WHEN instr(lower(c.text), lower(?)) > 0 THEN 1
-            WHEN instr(lower(c.heading_path), lower(?)) > 0 THEN 2
+            WHEN EXISTS (
+                SELECT 1 FROM json_each(c.heading_path)
+                WHERE instr(lower(json_each.value), lower(?)) > 0
+            ) THEN 2
             ELSE 3
         END ASC,
         c.document_id ASC,
