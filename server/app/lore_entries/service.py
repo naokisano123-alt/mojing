@@ -45,6 +45,14 @@ MAX_TITLE_LENGTH = 80
 MAX_SUMMARY_LENGTH = 500
 
 
+def _begin_savepoint(conn: sqlite3.Connection, name: str) -> None:
+    """Keep transaction ownership with the caller, even on a fresh connection."""
+    # RELEASE of an outermost SAVEPOINT commits; retain an outer transaction.
+    if not conn.in_transaction:
+        conn.execute("BEGIN")
+    conn.execute(f"SAVEPOINT {name}")
+
+
 def _iso_now() -> str:
     """生成带 UTC 时区的标准 ISO 8601 时间戳。"""
     return datetime.now(timezone.utc).isoformat()
@@ -352,7 +360,7 @@ def create_entry(
     # 使用可嵌套 SAVEPOINT 保证原子性
     sp_name = f"sp_create_entry_{uuid.uuid4().hex}"
     cur = conn.cursor()
-    cur.execute(f"SAVEPOINT {sp_name}")
+    _begin_savepoint(conn, sp_name)
     try:
         prepared_sources = [
             _validate_and_prepare_source(conn, world_id, s) for s in raw_sources
@@ -569,7 +577,7 @@ def update_entry(
 
     sp_name = f"sp_update_entry_{uuid.uuid4().hex}"
     cur = conn.cursor()
-    cur.execute(f"SAVEPOINT {sp_name}")
+    _begin_savepoint(conn, sp_name)
     try:
         # 查询当前条目最新数据
         cur.execute(
@@ -716,7 +724,7 @@ def delete_entry(
 
     sp_name = f"sp_delete_entry_{uuid.uuid4().hex}"
     cur = conn.cursor()
-    cur.execute(f"SAVEPOINT {sp_name}")
+    _begin_savepoint(conn, sp_name)
     try:
         cur.execute(
             "SELECT id, world_id, revision, deleted_at FROM lore_entries WHERE id = ?",
@@ -772,3 +780,4 @@ def delete_entry(
         cur.execute(f"ROLLBACK TO {sp_name}")
         cur.execute(f"RELEASE {sp_name}")
         raise
+
