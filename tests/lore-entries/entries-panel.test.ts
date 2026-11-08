@@ -8,6 +8,8 @@ import type {
   LoreEntriesPanelApi,
   EntryType,
   EntryStatus,
+  DraftStoreValue,
+  LoreEntryDraftStore,
 } from '../../src/features/lore-entries/types.ts';
 
 const ENTRY_TYPE_LABELS: Record<EntryType, string> = {
@@ -70,58 +72,247 @@ test('pagination and filter parameters calculate correct query limits and offset
   });
 });
 
-test('local draft preservation prevents losing user input on cancel or network errors', () => {
-  const draftsMap = new Map<string, LoreEntryDraft>();
+test('draftStore preserves draft and baseRevision across lifecycle', () => {
+  const storeMap = new Map<string, DraftStoreValue>();
+  const draftStore: LoreEntryDraftStore = {
+    get: (key: string) => storeMap.get(key),
+    set: (key: string, val: DraftStoreValue) => { storeMap.set(key, val); },
+    delete: (key: string) => { storeMap.delete(key); },
+  };
+
   const worldId = 'world-alpha';
   const entryId = 'entry-123';
   const draftKey = `${worldId}:${entryId}`;
 
-  // 模拟用户在编辑时输入了内容
   const dirtyDraft: LoreEntryDraft = {
+    type: 'location',
+    title: '旧港暗礁',
+    summary: '退潮时隐约可见的黑礁石',
+    status: 'draft',
+    source_links: [
+      {
+        document_id: 'doc-1',
+        chunk_id: 'chk-1',
+        start_char: 10,
+        end_char: 50,
+      },
+    ],
+  };
+
+  // 保存草稿，附带 baseRevision: 2
+  draftStore.set(draftKey, { draft: dirtyDraft, baseRevision: 2 });
+  assert.equal(storeMap.has(draftKey), true);
+
+  // 恢复草稿
+  const saved = draftStore.get(draftKey);
+  assert.ok(saved);
+  assert.equal(saved.draft.title, '旧港暗礁');
+  assert.equal(saved.baseRevision, 2);
+
+  // 恢复草稿不自动绑定最新 revision（即使服务端当前已是 3）
+  const remoteRevision = 3;
+  const effectiveBase = saved.baseRevision !== null ? saved.baseRevision : remoteRevision;
+  assert.equal(effectiveBase, 2, 'baseRevision 应保留原草稿基准 2，而非被静默升级为 3');
+
+  // 保存成功后仅清除该条目草稿
+  draftStore.delete(draftKey);
+  assert.equal(storeMap.has(draftKey), false);
+});
+
+test('empty title draft is preserved when type, status, or sources are modified', () => {
+  function checkIsDirty(
+    draft: LoreEntryDraft,
+    isCreating: boolean,
+    baseline?: LoreEntry | null,
+  ): boolean {
+    if (isCreating) {
+      return (
+        draft.title.trim().length > 0 ||
+        draft.summary.trim().length > 0 ||
+        draft.type !== 'character' ||
+        draft.status !== 'draft' ||
+        draft.source_links.length > 0
+      );
+    }
+    if (!baseline) return true;
+    return (
+      draft.title !== baseline.title ||
+      draft.summary !== baseline.summary ||
+      draft.type !== baseline.type ||
+      draft.status !== baseline.status ||
+      draft.source_links.length !== baseline.source_links.length
+    );
+  }
+
+  // 新建草稿：标题为空，但用户选择了类型为 rule 且添加了引用切片
+  const emptyTitleDraft: LoreEntryDraft = {
+    type: 'rule',
+    title: '   ',
+    summary: '',
+    status: 'draft',
+    source_links: [
+      {
+        document_id: 'doc-law',
+        chunk_id: 'chk-law',
+        start_char: 0,
+        end_char: 80,
+      },
+    ],
+  };
+
+  assert.equal(checkIsDirty(emptyTitleDraft, true, null), true, '空标题但改了分类和来源也必须被视作脏草稿暂存');
+});
+
+test('PATCH delta calculation sends only changed fields and omits untouched sources', () => {
+  function computePatch(
+    formData: LoreEntryDraft,
+    baseline: LoreEntry,
+  ): Partial<LoreEntryDraft> {
+    const patch: Partial<LoreEntryDraft> = {};
+    if (formData.title.trim() !== baseline.title) {
+      patch.title = formData.title.trim();
+    }
+    if (formData.type !== baseline.type) {
+      patch.type = formData.type;
+    }
+    if (formData.status !== baseline.status) {
+      patch.status = formData.status;
+    }
+    if (formData.summary.trim() !== (baseline.summary || '')) {
+      patch.summary = formData.summary.trim();
+    }
+    const sourcesEqual =
+      formData.source_links.length === baseline.source_links.length &&
+      formData.source_links.every(
+        (s, i) =>
+          s.chunk_id === baseline.source_links[i].chunk_id &&
+          s.start_char === baseline.source_links[i].start_char &&
+          s.end_char === baseline.source_links[i].end_char,
+      );
+    if (!sourcesEqual) {
+      patch.source_links = formData.source_links;
+    }
+    return patch;
+  }
+
+  const baseline: LoreEntry = {
+    id: 'e1',
+    world_id: 'w1',
     type: 'character',
-    title: '乌木短刀之谜',
-    summary: '这是未保存的修改说明',
+    title: '旧标题',
+    summary: '原有描述',
+    status: 'confirmed',
+    revision: 2,
+    origin: 'manual',
+    source_links: [
+      {
+        document_id: 'd1',
+        chunk_id: 'c1',
+        start_char: 10,
+        end_char: 20,
+        excerpt: '证据摘录',
+        availability: 'active',
+      },
+    ],
+    needs_source_review: false,
+    created_at: '2026-11-08T00:00:00Z',
+    updated_at: '2026-11-08T00:00:00Z',
+    deleted_at: null,
+  };
+
+  // 用户仅修改了标题，未修改来源
+  const form1: LoreEntryDraft = {
+    type: 'character',
+    title: '新标题',
+    summary: '原有描述',
+    status: 'confirmed',
+    source_links: [
+      {
+        document_id: 'd1',
+        chunk_id: 'c1',
+        start_char: 10,
+        end_char: 20,
+      },
+    ],
+  };
+
+  const patch1 = computePatch(form1, baseline);
+  assert.deepEqual(patch1, { title: '新标题' });
+  assert.equal('source_links' in patch1, false, '未变动的来源切片不得被重发');
+});
+
+test('409 conflict diff detection and rebase mechanics', () => {
+  const localDraft: LoreEntryDraft = {
+    type: 'character',
+    title: '水手长阿诺（本地修改）',
+    summary: '年轻时曾去过风暴角',
     status: 'draft',
     source_links: [],
   };
+  const baseRev = 1;
 
-  // 用户点击取消或发生网络异常：暂存至 draftsMap
-  draftsMap.set(draftKey, dirtyDraft);
-  assert.equal(draftsMap.has(draftKey), true);
+  const remoteLatest: LoreEntry = {
+    id: 'e1',
+    world_id: 'w1',
+    type: 'character',
+    title: '水手长阿诺（远端已被他人更新）',
+    summary: '中年，掌舵二十年',
+    status: 'confirmed',
+    revision: 2,
+    origin: 'manual',
+    source_links: [],
+    needs_source_review: false,
+    created_at: '2026-11-08T00:00:00Z',
+    updated_at: '2026-11-08T01:00:00Z',
+    deleted_at: null,
+  };
 
-  // 再次打开该条目编辑表单：优先恢复本地草稿
-  const restored = draftsMap.get(draftKey);
-  assert.equal(restored?.title, '乌木短刀之谜');
-  assert.equal(restored?.summary, '这是未保存的修改说明');
+  // 1. 冲突发生：本地草稿与原基线保留
+  let expectedRevision = baseRev;
+  assert.equal(expectedRevision, 1);
+  assert.equal(localDraft.title, '水手长阿诺（本地修改）');
 
-  // 用户确认提交成功后：清除暂存草稿
-  draftsMap.delete(draftKey);
-  assert.equal(draftsMap.has(draftKey), false);
+  // 2. 用户对比后显式选择覆盖提交并升级基线至远端版本
+  function rebaseDraft(remote: LoreEntry) {
+    expectedRevision = remote.revision;
+  }
+  rebaseDraft(remoteLatest);
+  assert.equal(expectedRevision, 2, '显式确认后基准 revision 成功升级至 2');
+  assert.equal(localDraft.title, '水手长阿诺（本地修改）', '用户手写文字不受影响');
 });
 
-test('409 revision conflict handling detects mismatch and protects local edits', () => {
-  let formError: string | null = null;
-  let conflictData: { expectedRevision: number } | null = null;
+test('generation token isolation prevents delayed world response from polluting new world', () => {
+  let activeGeneration = 1;
+  let activeWorldId = 'world-A';
 
-  function handleUpdateError(err: { status?: number; code?: string; message?: string }, currentRevision: number) {
-    if (err.status === 409 || err.code === 'LORE_ENTRY_CONFLICT') {
-      conflictData = {
-        expectedRevision: currentRevision,
-      };
-      formError = '内容已被他人修改（版本冲突）：当前条目已被更新，请对比后重新提交。';
-    } else {
-      formError = err.message || '更新失败';
+  const responsesApplied: string[] = [];
+
+  function simulateApiResponse(gen: number, world: string, data: string) {
+    if (gen !== activeGeneration || world !== activeWorldId) {
+      // 世代不匹配或世界不匹配，丢弃
+      return;
     }
+    responsesApplied.push(data);
   }
 
-  // 模拟服务端返回 409
-  handleUpdateError({ status: 409, code: 'LORE_ENTRY_CONFLICT' }, 1);
-  assert.equal(conflictData?.expectedRevision, 1);
-  assert.match(formError || '', /版本冲突/);
+  // 发起 World A 请求
+  const reqGen = activeGeneration;
+  const reqWorld = activeWorldId;
+
+  // 用户迅速切换到 World B
+  activeGeneration += 1;
+  activeWorldId = 'world-B';
+
+  // World A 迟到响应返回
+  simulateApiResponse(reqGen, reqWorld, 'World A Items');
+  assert.deepEqual(responsesApplied, [], 'World A 的迟到响应被成功拦截，未污染 World B');
+
+  // World B 正常响应返回
+  simulateApiResponse(activeGeneration, activeWorldId, 'World B Items');
+  assert.deepEqual(responsesApplied, ['World B Items']);
 });
 
 test('source lifecycle derivation distinguishes manual entries from deleted citations', () => {
-  // 1. 无来源的人工条目
   const manualEntry: LoreEntry = {
     id: 'e1',
     world_id: 'w1',
@@ -140,7 +331,6 @@ test('source lifecycle derivation distinguishes manual entries from deleted cita
   assert.equal(manualEntry.source_links.length, 0);
   assert.equal(manualEntry.needs_source_review, false);
 
-  // 2. 包含已删除文档引用的条目
   const deletedSourceEntry: LoreEntry = {
     id: 'e2',
     world_id: 'w1',
@@ -168,19 +358,4 @@ test('source lifecycle derivation distinguishes manual entries from deleted cita
   const hasDeleted = deletedSourceEntry.source_links.some(s => s.availability === 'deleted');
   assert.equal(hasDeleted, true);
   assert.equal(deletedSourceEntry.needs_source_review, true);
-});
-
-test('switching world or unmounting cancels in-flight requests via AbortController', () => {
-  let activeController = new AbortController();
-  assert.equal(activeController.signal.aborted, false);
-
-  // 模拟切世界或组件卸载
-  function onWorldChange() {
-    if (activeController) {
-      activeController.abort();
-    }
-  }
-
-  onWorldChange();
-  assert.equal(activeController.signal.aborted, true);
 });
