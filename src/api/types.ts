@@ -219,3 +219,39 @@ export interface LoreEntryDraftPayload {
     end_char: number;
   }>;
 }
+
+/* ================= M2-A 叙事实验（M2_A_API v1.0） ================= */
+
+export type NarrationMode = 'fake' | 'live';
+
+export interface ModelSessionCreated {
+  session_id: string;
+  model: string;
+  expires_at: string;
+}
+
+export interface NarrationSourceRef {
+  selection_reason?: 'literal_match' | 'confirmed_fallback' | 'document_fallback';
+  truncated?: boolean;
+  source_id: string;
+  kind: 'chunk' | 'entry';
+  title: string;
+  document_id?: string;
+  chunk_id?: string;
+  chunk_index?: number;
+  entry_id?: string;
+}
+
+export interface NarrationPreviewRequest {
+  action: string;
+  mode: NarrationMode;
+  session_id?: string;
+}
+
+export interface NarrationPreview {
+  request_id: string;
+  mode: NarrationMode;
+  narrative: string;
+  references: string[];
+  sources: NarrationSourceRef[];
+}

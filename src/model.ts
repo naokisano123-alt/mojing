@@ -7,7 +7,19 @@ export interface Branch extends Snapshot { id: string; name: string; parent?: st
 export interface World { id: string; name: string; description: string; kind: string; documents: string[]; branches: Branch[]; active: string; saves: Save[] }
 export interface State { version: 1; worlds: World[]; current: string; theme: 'light' | 'dark' | 'system'; style: 'literary' | 'concise'; mode: 'mixed' | 'novel'; fontSize?: 16 | 18 | 20; lineHeight?: 1.9 | 2.2 | 2.5 }
 export const fateNames: Record<Fate,string> = { off: '关闭', soft: '温和', strong: '强力' };
-export const uid = () => crypto.randomUUID();
+// crypto.randomUUID 只在安全上下文（https / localhost）可用；手机通过局域网 http 访问时是 undefined。
+// 这里做降级，否则在 http://<LAN-IP> 打开会直接白屏。
+export const uid = (): string => {
+  const c = typeof crypto !== 'undefined' ? crypto : undefined;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0'));
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+};
 export function clock(t: number) { return `第 ${Math.floor(t / 1440) + 1} 日 · ${String(Math.floor(t % 1440 / 60)).padStart(2,'0')}:${String(t % 60).padStart(2,'0')}`; }
 export function snapshot(b: Branch): Snapshot { const {turns,money,energy,mind,time,location,fate}=b; return structuredClone({turns,money,energy,mind,time,location,fate}); }
 export function makeWorld(name: string, description: string, documents: string[] = [], kind = 'custom'): World {

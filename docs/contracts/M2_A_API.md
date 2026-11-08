@@ -33,3 +33,11 @@ Li：server/app/model_gateway/**，提供ModelSessionStore.create(base_url,model
 Ma：server/app/narration_context/**，提供build_context(conn,world_id,action)->ContextBundle，bundle.sources为tuple[ContextSource,...]，bundle.metadata为tuple[dict,...]，字段与HTTP sources一致。ContextError(code,message,status)。不commit、不建库、不联网。
 Marcin：src/features/narration-preview/**，导出NarrationPreview({worldId,api,onOpenSource?})；api.createSession({base_url,model,api_key}),deleteSession(id),testSession(id),preview(worldId,{action,mode,session_id?},signal?)。全部Promise；错误含code/message。包内DTO自维护，DSH负责public API映射。onOpenSource(target:{source_id,kind,document_id?,chunk_id?,chunk_index?,entry_id?})。
 DSH统一接HTTP、公用DTO与api实现，在资料库加独立实验入口；Codex核心模块只读，有问题报告，不临时绕校验。
+
+## 独立开发补充（取代R6/R7任务等待状态）
+
+Codex独立接手。四端点和预览界面已接通；缺失/过期session统一409。请求断开返回内部取消路径499（客户端已离线），停止后不返回成功；超时504并等待取消清理。
+
+明确finish_reason=length/content_filter/tool_calls等不能成功；缺省字段兼容，仍须非空文本及草案结构/引用校验。生成max_tokens=2048，测试32，不自动重试或降级。metadata additive的selection_reason/truncated描述选择过程，不是相关性评分。
+
+前端session操作可接AbortSignal；取消等待不证明会话未创建，过时创建尽力清理；删除失败必须可重试。POST结果始终为预览，无正式状态提交。下一阶段M2-B另行定义回合协议。

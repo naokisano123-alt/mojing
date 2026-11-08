@@ -404,3 +404,10 @@ describe('LoreEntriesPanel UI & Lifecycle Tests', () => {
     });
   });
 });
+
+it('opens an exact cited entry even when it is absent from the list page', async () => {
+  const api = createMockApi();
+  render(<LoreEntriesPanel worldId="w1" api={api} initialEntryId="cited-entry" />);
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('cited-entry', expect.any(AbortSignal)));
+  expect(await screen.findByText('旧摘要')).toBeTruthy();
+});

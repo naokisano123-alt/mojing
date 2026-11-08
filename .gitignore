@@ -19,3 +19,5 @@ server/data/
 .outgoing/
 
 qa-mobile.html
+# 用户实验资料（本地导入用，不入公开仓库）
+worlds/

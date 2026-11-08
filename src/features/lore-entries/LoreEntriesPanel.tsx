@@ -62,6 +62,7 @@ export function LoreEntriesPanel({
   api,
   draftStore,
   onOpenSource,
+  initialEntryId,
   className = '',
 }: LoreEntriesPanelProps) {
   // 列表与分页状态
@@ -192,6 +193,20 @@ export function LoreEntriesPanel({
       if (searchAbortRef.current) searchAbortRef.current.abort();
     };
   }, [worldId]);
+
+  // Sources can point to an entry outside the current list page.
+  useEffect(() => {
+    if (!initialEntryId) return;
+    const controller = new AbortController();
+    void api.get(initialEntryId, controller.signal).then(entry => {
+      if (controller.signal.aborted) return;
+      if (entry.world_id !== worldId) throw new Error('条目不属于当前世界');
+      setViewingEntry(entry);
+    }).catch(error => {
+      if (!controller.signal.aborted) setListError(error?.message || '引用条目已不可用');
+    });
+    return () => controller.abort();
+  }, [worldId, initialEntryId]);
 
   // 筛选器变化时重新拉取
   function handleFilterChange(newType: EntryType | 'all', newStatus: EntryStatus | 'all') {

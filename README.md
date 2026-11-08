@@ -1,15 +1,15 @@
-> 当前阶段：M2-A开发中。[第六轮独立任务](docs/collaboration/ROUND6.md) · [M2接口](docs/contracts/M2_A_API.md) · [Codex本轮交付](docs/reports/codex-m2-core.md)。用户已反馈安卓已测流程正常；目前新增草案校验/Fake核心，真实模型与预览界面尚未接线。
-
 # 墨境 · 手机端文字冒险世界模拟器
 
 React + TypeScript + Vite + Tailwind CSS，配合 FastAPI + SQLite 本地资料库。优先适配安卓手机浏览器，支持浅色和深色主题。
 
-当前有两条独立体验：
+当前有三条独立体验：
 
 - **M0 本地试玩**：世界卡片、自由行动输入、小说叙事、角色、图鉴、时间线、存档与分支；剧情由预置数据和关键词规则模拟。
 - **M1 世界资料库**：世界持久化，TXT/Markdown/PDF/DOCX 文本导入、分块与原文浏览、中文子串检索、人工设定条目及来源引用。支持草稿恢复、revision冲突处理与来源失效提示。
 
-尚未接真实AI或API Key，导入的设定还不会驱动冒险剧情。Python后端尚未部署到线上；现有静态站点仍为M0演示。PDF/DOCX不含OCR，搜索不含语义理解。
+- **M2-A 叙事实验**：资料库内可选Fake测试或配置OpenAI兼容服务生成Live草案；支持连接测试、停止/重试和引用原文回跳。Key仅放后端内存会话，闲置30分钟后失效。
+
+M2输出为预览草案，不修改角色、金钱、时间或存档。Python后端尚未部署；现有静态站点不代表完整M2版本。PDF/DOCX无OCR，检索为字面匹配。
 
 ## 启动
 
@@ -62,10 +62,16 @@ python -m pytest
 
 M0使用浏览器localStorage键mojing-m0-v1；M1使用SQLite，二者隔离。保留旧存档与数据库，迁移不重建清空。
 
-## 当前进度与协作
+## 使用模型叙事实验
 
-第五轮三包已通过PR #6合并，详情见[R5集成报告](docs/reports/r5-integration.md)。本次复核补齐调用方事务回滚保护，见[审阅与整理报告](docs/reports/codex-r5-review.md)。
+1. 按上方启动前后端，主页进入“世界资料库”，新建世界并导入资料。
+2. 进入“叙事实验”。Fake模式免Key，可先检查输入/停止/来源交互。
+3. Live模式填写服务商API根地址（通常以/v1结尾，不含/chat/completions）、准确模型名称和Key，建立会话。
+4. 主动点击“测试连接”会产生一次极短服务商请求，可能计费。连接成功后输入行动并生成草案。
+5. 停止后保留输入，手动重试；关闭连接不能保证服务商未计费。需要移除凭据时点“断开会话”，删除失败会保留重试入口。
 
-四助手任务入口：[ROUND6](docs/collaboration/ROUND6.md)。已有成果优先核对集成报告，避免重复实施；工作包必须带真实快照SHA和哈希清单，由DeepSeekHarness三方合并，禁止旧ZIP直接覆盖。
+真实服务商尚待用户配置验证；标准Chat Completions默认输出额度2048 tokens，服务商需支持相应参数。模型仅能引用本次提供的资料，但程序不能保证叙事完全符合事实。
 
-[项目说明](docs/PROJECT_STATUS.md) · [M2提案](docs/M2_PLAN.md) · [M0历史原型记录](docs/history/M0_README.md)。M2仍处于规划阶段。
+## 当前进度
+
+Codex已独立接手，旧四助手任务仅作历史；不再等待交包。见[本轮交付](docs/reports/codex-solo-m2.md)、[M2验收](docs/M2_ACCEPTANCE.md)与[下一阶段](docs/M2_PLAN.md)。M0/M1原数据保留，下一阶段才开发正式回合与状态提交。
