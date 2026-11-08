@@ -1,6 +1,15 @@
 import { request } from "../../api/client";
 import type { NarrationPreviewResponse } from "../narration-preview/types";
+export interface InventoryItem {
+  name: string;
+  quantity: number;
+}
+export interface ItemDelta {
+  name: string;
+  delta: number;
+}
 export interface CharacterState {
+  inventory?: InventoryItem[];
   name: string;
   stamina: number;
   spirit: number;
@@ -12,7 +21,7 @@ export interface JournalResult extends NarrationPreviewResponse {
   state_before?: CharacterState | null;
   state_after?: CharacterState | null;
   projected_state?: CharacterState | null;
-  proposed_changes?: Record<string, number | string> | null;
+  proposed_changes?: Record<string, number | string | ItemDelta[]> | null;
   changes_accepted?: boolean;
 }
 export interface Run {

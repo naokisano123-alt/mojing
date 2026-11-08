@@ -33,6 +33,21 @@ export function CharacterCard({
           <dd>{state.location}</dd>
         </div>
       </dl>
+      <div className="inventory-list">
+        <strong>背包</strong>
+        {state.inventory?.length ? (
+          <ul>
+            {state.inventory.map((item) => (
+              <li key={item.name}>
+                <span>{item.name}</span>
+                <span>× {item.quantity}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">暂无物品</p>
+        )}
+      </div>
     </aside>
   );
 }

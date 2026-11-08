@@ -163,3 +163,30 @@ it("a state proposal can be saved as narrative without changing character state"
   fireEvent.click(screen.getByText("确认并写入回合"));
   await waitFor(() => expect(api.commit).toHaveBeenCalledWith("run", "draft"));
 });
+
+it("item changes appear in the same optional state confirmation", async () => {
+  const { api, ready } = setup(true);
+  ready.result!.proposed_changes!.inventory_changes = [
+    { name: "干粮", delta: 1 },
+  ];
+  ready.result!.projected_state!.inventory = [{ name: "干粮", quantity: 1 }];
+  render(<AdventureJournal {...props} api={api} />);
+  await screen.findByLabelText("当前角色状态");
+  fireEvent.change(screen.getByLabelText("下一步行动"), {
+    target: { value: "买干粮" },
+  });
+  fireEvent.click(screen.getByText("生成下一段草案"));
+  expect(await screen.findByLabelText("物品增减提议")).toHaveTextContent(
+    "干粮：+1",
+  );
+  expect(
+    screen.getByRole("checkbox", { name: /采用这份状态提议/ }),
+  ).not.toBeChecked();
+  fireEvent.click(screen.getByRole("checkbox", { name: /采用这份状态提议/ }));
+  fireEvent.click(screen.getByText("确认并写入回合"));
+  await waitFor(() =>
+    expect(api.commit).toHaveBeenCalledWith("run", "draft", {
+      apply_changes: true,
+    }),
+  );
+});

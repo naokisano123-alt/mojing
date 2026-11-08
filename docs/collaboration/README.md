@@ -2,7 +2,9 @@
 
 用户已要求Codex独立接手后续开发，不再等待四助手进度，也不继续派发任务。
 
-最新角色状态阶段见[角色账本](../reports/codex-character-state.md)。
+最新背包阶段见[背包账本](../reports/codex-inventory.md)。
+
+角色状态阶段见[角色账本](../reports/codex-character-state.md)。
 
 连续叙事阶段见[连续冒险记录](../reports/codex-adventure-history.md)。
 

@@ -129,8 +129,16 @@ class FakeModelClient:
     async def generate(self, request: NarrationRequest) -> object:
         validate_request(request)
         await asyncio.sleep(0)
-        return {
+        result = {
             'narrative': '【测试模型 · 未调用真实 AI】你尝试：' + request.action.strip(),
             'references': [request.sources[0].source_id] if request.sources else [],
-            **({'proposed_changes': {'minutes': min(10, 1000000000-request.character.elapsed_minutes), 'stamina_delta': -1 if request.character.stamina else 0}} if request.character else {}),
         }
+        if request.character:
+            state = request.character
+            changes = {'minutes': min(10, 1000000000-state.elapsed_minutes), 'stamina_delta': -1 if state.stamina else 0}
+            items = {item.name: item.quantity for item in state.inventory}
+            if (len(items) < 40 or '测试纪念签' in items) and items.get('测试纪念签', 0) < 9999:
+                changes['inventory_changes'] = [{'name': '测试纪念签', 'delta': 1}]
+                result['narrative'] += '【固定背包演示：提议增加一枚测试纪念签，不代表对行动的规则判定。】'
+            result['proposed_changes'] = changes
+        return result
