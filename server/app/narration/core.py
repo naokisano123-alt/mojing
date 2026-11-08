@@ -2,8 +2,9 @@
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Literal, Protocol
+from ..adventures.state import CharacterState, StateError, project, character as validate_character
 
 MAX_ACTION_UNITS = 2000
 MAX_SOURCES = 8
@@ -43,15 +44,22 @@ class NarrationRequest:
     action: str
     sources: tuple[ContextSource, ...] = ()
     history: tuple[HistoryTurn, ...] = ()
+    character: CharacterState | None = None
 
 
 @dataclass(frozen=True)
 class NarrationDraft:
     narrative: str
     references: tuple[str, ...]
+    proposed_changes: dict | None = None
 
 
 def validate_request(request: NarrationRequest) -> None:
+    if request.character is not None:
+        try:
+            validate_character(asdict(request.character))
+        except (StateError, TypeError):
+            raise DraftError('CONTEXT_INVALID', '当前角色状态无效。') from None
     if not isinstance(request.action, str) or not request.action.strip():
         raise DraftError('ACTION_INVALID', '请先输入行动。')
     if _units(request.action) > MAX_ACTION_UNITS:
@@ -81,7 +89,10 @@ def validate_request(request: NarrationRequest) -> None:
 
 def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
     validate_request(request)
-    if not isinstance(value, Mapping) or set(value) != {'narrative', 'references'}:
+    allowed = {'narrative', 'references'}
+    if request.character is not None:
+        allowed.add('proposed_changes')
+    if not isinstance(value, Mapping) or not {'narrative','references'} <= set(value) or set(value) - allowed:
         raise DraftError('MODEL_OUTPUT_INVALID', '模型输出必须仅包含叙事与引用。')
     narrative, references = value['narrative'], value['references']
     if (not isinstance(narrative, str) or not narrative.strip() or
@@ -92,7 +103,13 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
     allowed = {source.source_id for source in request.sources}
     if len(references) != len(set(references)) or any(x not in allowed for x in references):
         raise DraftError('MODEL_REFERENCE_INVALID', '模型引用了未提供或重复的资料。')
-    return NarrationDraft(narrative.strip(), tuple(references))
+    changes = value.get('proposed_changes')
+    if changes is not None or 'proposed_changes' in value:
+        try:
+            project(request.character, changes)
+        except StateError as exc:
+            raise DraftError('MODEL_STATE_INVALID', str(exc)) from None
+    return NarrationDraft(narrative.strip(), tuple(references), changes)
 
 
 class ModelClient(Protocol):
@@ -115,4 +132,5 @@ class FakeModelClient:
         return {
             'narrative': '【测试模型 · 未调用真实 AI】你尝试：' + request.action.strip(),
             'references': [request.sources[0].source_id] if request.sources else [],
+            **({'proposed_changes': {'minutes': min(10, 1000000000-request.character.elapsed_minutes), 'stamina_delta': -1 if request.character.stamina else 0}} if request.character else {}),
         }

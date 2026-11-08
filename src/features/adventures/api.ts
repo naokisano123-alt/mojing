@@ -1,6 +1,22 @@
 import { request } from "../../api/client";
 import type { NarrationPreviewResponse } from "../narration-preview/types";
+export interface CharacterState {
+  name: string;
+  stamina: number;
+  spirit: number;
+  coins: number;
+  elapsed_minutes: number;
+  location: string;
+}
+export interface JournalResult extends NarrationPreviewResponse {
+  state_before?: CharacterState | null;
+  state_after?: CharacterState | null;
+  projected_state?: CharacterState | null;
+  proposed_changes?: Record<string, number | string> | null;
+  changes_accepted?: boolean;
+}
 export interface Run {
+  character?: CharacterState | null;
   id: string;
   world_id: string;
   name: string;
@@ -10,13 +26,13 @@ export interface Run {
 export interface Turn {
   sequence: number;
   action: string;
-  result: NarrationPreviewResponse;
+  result: JournalResult;
 }
 export interface Draft {
   id: string;
   action: string;
   status: "pending" | "ready" | "committed" | "failed" | "discarded";
-  result: NarrationPreviewResponse | null;
+  result: JournalResult | null;
 }
 export interface Detail extends Run {
   turns: Turn[];
@@ -30,11 +46,16 @@ export const adventureApi = {
       "/worlds/" + encodeURIComponent(world) + "/adventures",
       { signal, queryParams: { offset } },
     ),
-  create: (world: string, name: string, mode: "fake" | "live") =>
+  create: (
+    world: string,
+    name: string,
+    mode: "fake" | "live",
+    character?: Partial<CharacterState>,
+  ) =>
     request<Run>(
       "POST",
       "/worlds/" + encodeURIComponent(world) + "/adventures",
-      { body: { name, mode } },
+      { body: { name, mode, character } },
     ),
   detail: (id: string, signal?: AbortSignal, before?: number) =>
     request<Detail>("GET", path(id), { signal, queryParams: { before } }),
@@ -57,9 +78,10 @@ export const adventureApi = {
     request<Draft>("GET", path(id) + "/drafts/" + encodeURIComponent(draft)),
   discard: (id: string, draft: string) =>
     request<void>("DELETE", path(id) + "/drafts/" + encodeURIComponent(draft)),
-  commit: (id: string, draft: string) =>
+  commit: (id: string, draft: string, choice?: { apply_changes: boolean }) =>
     request<Run>(
       "POST",
       path(id) + "/drafts/" + encodeURIComponent(draft) + "/commit",
+      { body: choice },
     ),
 };

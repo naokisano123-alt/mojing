@@ -1,4 +1,6 @@
 import asyncio
+from dataclasses import asdict
+from .state import character, project
 
 from fastapi import Query, Request, Response
 
@@ -16,13 +18,13 @@ def register_routes(app, cfg, get_store, get_builder):
     def list_adventures(world_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
         with db(cfg.db_path) as conn:
             service.world_active(conn, world_id)
-            return {'items': [dict(r) for r in conn.execute(
+            return {'items': [service.run_dict(r) for r in conn.execute(
                 'SELECT * FROM adventures WHERE world_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (world_id, offset))]}
 
     @app.post('/api/v1/worlds/{world_id}/adventures', status_code=201)
     def create_adventure(world_id: str, payload: dict):
         with db(cfg.db_path) as conn:
-            return service.create_adventure(conn, world_id, payload.get('name'), payload.get('mode', 'fake'))
+            return service.create_adventure(conn, world_id, payload.get('name'), payload.get('mode', 'fake'), payload.get('character'))
 
     @app.get('/api/v1/adventures/{adventure_id}')
     def detail(adventure_id: str, before: int | None = Query(None, ge=1, le=9223372036854775807)):
@@ -48,9 +50,9 @@ def register_routes(app, cfg, get_store, get_builder):
         return Response(status_code=204)
 
     @app.post('/api/v1/adventures/{adventure_id}/drafts/{draft_id}/commit')
-    def commit_draft(adventure_id: str, draft_id: str):
+    def commit_draft(adventure_id: str, draft_id: str, payload: dict | None = None):
         with db(cfg.db_path) as conn:
-            return service.commit(conn, adventure_id, draft_id)
+            return service.commit(conn, adventure_id, draft_id, (payload or {}).get('apply_changes', False))
 
     @app.post('/api/v1/adventures/{adventure_id}/drafts')
     async def prepare(adventure_id: str, payload: dict, http_request: Request):
@@ -83,10 +85,13 @@ def register_routes(app, cfg, get_store, get_builder):
                 client = get_store().get_client(session_id)
             else:
                 client = FakeModelClient()
-            request = NarrationRequest(action, tuple(bundle.sources), history)
+            state = character(run['character']) if run['character'] is not None else None
+            request = NarrationRequest(action, tuple(bundle.sources), history, state)
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
-                      'references': list(draft.references), 'sources': list(bundle.metadata)}
+                      'references': list(draft.references), 'sources': list(bundle.metadata),
+                      'state_before': run['character'], 'proposed_changes': draft.proposed_changes,
+                      'projected_state': asdict(project(state, draft.proposed_changes)) if draft.proposed_changes is not None else None}
             with db(cfg.db_path) as conn:
                 return service.finish(conn, adventure_id, draft_id, result)
         except BaseException as exc:

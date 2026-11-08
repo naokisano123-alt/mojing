@@ -10,7 +10,7 @@ import { it, expect, vi } from "vitest";
 import { AdventureJournal } from "../../../src/features/adventures/AdventureJournal";
 import type { Detail, Draft } from "../../../src/features/adventures/api";
 
-function setup() {
+function setup(withState = false) {
   let detail: Detail = {
     id: "run",
     world_id: "w",
@@ -32,6 +32,20 @@ function setup() {
       sources: [],
     },
   };
+  if (withState) {
+    const state = {
+      name: "旅人",
+      stamina: 100,
+      spirit: 100,
+      coins: 5,
+      elapsed_minutes: 0,
+      location: "旧街",
+    };
+    detail.character = state;
+    ready.result!.state_before = state;
+    ready.result!.proposed_changes = { coins_delta: -3, minutes: 10 };
+    ready.result!.projected_state = { ...state, coins: 2, elapsed_minutes: 10 };
+  }
   const api = {
     list: vi.fn(async () => ({ items: [detail] })),
     create: vi.fn(async () => detail),
@@ -114,4 +128,38 @@ it("failed commit keeps the draft so retry uses the same idempotent endpoint", a
     ["run", "draft"],
     ["run", "draft"],
   ]);
+});
+
+it("state proposal defaults to not adopted, and adoption is explicit", async () => {
+  const { api } = setup(true);
+  render(<AdventureJournal {...props} api={api} />);
+  await screen.findByLabelText("当前角色状态");
+  fireEvent.change(screen.getByLabelText("下一步行动"), {
+    target: { value: "买茶" },
+  });
+  fireEvent.click(screen.getByText("生成下一段草案"));
+  await screen.findByLabelText("模型状态提议 · 尚未生效");
+  const checkbox = screen.getByRole("checkbox", { name: /采用这份状态提议/ });
+  expect(checkbox).not.toBeChecked();
+  expect(api.commit).not.toHaveBeenCalled();
+  fireEvent.click(checkbox);
+  fireEvent.click(screen.getByText("确认并写入回合"));
+  await waitFor(() =>
+    expect(api.commit).toHaveBeenCalledWith("run", "draft", {
+      apply_changes: true,
+    }),
+  );
+});
+
+it("a state proposal can be saved as narrative without changing character state", async () => {
+  const { api } = setup(true);
+  render(<AdventureJournal {...props} api={api} />);
+  await screen.findByLabelText("当前角色状态");
+  fireEvent.change(screen.getByLabelText("下一步行动"), {
+    target: { value: "买茶" },
+  });
+  fireEvent.click(screen.getByText("生成下一段草案"));
+  await screen.findByLabelText("模型状态提议 · 尚未生效");
+  fireEvent.click(screen.getByText("确认并写入回合"));
+  await waitFor(() => expect(api.commit).toHaveBeenCalledWith("run", "draft"));
 });

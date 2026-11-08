@@ -71,6 +71,8 @@ def init_db(path: Path | str) -> None:
         ensure_lore_entries_schema(conn)
         from .adventures.service import SCHEMA as ADVENTURE_SCHEMA
         conn.executescript(ADVENTURE_SCHEMA)
+        if 'character_json' not in {row[1] for row in conn.execute('PRAGMA table_info(adventures)')}:
+            conn.execute('ALTER TABLE adventures ADD COLUMN character_json TEXT')
         conn.commit()
 
 
