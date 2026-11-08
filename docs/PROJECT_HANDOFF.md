@@ -1,3 +1,5 @@
+> 历史产品与 M0 基线说明。当前项目已新增 FastAPI/SQLite、导入资料库和人工条目，请先读 [PROJECT_STATUS](PROJECT_STATUS.md) 与 [ROUND4](collaboration/ROUND4.md)。下文“无后端/尚未开始 M1”只描述最初交接时点。
+
 # 墨境｜项目全貌、M0 交接基线与 M1 开发方案
 
 更新时间：2026-11-08。读者：首次参与项目的 AI 或开发者。

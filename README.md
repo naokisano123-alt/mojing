@@ -1,4 +1,6 @@
-> 当前协作入口：[第三轮四助手任务](docs/collaboration/ROUND3.md)。R2已合并；本轮先修导入边界并实现M1-D人工条目。旧阶段测试数字及任务链接保留历史，最新执行状态见集成报告。
+> 当前协作入口：[第四轮四助手任务](docs/collaboration/ROUND4.md)；[项目当前状态与启动](docs/PROJECT_STATUS.md)；[本轮审阅](docs/collaboration/ROUND4_REVIEW.md)。
+>
+> R3 已合并：项目现有 M0 本地试玩 + FastAPI/SQLite 世界资料库、文档检索与人工设定。R4 收口真实导入成功路径、并发与来源正确性，不能把 CI 通过等同 M1 全部验收。M2 尚未接模型。下方 M0 原型说明及历史阶段记录按各自时点阅读；当前限制以 PROJECT_STATUS 和最新集成报告为准。
 
 # 墨境 · M0 手机端交互原型
 
