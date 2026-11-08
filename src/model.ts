@@ -1,5 +1,5 @@
 export type Fate = 'off' | 'soft' | 'strong';
-export type Page = 'cover' | 'home' | 'create' | 'story' | 'character' | 'atlas' | 'saves' | 'settings';
+export type Page = 'cover' | 'home' | 'create' | 'story' | 'character' | 'atlas' | 'saves' | 'lore' | 'settings';
 export interface Turn { id: string; action?: string; text: string[]; changes: string[]; time: number; fate: Fate }
 export interface Snapshot { turns: Turn[]; money: number; energy: number; mind: number; time: number; location: string; fate: Fate }
 export interface Save { id: string; title: string; branchName: string; snapshot: Snapshot }

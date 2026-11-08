@@ -4,6 +4,9 @@ import { ArrowRight, BookOpen, Bookmark, ScrollText, Settings as SettingsIcon, U
 import type { Branch, Fate, Page, Save, World } from './model';
 import { changeFate, forkSave, loadState, makeWorld, simulateTurn, snapshot, uid } from './model';
 import { Home, CreateWorld } from './pages/WorldPages';
+import { WorldLoreView } from './components/documents';
+import { listWorlds as fetchRemoteWorldList, createWorld as createRemoteWorld, ApiClientError } from './api/client';
+import type { WorldSummary } from './api/types';
 import Story from './pages/Story';
 import Settings from './pages/Settings';
 import { Atlas, Character, Saves } from './pages/DetailPages';
@@ -18,7 +21,7 @@ const nav = [
   { page: 'atlas' as Page, label: '图鉴', icon: ScrollText },
   { page: 'saves' as Page, label: '存档', icon: Bookmark },
 ];
-const allowed: Page[] = ['cover', 'home', 'create', 'story', 'character', 'atlas', 'saves', 'settings'];
+const allowed: Page[] = ['cover', 'home', 'create', 'story', 'character', 'atlas', 'saves', 'lore', 'settings'];
 function hashPage(): Page {
   const page = location.hash.slice(1) as Page;
   return allowed.includes(page) ? page : 'home';
@@ -33,6 +36,10 @@ export default function App() {
   const [editors, setEditors] = useState<Record<string, boolean>>({});
   const [fateOpen, setFateOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [remoteWorlds, setRemoteWorlds] = useState<WorldSummary[]>([]);
+  const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [remoteError, setRemoteError] = useState('');
+  const [loreWorld, setLoreWorld] = useState<{ id: string; name: string } | null>(null);
   const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches);
   const pending = useRef<{ key: string; action: string } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,6 +145,38 @@ export default function App() {
       pending.current = null;
     }, 900);
   }
+  async function loadRemoteWorlds() {
+    setRemoteStatus('loading');
+    setRemoteError('');
+    try {
+      const listing = await fetchRemoteWorldList({ limit: 50 });
+      setRemoteWorlds(listing.items);
+      setRemoteStatus('ready');
+    } catch (err) {
+      setRemoteStatus('error');
+      setRemoteError(err instanceof ApiClientError ? err.friendlyMessage : '无法连接资料库服务，请确认后端已启动。');
+    }
+  }
+  useEffect(() => { void loadRemoteWorlds(); }, []);
+  async function handleCreateRemoteWorld(name: string, description: string) {
+    const created = await createRemoteWorld({ name, description });
+    setRemoteWorlds(current => [...current, created]);
+    setRemoteStatus('ready');
+    setLoreWorld({ id: created.id, name: created.name });
+    go('lore');
+    setToast('世界资料库已创建，可以导入 TXT / Markdown 了。');
+  }
+  function openLore(target: WorldSummary) {
+    setLoreWorld({ id: target.id, name: target.name });
+    go('lore');
+  }
+  function playDemoFromLore() {
+    const demo = state.worlds[0];
+    if (!demo) { setToast('没有可用的演示世界。'); return; }
+    setState(s => ({ ...s, current: demo.id }));
+    go('story');
+    setToast('演示模式：本地关键词模拟，不会使用你导入的文档内容。');
+  }
   function setFate(mode: Fate) {
     if (busy) return;
     updateBranch(b => changeFate(b, mode));
@@ -178,7 +217,10 @@ export default function App() {
           {page === 'home' && <Home worlds={state.worlds} create={() => go('create')} enter={id => {
             if (busy) { setToast('请等待当前回合结束。'); return; }
             setState(s => ({ ...s, current: id })); go('story');
-          }} />}
+          }}
+            remoteWorlds={remoteWorlds} remoteStatus={remoteStatus} remoteError={remoteError}
+            onRetryRemote={loadRemoteWorlds} onEnterRemote={openLore}
+            onCreateRemote={handleCreateRemoteWorld} />}
           {page === 'create' && <CreateWorld cancel={() => go('home', 'right')} submit={(name, description, docs) => {
             const next = makeWorld(name, description, docs);
             setState(s => ({ ...s, worlds: [...s.worlds, next], current: next.id }));
@@ -195,6 +237,9 @@ export default function App() {
             updateWorld(world.id, w => ({ ...w, active: id })); setToast('已切换旅程分支。');
           }} />}
           {page === 'settings' && <Settings state={state} update={s => setState(prev => ({ ...prev, ...s }))} back={() => go('home', 'right')} />}
+          {page === 'lore' && (loreWorld
+            ? <WorldLoreView worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => go('home', 'right')} onPlayDemo={playDemoFromLore} />
+            : <div className="narrow"><button className="text-button back" onClick={() => go('home', 'right')}>← 返回我的世界</button><p className="muted">请从“我的世界”中选择一个世界资料库进入。</p></div>)}
         </div>
       </div>
     </main>
