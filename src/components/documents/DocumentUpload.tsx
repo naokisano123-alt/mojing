@@ -1,5 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
-import { Upload, FileText, AlertCircle, CheckCircle2, X, RefreshCw } from 'lucide-react';
+import {
+  Upload,
+  FileText,
+  AlertCircle,
+  CheckCircle2,
+  X,
+  RefreshCw,
+  Info,
+  Eye,
+} from 'lucide-react';
 import type { WorldDocument } from '../../api/types';
 import { uploadDocument, ApiClientError } from '../../api/client';
 import { Tag } from '../UI';
@@ -8,40 +17,67 @@ export interface DocumentUploadProps {
   worldId: string;
   onSuccess: (document: WorldDocument) => void;
   onCancel?: () => void;
+  /** 可选：发生 409 重复导入时，点击跳转查看已有文档 */
+  onViewExisting?: (documentId: string) => void;
+  /** 可选：请求外部刷新文档列表（例如取消上传后建议核对） */
+  onRefreshRequest?: () => void;
+  /** 可选支持的格式扩展名，默认 ['.txt', '.md']，严禁默认启用未接通的格式 */
+  supportedFormats?: string[];
+  /** 可选：单文件大小上限（字节），默认 2 MiB；PDF/DOCX 由调用方提高到 8 MiB */
+  maxBytes?: number;
 }
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MiB (契约 §4.7)
 
-export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadProps) {
+export function DocumentUpload({
+  worldId,
+  onSuccess,
+  onCancel,
+  onViewExisting,
+  onRefreshRequest,
+  supportedFormats = ['.txt', '.md'],
+  maxBytes = MAX_FILE_BYTES,
+}: DocumentUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+
+  // 状态明确隔离：真实错误 vs 中性取消状态
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [existingDocId, setExistingDocId] = useState<string | null>(null);
+  const [isCancelled, setIsCancelled] = useState(false);
+
   const [allowDuplicate, setAllowDuplicate] = useState(false);
   const [successDoc, setSuccessDoc] = useState<WorldDocument | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
-      // 组件卸载时取消未完成请求 (契约 §8.4)
+      isMountedRef.current = false;
+      // 组件卸载时安全取消未完成请求 (契约 §8.4)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   function validateFile(file: File): string | null {
-    if (!/\.(txt|md)$/i.test(file.name)) {
-      return '仅支持导入 .txt 或 .md 格式的纯文本设定文档。';
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    const isSupported = supportedFormats.some(f => f.toLowerCase() === ext);
+    if (!isSupported) {
+      return `不支持该文件格式。仅支持导入 ${supportedFormats.join('、')} 纯文本设定文档。`;
     }
     if (file.size === 0) {
       return '文件内容为空，无法导入。';
     }
-    if (file.size > MAX_FILE_BYTES) {
+    if (file.size > maxBytes) {
       const mb = (file.size / (1024 * 1024)).toFixed(1);
       return `文件大小为 ${mb} MB，超出单文件 2 MiB 上限。`;
     }
@@ -51,6 +87,8 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
   function handleFileSelected(file: File) {
     setError(null);
     setErrorCode(null);
+    setExistingDocId(null);
+    setIsCancelled(false);
     setSuccessDoc(null);
     setAllowDuplicate(false);
 
@@ -58,6 +96,8 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
     if (validationError) {
       setError(validationError);
       setSelectedFile(null);
+      // 清空 input 值，保证重新选取相同文件时仍能触发 onChange
+      if (inputRef.current) inputRef.current.value = '';
       return;
     }
     setSelectedFile(file);
@@ -70,6 +110,8 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
     setProgress(0);
     setError(null);
     setErrorCode(null);
+    setExistingDocId(null);
+    setIsCancelled(false);
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -79,19 +121,37 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
     try {
       const doc = await uploadDocument(worldId, selectedFile, {
         allow_duplicate: useAllowDuplicate,
-        onProgress: pct => setProgress(pct),
+        onProgress: pct => {
+          if (isMountedRef.current) {
+            setProgress(pct);
+          }
+        },
         signal: controller.signal,
       });
 
+      if (!isMountedRef.current) return;
       setSuccessDoc(doc);
       setUploading(false);
       setProgress(100);
       onSuccess(doc);
     } catch (err: unknown) {
+      if (!isMountedRef.current) return;
       setUploading(false);
+
       if (err instanceof ApiClientError) {
+        if (err.code === 'ABORT_ERROR') {
+          // 显式捕获取消动作，作为中性状态呈现，不当作网络崩溃或服务器错误
+          setIsCancelled(true);
+          return;
+        }
+
         setErrorCode(err.code);
         setError(err.friendlyMessage);
+
+        if (err.code === 'DUPLICATE_DOCUMENT') {
+          const dupId = err.details?.existing_document_id as string | undefined;
+          if (dupId) setExistingDocId(dupId);
+        }
       } else {
         setError('上传失败，请检查网络后重试。');
       }
@@ -107,7 +167,7 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
     }
     setUploading(false);
     setProgress(0);
-    setError('上传已取消。');
+    setIsCancelled(true);
   }
 
   function resetState() {
@@ -115,6 +175,8 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
     setSuccessDoc(null);
     setError(null);
     setErrorCode(null);
+    setExistingDocId(null);
+    setIsCancelled(false);
     setProgress(0);
     setAllowDuplicate(false);
     if (inputRef.current) inputRef.current.value = '';
@@ -146,19 +208,25 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
             const file = e.dataTransfer.files?.[0];
             if (file) handleFileSelected(file);
           }}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => {
+            if (inputRef.current) {
+              inputRef.current.value = ''; // 允许再次选取同一个文件
+              inputRef.current.click();
+            }
+          }}
         >
           <Upload size={32} />
           <h3>点击或拖拽文件到此处</h3>
           <p>单文件最大 2 MiB · 自动按章节断块与字符定位</p>
           <div className="upload-limits">
-            <Tag>.txt 纯文本</Tag>
-            <Tag>.md Markdown</Tag>
+            {supportedFormats.map(fmt => (
+              <Tag key={fmt}>{fmt} 格式</Tag>
+            ))}
           </div>
           <input
             ref={inputRef}
             type="file"
-            accept=".txt,.md"
+            accept={supportedFormats.join(',')}
             style={{ display: 'none' }}
             onChange={e => {
               const file = e.target.files?.[0];
@@ -192,10 +260,15 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
             )}
           </div>
 
+          {/* 上传进度与阶段精确展示 */}
           {uploading && (
             <div className="upload-progress-box">
               <div className="upload-progress-header">
-                <span>{progress < 100 ? `正在上传与解析 (${progress}%)` : '正在分块入库...'}</span>
+                <span>
+                  {progress < 100
+                    ? `正在上传文件 (${progress}%)`
+                    : '文件上传完成，服务端正在解析与分块入库，请稍候...'}
+                </span>
                 <button
                   type="button"
                   className="text-button"
@@ -214,6 +287,7 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
             </div>
           )}
 
+          {/* 成功状态 */}
           {successDoc && (
             <div
               className="flex items-center gap-2 mt-3"
@@ -224,24 +298,70 @@ export function DocumentUpload({ worldId, onSuccess, onCancel }: DocumentUploadP
             </div>
           )}
 
+          {/* 中性取消提示横幅（非破坏性红字错误） */}
+          {isCancelled && !uploading && !successDoc && (
+            <div className="upload-neutral-callout" role="status">
+              <Info size={16} />
+              <div style={{ flex: 1 }}>
+                <div>上传已取消。</div>
+                <div className="muted text-xs mt-1">
+                  注意：若服务端已在处理入库，数据可能仍已保存，建议刷新列表核对。
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    type="button"
+                    className="secondary"
+                    style={{ fontSize: '11px', minHeight: '30px', padding: '3px 10px' }}
+                    onClick={() => handleStartUpload()}
+                  >
+                    重新上传该文件
+                  </button>
+                  {onRefreshRequest && (
+                    <button
+                      type="button"
+                      className="text-button"
+                      style={{ fontSize: '11px' }}
+                      onClick={onRefreshRequest}
+                    >
+                      刷新列表核对
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 真实错误提示与重复文件处理 */}
           {error && (
             <div className="upload-error-callout" role="alert">
               <AlertCircle size={16} />
               <div style={{ flex: 1 }}>
                 <div>{error}</div>
-                {errorCode === 'DUPLICATE_DOCUMENT' && !allowDuplicate && (
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      className="primary"
-                      style={{ fontSize: '11px', minHeight: '32px', padding: '4px 10px' }}
-                      onClick={() => {
-                        setAllowDuplicate(true);
-                        handleStartUpload(true);
-                      }}
-                    >
-                      <RefreshCw size={12} /> 允许重复并强制导入
-                    </button>
+                {errorCode === 'DUPLICATE_DOCUMENT' && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {existingDocId && onViewExisting && (
+                      <button
+                        type="button"
+                        className="primary"
+                        style={{ fontSize: '11px', minHeight: '32px', padding: '4px 12px' }}
+                        onClick={() => onViewExisting(existingDocId)}
+                      >
+                        <Eye size={13} /> 查看已有文档
+                      </button>
+                    )}
+                    {!allowDuplicate && (
+                      <button
+                        type="button"
+                        className="secondary"
+                        style={{ fontSize: '11px', minHeight: '32px', padding: '4px 10px' }}
+                        onClick={() => {
+                          setAllowDuplicate(true);
+                          handleStartUpload(true);
+                        }}
+                      >
+                        <RefreshCw size={12} /> 允许重复并强制导入
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

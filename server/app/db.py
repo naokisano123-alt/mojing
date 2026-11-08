@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS documents (
     line_count      INTEGER NOT NULL,
     chunk_count     INTEGER NOT NULL,
     source_kind     TEXT NOT NULL DEFAULT 'user_import',
+    encoding_semantics TEXT NOT NULL DEFAULT 'source_bytes',
+    warnings        TEXT NOT NULL DEFAULT '[]',
     status          TEXT NOT NULL DEFAULT 'ready',
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL,
@@ -63,7 +65,19 @@ def init_db(path: Path | str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
         conn.commit()
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """幂等迁移：旧库补列，不重建表。"""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+    if "encoding_semantics" not in cols:
+        conn.execute(
+            "ALTER TABLE documents ADD COLUMN encoding_semantics TEXT NOT NULL DEFAULT 'source_bytes'"
+        )
+    if "warnings" not in cols:
+        conn.execute("ALTER TABLE documents ADD COLUMN warnings TEXT NOT NULL DEFAULT '[]'")
 
 
 @contextmanager

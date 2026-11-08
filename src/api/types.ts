@@ -38,6 +38,10 @@ export interface WorldDocument {
   chunk_count: number;
   source_kind: SourceKind;
   status: DocumentStatus;
+  /** 契约 M1_R2_API §1.2：TXT/MD 为 source_bytes，PDF/DOCX 为 extracted_text */
+  encoding_semantics?: 'source_bytes' | 'extracted_text';
+  /** 契约 M1_R2_API §1.3：解析警告；TXT/MD 恒为空数组 */
+  warnings?: DocumentWarning[];
   created_at: IsoTime;
   updated_at: IsoTime;
   deleted_at: IsoTime | null;
@@ -57,6 +61,8 @@ export interface LoreChunk {
   end_char: number;
   text_length: number;
   text_preview: string;
+  /** 仅 PDF 且解析器能提供页码时存在（契约 M1_R2_API §1.6） */
+  page_range?: [number, number] | null;
   /** 仅 include_text=true 或单块接口存在 */
   text?: string;
 }
@@ -122,4 +128,39 @@ export interface HealthResponse {
   ok: boolean;
   version: string;
   db: string;
+}
+export interface DocumentWarning {
+  code: string;
+  message: string;
+  count?: number;
+}
+
+export interface SearchResultItem {
+  world_id: Uuid;
+  document_id: Uuid;
+  document_filename: string;
+  chunk_id: Uuid;
+  chunk_index: number;
+  heading_path: string[];
+  /** 块在全文中的区间（UTF-16） */
+  start_char: number;
+  end_char: number;
+  snippet: string;
+  /** 命中在块内的区间（UTF-16），无法定位时为 null */
+  match_start: number | null;
+  match_end: number | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  items: SearchResultItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CapabilitiesResponse {
+  formats: string[];
+  max_bytes: Record<string, number>;
+  search: boolean;
 }

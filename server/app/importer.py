@@ -271,10 +271,14 @@ def chunk_text(text: str) -> list[ChunkData]:
         body = text[start:end]
         seg_index = index_of_start.get(start)
         if seg_index is None:
+            # 块起点落在某个段内部（长段被硬切）：取起点不晚于该块的最后一段。
+            # 取“下一段”会把后面的标题算进来，导致长段的子块挂错 heading_path。
             seg_index = 0
-            while seg_index < len(segments) and segments[seg_index].start < start:
-                seg_index += 1
-            seg_index = min(seg_index, len(segments) - 1)
+            for i, seg in enumerate(segments):
+                if seg.start <= start:
+                    seg_index = i
+                else:
+                    break
         chunks.append(
             ChunkData(
                 chunk_index=index,

@@ -1,18 +1,25 @@
 import { useState, useEffect } from 'react';
 import {
-  FileText,
   Upload,
   BookOpen,
+  Search,
   Info,
   Compass,
   AlertCircle,
 } from 'lucide-react';
 import type { WorldDetail, WorldDocument } from '../../api/types';
-import { getWorld, deleteDocument, ApiClientError } from '../../api/client';
+import {
+  getWorld,
+  deleteDocument,
+  getCapabilities,
+  searchLore,
+  ApiClientError,
+} from '../../api/client';
 import { Back, PageTitle, Tag } from '../UI';
 import { DocumentUpload } from './DocumentUpload';
 import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
+import { LoreSearchPanel } from '../../features/lore-search';
 import './documents.css';
 
 export interface WorldLoreViewProps {
@@ -21,6 +28,8 @@ export interface WorldLoreViewProps {
   onBack: () => void;
   onPlayDemo?: () => void;
 }
+
+type Tab = 'list' | 'search' | 'upload';
 
 export function WorldLoreView({
   worldId,
@@ -31,26 +40,52 @@ export function WorldLoreView({
   const [worldDetail, setWorldDetail] = useState<WorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'list' | 'upload'>('list');
+  const [tab, setTab] = useState<Tab>('list');
+  const [formats, setFormats] = useState<string[]>(['.txt', '.md']);
 
-  // 当前打开查看器的文档
-  const [viewingDoc, setViewingDoc] = useState<{ doc: WorldDocument; mode?: 'chunks' | 'raw' } | null>(null);
+  // 当前打开查看器的文档（可带来源区间，用于检索回跳高亮）
+  const [viewingDoc, setViewingDoc] = useState<{
+    documentId: string;
+    mode?: 'chunks' | 'raw';
+    source?: { chunkIndex?: number; startChar?: number; endChar?: number };
+  } | null>(null);
 
   // M0 降级试玩确认弹窗 (契约 §7.1)
   const [showDemoConfirm, setShowDemoConfirm] = useState(false);
 
   useEffect(() => {
-    loadWorld();
+    const controller = new AbortController();
+    setViewingDoc(null);
+    void loadWorld(controller.signal);
+    return () => controller.abort();
   }, [worldId]);
 
-  async function loadWorld() {
+  // 能力探测：只启用后端实际可用的格式（契约 M1_R2_API §1.7）
+  useEffect(() => {
+    let alive = true;
+    getCapabilities()
+      .then(caps => {
+        if (alive) setFormats(caps.formats);
+      })
+      .catch(() => {
+        if (alive) setFormats(['.txt', '.md']);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function loadWorld(signal?: AbortSignal) {
     setLoading(true);
     setError(null);
+    setWorldDetail(null);
     try {
-      const data = await getWorld(worldId);
+      const data = await getWorld(worldId, signal);
+      if (signal?.aborted) return;
       setWorldDetail(data);
       setLoading(false);
     } catch (err: unknown) {
+      if (signal?.aborted) return;
       setLoading(false);
       if (err instanceof ApiClientError) {
         setError(err.friendlyMessage);
@@ -63,7 +98,6 @@ export function WorldLoreView({
   async function handleDeleteDocument(documentId: string) {
     try {
       await deleteDocument(documentId);
-      // 局部刷新或重新拉取世界详情
       setWorldDetail(prev => {
         if (!prev) return null;
         return {
@@ -93,7 +127,38 @@ export function WorldLoreView({
     setTab('list');
   }
 
+  // 契约 DTO → 检索面板 DTO 的薄适配层（面板类型由 Ma 维护，不共用 src/api/types）
+  async function runSearch(
+    params: { worldId: string; query: string; limit?: number; offset?: number },
+    signal?: AbortSignal,
+  ) {
+    const result = await searchLore(params, signal);
+    return {
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+      items: result.items.map(item => ({
+        world_id: item.world_id,
+        document_id: item.document_id,
+        chunk_id: item.chunk_id,
+        chunk_index: item.chunk_index,
+        filename: item.document_filename,
+        heading_path: item.heading_path,
+        start_char: item.start_char,
+        end_char: item.end_char,
+        snippet: item.snippet,
+        match_field: 'text' as const,
+        match_start_char: item.start_char + (item.match_start ?? 0),
+        match_end_char: item.start_char + (item.match_end ?? 0),
+        match_chunk_start_char: item.match_start ?? 0,
+        match_chunk_end_char: item.match_end ?? 0,
+        match_coords_scope: 'chunk',
+      })),
+    };
+  }
+
   const documents = worldDetail?.documents || [];
+  const supportsRichFormats = formats.includes('.pdf') || formats.includes('.docx');
 
   return (
     <div className="narrow doc-hub">
@@ -111,7 +176,7 @@ export function WorldLoreView({
         <Info size={18} />
         <div>
           <strong>【世界资料库模式】</strong>
-          设定已导入并持久化；AI 角色与剧情生成将在 M2 开启。当前可检索设定、浏览章节切片并核对原文。
+          设定已导入并持久化；AI 角色与剧情生成将在 M2 开启。当前可检索资料、浏览章节切片、核对原文。
         </div>
       </div>
 
@@ -120,7 +185,7 @@ export function WorldLoreView({
         <div className="lore-demo-bar">
           <div className="flex items-center gap-2">
             <Compass size={16} />
-            <span>想在此世界观下体验交互？可开启本地模拟试玩。</span>
+            <span>想试试交互？可开启本地模拟试玩（不会使用本世界的设定）。</span>
           </div>
           <button
             type="button"
@@ -143,6 +208,13 @@ export function WorldLoreView({
         </button>
         <button
           type="button"
+          className={tab === 'search' ? 'active' : ''}
+          onClick={() => setTab('search')}
+        >
+          <Search size={15} /> 检索资料
+        </button>
+        <button
+          type="button"
           className={tab === 'upload' ? 'active' : ''}
           onClick={() => setTab('upload')}
         >
@@ -159,7 +231,7 @@ export function WorldLoreView({
               type="button"
               className="text-button mt-1"
               style={{ color: '#ba6452', textDecoration: 'underline' }}
-              onClick={loadWorld}
+              onClick={() => void loadWorld()}
             >
               重新加载
             </button>
@@ -171,8 +243,26 @@ export function WorldLoreView({
         <DocumentList
           documents={documents}
           loading={loading}
-          onSelectDocument={(doc, mode) => setViewingDoc({ doc, mode })}
+          onSelectDocument={(doc, mode) => setViewingDoc({ documentId: doc.id, mode })}
           onDeleteDocument={handleDeleteDocument}
+        />
+      )}
+
+      {tab === 'search' && (
+        <LoreSearchPanel
+          worldId={worldId}
+          search={runSearch}
+          onOpenSource={target =>
+            setViewingDoc({
+              documentId: target.documentId,
+              mode: 'chunks',
+              source: {
+                chunkIndex: target.chunkIndex,
+                startChar: target.startChar,
+                endChar: target.endChar,
+              },
+            })
+          }
         />
       )}
 
@@ -181,14 +271,19 @@ export function WorldLoreView({
           worldId={worldId}
           onSuccess={handleUploadSuccess}
           onCancel={() => setTab('list')}
+          supportedFormats={formats}
+          maxBytes={supportsRichFormats ? 8 * 1024 * 1024 : 2 * 1024 * 1024}
+          onViewExisting={id => setViewingDoc({ documentId: id, mode: 'chunks' })}
+          onRefreshRequest={() => void loadWorld()}
         />
       )}
 
-      {/* 文档切片与原文查看器 */}
+      {/* 文档切片与原文查看器（可带检索来源区间） */}
       {viewingDoc && (
         <DocumentViewer
-          documentId={viewingDoc.doc.id}
+          documentId={viewingDoc.documentId}
           initialMode={viewingDoc.mode || 'chunks'}
+          initialSource={viewingDoc.source}
           onClose={() => setViewingDoc(null)}
         />
       )}

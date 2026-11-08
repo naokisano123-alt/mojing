@@ -1,0 +1,308 @@
+/* 墨境 · 设定资料检索独立面板样式
+ * 命名空间隔离：所有类名前缀均为 lore-search-*，杜绝全局样式污染
+ */
+
+.lore-search-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* 搜索表单栏 */
+.lore-search-form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.lore-search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.lore-search-input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--muted, #8a8279);
+  pointer-events: none;
+}
+
+.lore-search-input {
+  width: 100%;
+  padding: 10px 36px 10px 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.25));
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+  color: var(--text, #ece6de);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.lore-search-input:focus {
+  border-color: #ba6452;
+  box-shadow: 0 0 0 2px rgba(186, 100, 82, 0.2);
+}
+
+.lore-search-clear-btn {
+  position: absolute;
+  right: 10px;
+  background: transparent;
+  border: none;
+  color: var(--muted, #8a8279);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.lore-search-clear-btn:hover {
+  color: var(--text, #ece6de);
+}
+
+.lore-search-submit-btn {
+  padding: 0 16px;
+  height: 42px;
+  border-radius: 8px;
+  background: #ba6452;
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+}
+
+.lore-search-submit-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 快速推荐检索标签 */
+.lore-search-quick-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+
+.lore-search-quick-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.lore-search-quick-label {
+  font-size: 12px;
+  color: var(--muted, #8a8279);
+  white-space: nowrap;
+}
+
+.lore-search-chip {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.2));
+  color: var(--text, #ece6de);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.lore-search-chip:hover {
+  border-color: #ba6452;
+  color: #ba6452;
+}
+
+/* 状态提示栏 */
+.lore-search-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.2));
+  font-size: 13px;
+  color: var(--text, #ece6de);
+}
+
+.lore-search-status-error {
+  border-color: rgba(186, 100, 82, 0.4);
+  background: rgba(186, 100, 82, 0.08);
+  color: #d97864;
+}
+
+.lore-search-retry-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid #ba6452;
+  color: #ba6452;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 结果列表 */
+.lore-search-results-summary {
+  font-size: 12px;
+  color: var(--muted, #8a8279);
+  padding: 0 2px;
+}
+
+.lore-search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 结果单卡 */
+.lore-search-card {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--surface, rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.2));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.2s;
+}
+
+.lore-search-card:hover {
+  border-color: rgba(186, 100, 82, 0.4);
+}
+
+.lore-search-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lore-search-doc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(186, 100, 82, 0.12);
+  color: #ba6452;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.lore-search-heading-breadcrumb {
+  font-size: 12px;
+  color: var(--muted, #8a8279);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lore-search-snippet {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text, #ece6de);
+  word-break: break-all;
+  background: var(--surface-subtle, rgba(0, 0, 0, 0.15));
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 2px solid #ba6452;
+}
+
+/* 高亮样式 */
+.lore-search-highlight {
+  background: rgba(220, 140, 60, 0.28);
+  color: #f6ad55;
+  font-weight: 600;
+  padding: 1px 2px;
+  border-radius: 2px;
+}
+
+.lore-search-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.lore-search-hint-note {
+  font-size: 11px;
+  color: var(--muted, #8a8279);
+}
+
+.lore-search-source-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.3));
+  color: var(--text, #ece6de);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lore-search-source-btn:hover {
+  border-color: #ba6452;
+  color: #ba6452;
+}
+
+/* 分页栏 */
+.lore-search-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 4px;
+  margin-top: 4px;
+}
+
+.lore-search-page-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgba(160, 150, 140, 0.25));
+  background: var(--surface, rgba(255, 255, 255, 0.04));
+  color: var(--text, #ece6de);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+.lore-search-page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.lore-search-page-btn:not(:disabled):hover {
+  border-color: #ba6452;
+  color: #ba6452;
+}
+
+.lore-search-page-info {
+  font-size: 12px;
+  color: var(--muted, #8a8279);
+}

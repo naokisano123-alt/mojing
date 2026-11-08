@@ -24,8 +24,51 @@ from .config import Settings, load_settings
 from .db import db, init_db
 from .errors import ApiError
 from .importer import chunk_text, decode_document, normalize, preview, slice_u16, u16len
+from .lore_search.service import search_chunks
+from .lore_search.types import SearchValidationError, SearchWorldNotFoundError
+from .parsers.extractor import extract_document
+from .parsers.types import ParseError, ParseLimits
 
-ALLOWED_SUFFIXES = {".txt": "text/plain", ".md": "text/markdown"}
+ALLOWED_SUFFIXES = {
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+TEXT_SUFFIXES = {".txt", ".md"}
+
+_WARNING_CODE_HINTS = [
+    ("扫描", "PARTIAL_TEXT"),
+    ("空页", "EMPTY_PAGES"),
+    ("表格", "TABLES_FLATTENED"),
+    ("页眉", "HEADERS_FOOTERS_SKIPPED"),
+    ("页脚", "HEADERS_FOOTERS_SKIPPED"),
+    ("文本框", "TEXTBOXES_SKIPPED"),
+    ("栏", "COLUMN_ORDER_UNCERTAIN"),
+]
+
+
+_PARSER_CODE_MAP = {
+    "CORRUPT_DOCUMENT": {"pdf": "PDF_CORRUPTED", "docx": "DOCX_INVALID"},
+    "ENCRYPTED_DOCUMENT": {"pdf": "PDF_ENCRYPTED", "docx": "DOCX_PROTECTED"},
+    "SCANNED_OR_EMPTY_PDF": {"pdf": "PDF_SCANNED"},
+    "ZIP_BOMB_DETECTED": {"pdf": "ARCHIVE_BOMB", "docx": "ARCHIVE_BOMB"},
+}
+
+
+def _map_parser_code(code: str, suffix: str) -> str:
+    """把解析模块的内部错误码映射成契约 §1.5 的对外错误码。"""
+    kind = "pdf" if suffix == ".pdf" else "docx"
+    return _PARSER_CODE_MAP.get(code, {}).get(kind, code)
+
+
+def _warning_payload(message: str) -> dict[str, Any]:
+    code = "EXTRACTION_WARNING"
+    for hint, candidate in _WARNING_CODE_HINTS:
+        if hint in message:
+            code = candidate
+            break
+    return {"code": code, "message": message}
 _FORBIDDEN_FILENAME_CHARS = set('\\/:*?"<>|')
 
 
@@ -78,6 +121,8 @@ def _document_dict(row: sqlite3.Row) -> dict[str, Any]:
         "line_count": row["line_count"],
         "chunk_count": row["chunk_count"],
         "source_kind": row["source_kind"],
+        "encoding_semantics": row["encoding_semantics"],
+        "warnings": json.loads(row["warnings"] or "[]"),
         "status": row["status"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -359,15 +404,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise ApiError(
                 415,
                 "UNSUPPORTED_MEDIA_TYPE",
-                "本批只支持 TXT 与 Markdown 文件。",
-                {"allowed": [".txt", ".md"]},
+                "本批支持 TXT、Markdown、PDF 与 DOCX 文件。",
+                {"allowed": list(ALLOWED_SUFFIXES)},
             )
 
-        if not data.strip():
-            raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")
+        if suffix in TEXT_SUFFIXES:
+            if not data.strip():
+                raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")
+            text, encoding = decode_document(data, cfg)
+            text = normalize(text)
+            media_type = ALLOWED_SUFFIXES[suffix]
+            encoding_semantics = "source_bytes"
+            warnings: list[dict[str, Any]] = []
+        else:
+            try:
+                parsed = extract_document(
+                    data,
+                    filename,
+                    limits=ParseLimits(
+                        max_bytes=cfg.max_doc_bytes,
+                        max_pages=cfg.max_pdf_pages,
+                        max_extracted_chars=cfg.max_text_units,
+                        max_uncompressed_bytes=cfg.max_docx_unzipped_bytes,
+                    ),
+                )
+            except ParseError as exc:
+                raise ApiError(
+                    exc.status,
+                    _map_parser_code(exc.code, suffix),
+                    exc.message,
+                    exc.details,
+                ) from exc
+            text = normalize(parsed.text)
+            encoding = parsed.encoding
+            media_type = parsed.media_type
+            encoding_semantics = "extracted_text"
+            warnings = [_warning_payload(item) for item in parsed.warnings]
 
-        text, encoding = decode_document(data, cfg)
-        text = normalize(text)
         if not text.strip():
             raise ApiError(422, "EMPTY_DOCUMENT", "这个文件是空的，没有可导入的文字。")
 
@@ -403,14 +476,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 """
                 INSERT INTO documents (id, world_id, filename, media_type, byte_size, encoding,
                                        content_sha256, text, text_length, line_count, chunk_count,
-                                       source_kind, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'user_import', 'ready', ?, ?)
+                                       source_kind, encoding_semantics, warnings, status,
+                                       created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'user_import', ?, ?, 'ready', ?, ?)
                 """,
                 (
                     document_id,
                     world_id,
                     filename,
-                    ALLOWED_SUFFIXES[suffix],
+                    media_type,
                     len(data),
                     encoding,
                     digest,
@@ -418,6 +492,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     u16len(text),
                     text.count("\n") + 1,
                     len(chunks),
+                    encoding_semantics,
+                    json.dumps(warnings, ensure_ascii=False),
                     now,
                     now,
                 ),
@@ -551,6 +627,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     (now, now, document_id),
                 )
         return JSONResponse(status_code=204, content=None)
+
+    @app.get("/api/v1/capabilities")
+    def capabilities() -> dict[str, Any]:
+        return {
+            "formats": sorted(ALLOWED_SUFFIXES),
+            "max_bytes": {
+                ".txt": cfg.max_upload_bytes,
+                ".md": cfg.max_upload_bytes,
+                ".pdf": cfg.max_doc_bytes,
+                ".docx": cfg.max_doc_bytes,
+            },
+            "search": True,
+        }
+
+    @app.get("/api/v1/search")
+    def search(
+        world_id: str = Query(...),
+        q: str = Query(""),
+        limit: int = Query(20, ge=1, le=50),
+        offset: int = Query(0, ge=0),
+    ) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            try:
+                result = search_chunks(conn, world_id, q, limit=limit, offset=offset)
+            except SearchWorldNotFoundError:
+                raise ApiError(404, "WORLD_NOT_FOUND", "这个世界不存在，或者已经被删除。")
+            except SearchValidationError as exc:
+                raise ApiError(422, "SEARCH_QUERY_INVALID", str(exc) or "检索关键词不合法。")
+        items = [
+            {
+                "world_id": item["world_id"],
+                "document_id": item["document_id"],
+                "document_filename": item["filename"],
+                "chunk_id": item["chunk_id"],
+                "chunk_index": item["chunk_index"],
+                "heading_path": item["heading_path"],
+                "start_char": item["start_char"],
+                "end_char": item["end_char"],
+                "snippet": item["snippet"],
+                "match_start": item.get("match_chunk_start_char"),
+                "match_end": item.get("match_chunk_end_char"),
+            }
+            for item in result["items"]
+        ]
+        return {
+            "query": q,
+            "items": items,
+            "total": result["total"],
+            "limit": result["limit"],
+            "offset": result["offset"],
+        }
 
     return app
 

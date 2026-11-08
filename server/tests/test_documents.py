@@ -130,9 +130,50 @@ def test_duplicate_allowed_with_flag(client):
 
 def test_unsupported_suffix(client):
     world = create_world(client)
-    response = upload(client, world["id"], "设定.pdf", b"%PDF-1.4")
+    response = upload(client, world["id"], "设定.rtf", b"{\\rtf1 hello}")
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
+
+
+def test_corrupt_pdf_is_rejected(client):
+    world = create_world(client)
+    response = upload(client, world["id"], "坏文件.pdf", b"%PDF-1.4 not really a pdf")
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] in {"PDF_CORRUPTED", "EMPTY_DOCUMENT"}
+
+
+def test_capabilities_lists_formats(client):
+    body = client.get("/api/v1/capabilities").json()
+    assert body["search"] is True
+    assert set(body["formats"]) == {".txt", ".md", ".pdf", ".docx"}
+    assert body["max_bytes"][".pdf"] >= 2 * 1024 * 1024
+
+
+def test_search_returns_chunk_source(client):
+    world = create_world(client)
+    upload(client, world["id"], "云山纪.md", SAMPLE_MD.encode("utf-8"))
+    result = client.get("/api/v1/search", params={"world_id": world["id"], "q": "渡云港"}).json()
+    assert result["total"] >= 1
+    item = result["items"][0]
+    assert item["document_filename"] == "云山纪.md"
+    assert item["start_char"] < item["end_char"]
+    assert "渡云港" in item["snippet"]
+    assert item["match_start"] is None or item["match_start"] >= 0
+
+
+def test_search_is_isolated_per_world(client):
+    world_a = create_world(client, name="世界甲")
+    world_b = create_world(client, name="世界乙")
+    upload(client, world_a["id"], "甲.md", "# 甲\n\n只有甲有的渡云港。\n".encode("utf-8"))
+    result = client.get("/api/v1/search", params={"world_id": world_b["id"], "q": "渡云港"}).json()
+    assert result["total"] == 0
+
+
+def test_search_rejects_blank_query(client):
+    world = create_world(client)
+    response = client.get("/api/v1/search", params={"world_id": world["id"], "q": "   "})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "SEARCH_QUERY_INVALID"
 
 
 def test_empty_file_leaves_no_document(client):

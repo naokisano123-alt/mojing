@@ -5,8 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
-if str(SERVER_DIR) not in sys.path:
-    sys.path.insert(0, str(SERVER_DIR))
+REPO_ROOT = SERVER_DIR.parent
+for _p in (REPO_ROOT, SERVER_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from app.config import Settings  # noqa: E402
 from app.main import create_app  # noqa: E402
