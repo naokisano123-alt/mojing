@@ -12,7 +12,13 @@ from pathlib import Path
 
 from .docx import parse_docx
 from .pdf import parse_pdf
-from .types import ParsedDocument, ParseError, ParseLimits
+from .types import (
+    ExtractionLimitError,
+    ParsedDocument,
+    ParseError,
+    ParseLimits,
+    u16len,
+)
 
 _SUPPORTED_EXTENSIONS = {
     ".pdf": "application/pdf",
@@ -92,12 +98,24 @@ def extract_document(
     if not cleaned_text.strip():
         raise ParseError(422, "EMPTY_DOCUMENT", "文本文件没有可提取的文字内容。")
 
+    text_units = u16len(cleaned_text)
+    effective_limit = effective_limits.effective_max_units
+
+    if text_units > effective_limit:
+        raise ExtractionLimitError(
+            limit=effective_limit,
+            actual=text_units,
+            message=f"纯文本提取后的文本量超出限制（当前约 {text_units} 码元，上限 {effective_limit} 码元）。",
+        )
+
     media_type = _SUPPORTED_EXTENSIONS[suffix]
     return ParsedDocument(
         text=cleaned_text,
         media_type=media_type,
         encoding=encoding,
         warnings=[],
+        warning_records=[],
         page_count=None,
-        extracted_chars=len(cleaned_text),
+        extracted_chars=text_units,
+        extracted_units=text_units,
     )

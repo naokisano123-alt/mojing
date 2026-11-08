@@ -1,11 +1,13 @@
 """PDF 文本提取器。
 
-设计考量：
+设计考量与 R3 硬化：
 - 仅支持文本型 PDF，使用纯 Python 库 pypdf 提取页面文本；
 - 严禁假成功与私自调用 OCR：纯图片扫描件或未提取到文字的 PDF 明确报错拒收；
-- 混合型 PDF（部分页面为图片/空白，部分页面为文本）：提取可用页面并明确提供 warnings 提示；
-- 安全防护：检测加密文件、损坏文件、超大页数与提取字符上限；
-- 页面顺序：按自然页码顺序拼接正文（双换行分隔），方便后续分块与 UTF-16 偏移计算。
+- 混合型 PDF（部分页面为空白/无文字）：提取可用页面，必须明确产出 PARTIAL_TEXT 结构化告警；
+- 无法区分是否扫描件时，诚实说明“无法确定是否空页或纯图片扫描件”，不编造检测结果；
+- 文本量按 UTF-16 统计（B3）：使用 u16len，超限时抛出 422 EXTRACTION_LIMIT；
+- 加密支持：允许空密码可读文档，真实密码加密文档诚实报 422 ENCRYPTED_DOCUMENT；
+- 页面顺序：按自然页码顺序拼接正文（双换行分隔）。
 """
 
 from __future__ import annotations
@@ -16,7 +18,15 @@ from typing import Any
 import pypdf
 from pypdf.errors import PdfReadError
 
-from .types import ParsedDocument, ParseError, ParseLimits
+from .types import (
+    DocumentWarningRecord,
+    ExtractionLimitError,
+    ParsedDocument,
+    ParseError,
+    ParseLimits,
+    WarningCode,
+    u16len,
+)
 
 
 def parse_pdf(
@@ -57,18 +67,19 @@ def parse_pdf(
             {"filename": filename, "error_detail": str(exc)},
         ) from exc
 
-    # 加密文件检测
+    # 加密文件处理（规范：允许空密码可读；若设真实密码则诚实拒绝，不误判为正常文件）
     if reader.is_encrypted:
         try:
-            # 尝试空密码解密（部分未设密码但标记了加密字典的文档）
             decrypt_result = reader.decrypt("")
-            if reader.is_encrypted or decrypt_result == 0:
+            if decrypt_result == 0:
                 raise ParseError(
                     422,
                     "ENCRYPTED_DOCUMENT",
-                    "PDF 文件已加密，无法直接读取内容。请解密后重新上传。",
+                    "PDF 文件已设置访问密码，无法直接读取内容。请解密后重新上传。",
                     {"filename": filename},
                 )
+            # 确认解密后页面可访问
+            _ = len(reader.pages)
         except Exception as exc:
             if isinstance(exc, ParseError):
                 raise
@@ -76,7 +87,7 @@ def parse_pdf(
                 422,
                 "ENCRYPTED_DOCUMENT",
                 "PDF 文件已加密且密码验证失败，无法读取内容。",
-                {"filename": filename},
+                {"filename": filename, "error_detail": str(exc)},
             ) from exc
 
     total_pages = len(reader.pages)
@@ -122,28 +133,61 @@ def parse_pdf(
         )
 
     warnings: list[str] = []
+    warning_records: list[DocumentWarningRecord] = []
+
     if empty_pages:
         if len(empty_pages) <= 8:
             empty_desc = ", ".join(str(p) for p in empty_pages)
         else:
             empty_desc = ", ".join(str(p) for p in empty_pages[:8]) + f" 等共 {len(empty_pages)} 页"
-        warnings.append(
-            f"PDF 共有 {total_pages} 页，其中第 {empty_desc} 未提取到文本（可能是图片或空白页）；已提取可用页面的文本（部分内容可能缺失）。"
+
+        msg_partial = (
+            f"PDF 共有 {total_pages} 页，其中第 {empty_desc} 未提取到文本（无法确定是否空页或纯图片扫描件）；"
+            "已提取可用页面的文本（部分内容可能缺失）。"
+        )
+        warnings.append(msg_partial)
+
+        # 结构化告警：必须产出 PARTIAL_TEXT 与 EMPTY_PAGES（B4 契约要求）
+        warning_records.append(
+            {
+                "code": WarningCode.PARTIAL_TEXT,
+                "message": f"部分页面未提取到文字内容（共 {len(empty_pages)} 页缺失）",
+                "count": len(empty_pages),
+            }
+        )
+        warning_records.append(
+            {
+                "code": WarningCode.EMPTY_PAGES,
+                "message": f"第 {empty_desc} 页未提取到文本（无法确定是否空页或扫描件）",
+                "count": len(empty_pages),
+            }
         )
 
-    warnings.append(
-        "PDF 文本提取受排版顺序影响（如多栏排版可能按数据流顺序读取）；不支持页眉、页脚及复杂矢量标注的分离。"
+    msg_layout = "PDF 文本提取受排版顺序影响（如多栏排版可能按数据流顺序读取）；不支持页眉、页脚及复杂矢量标注的分离。"
+    warnings.append(msg_layout)
+    warning_records.append(
+        {
+            "code": WarningCode.COLUMN_ORDER_UNCERTAIN,
+            "message": "PDF 文本提取受排版顺序影响（多栏可能按流顺序读取）",
+        }
+    )
+    warning_records.append(
+        {
+            "code": WarningCode.HEADERS_FOOTERS_SKIPPED,
+            "message": "不支持页眉、页脚及复杂矢量标注的分离",
+        }
     )
 
     full_text = "\n\n".join(pages_text)
-    char_count = len(full_text)
+    # 按 UTF-16 code units 统计（B3 契约要求）
+    text_units = u16len(full_text)
+    effective_limit = limits.effective_max_units
 
-    if char_count > limits.max_extracted_chars:
-        raise ParseError(
-            413,
-            "FILE_TOO_LARGE",
-            f"PDF 提取后的文本量超出限制（当前约 {char_count} 字符，上限 {limits.max_extracted_chars} 字符）。",
-            {"filename": filename, "extracted_chars": char_count, "max_chars": limits.max_extracted_chars},
+    if text_units > effective_limit:
+        raise ExtractionLimitError(
+            limit=effective_limit,
+            actual=text_units,
+            message=f"PDF 提取后的正文文本量超出限制（当前约 {text_units} 码元，上限 {effective_limit} 码元）。",
         )
 
     return ParsedDocument(
@@ -151,6 +195,8 @@ def parse_pdf(
         media_type="application/pdf",
         encoding="utf-8",
         warnings=warnings,
+        warning_records=warning_records,
         page_count=total_pages,
-        extracted_chars=char_count,
+        extracted_chars=text_units,
+        extracted_units=text_units,
     )

@@ -1,15 +1,15 @@
 """DOCX 文本提取器。
 
-设计考量：
+设计考量与 R3 硬化：
 - 支持标准 Microsoft Word (.docx) 及 Office Open XML 格式；
 - 文档结构顺序：遍历文档 body 元素，严格保持段落与表格的自然穿插顺序；
-- 标题分级保留：识别 Word 内置 Heading/标题样式（1-6 级）并转换为 Markdown ATX 标题（#），
-  无缝适配现有的 importer.py 标题路径抽取与分块逻辑；
+- 标题分级保留：识别 Word 内置 Heading/标题样式（1-6 级）并转换为 Markdown ATX 标题（#）；
 - 表格结构提取：将表格行转换为可读 Markdown 格式，保留行与列之间的语义关联；
+- 文本量按 UTF-16 统计（B3）：使用 u16len，超限抛出 422 EXTRACTION_LIMIT；
+- 结构化告警（B4）：输出 TABLES_FLATTENED, HEADERS_FOOTERS_SKIPPED, TEXTBOXES_SKIPPED 等机器码；
 - 安全防护与资源限制：
-  - ZIP 炸弹防御：严格检查压缩包解压总大小与膨胀率（超过 limits.max_uncompressed_bytes 或过高膨胀比时拦截）；
-  - 结构合法性校验：必须包含 word/document.xml，拦截伪造或损坏文件；
-- 限制声明（通过 warnings）：不支持并安全忽略页眉、页脚、批注、独立绘图画布文本框及浮动形状。
+  - ZIP 炸弹防御：严格检查压缩条目数（max_zip_entries）、解压总大小（max_uncompressed_bytes）与膨胀率；
+  - 结构合法性校验：必须包含 word/document.xml，拦截伪造或损坏文件。
 """
 
 from __future__ import annotations
@@ -25,7 +25,15 @@ from docx.oxml.text.paragraph import CT_P
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from .types import ParsedDocument, ParseError, ParseLimits
+from .types import (
+    DocumentWarningRecord,
+    ExtractionLimitError,
+    ParsedDocument,
+    ParseError,
+    ParseLimits,
+    WarningCode,
+    u16len,
+)
 
 _DOCX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -61,12 +69,13 @@ def _detect_heading_level(paragraph: Paragraph) -> int | None:
 
 
 def _format_table(table: Table) -> str:
-    """将 Word 表格格式化为紧凑的 Markdown 表格文本。"""
+    """将 Word 表格转换为 GitHub Flavored Markdown 兼容的纯文本表格。"""
     if not table.rows:
         return ""
 
     rows_data: list[list[str]] = []
     max_cols = 0
+
     for row in table.rows:
         row_cells = [
             re.sub(r"[\r\n\t]+", " ", cell.text).strip() for cell in row.cells
@@ -126,8 +135,22 @@ def parse_docx(
     try:
         with zipfile.ZipFile(bio, "r") as zf:
             infolist = zf.infolist()
+            # 1. 检查条目数上限（R3 防护要求）
+            if len(infolist) > limits.max_zip_entries:
+                raise ParseError(
+                    413,
+                    "ZIP_BOMB_DETECTED",
+                    f"DOCX 压缩包条目数异常 ({len(infolist)} 项，上限 {limits.max_zip_entries} 项)，已被拦截。",
+                    {
+                        "filename": filename,
+                        "zip_entries": len(infolist),
+                        "max_allowed": limits.max_zip_entries,
+                    },
+                )
+
             total_uncompressed = sum(info.file_size for info in infolist)
 
+            # 2. 检查解包总大小
             if total_uncompressed > limits.max_uncompressed_bytes:
                 raise ParseError(
                     413,
@@ -140,6 +163,7 @@ def parse_docx(
                     },
                 )
 
+            # 3. 检查压缩膨胀比率
             ratio = total_uncompressed / max(1, len(data))
             if ratio > limits.max_uncompressed_ratio and total_uncompressed > (5 * 1024 * 1024):
                 raise ParseError(
@@ -177,6 +201,7 @@ def parse_docx(
         ) from exc
 
     blocks: list[str] = []
+    table_count = 0
 
     # 保持正文段落与表格的原生交替顺序
     try:
@@ -200,6 +225,7 @@ def parse_docx(
                 tbl_markdown = _format_table(tbl)
                 if tbl_markdown:
                     blocks.append(tbl_markdown)
+                    table_count += 1
     except Exception as exc:
         raise ParseError(
             422,
@@ -218,24 +244,47 @@ def parse_docx(
             {"filename": filename},
         )
 
-    char_count = len(full_text)
-    if char_count > limits.max_extracted_chars:
-        raise ParseError(
-            413,
-            "FILE_TOO_LARGE",
-            f"DOCX 提取后的文本量超出限制（当前约 {char_count} 字符，上限 {limits.max_extracted_chars} 字符）。",
-            {"filename": filename, "extracted_chars": char_count, "max_chars": limits.max_extracted_chars},
+    # 按 UTF-16 code units 统计（B3 契约要求）
+    text_units = u16len(full_text)
+    effective_limit = limits.effective_max_units
+
+    if text_units > effective_limit:
+        raise ExtractionLimitError(
+            limit=effective_limit,
+            actual=text_units,
+            message=f"DOCX 提取后的正文文本量超出限制（当前约 {text_units} 码元，上限 {effective_limit} 码元）。",
         )
 
     warnings: list[str] = [
         "DOCX 文档中的页眉、页脚、批注、形状与独立绘图文本框不在导入范围内，仅提取正文与表格内容。"
     ]
+    warning_records: list[DocumentWarningRecord] = [
+        {
+            "code": WarningCode.HEADERS_FOOTERS_SKIPPED,
+            "message": "DOCX 文档中的页眉页脚与批注不在导入范围内，已跳过",
+        },
+        {
+            "code": WarningCode.TEXTBOXES_SKIPPED,
+            "message": "DOCX 文档中的独立绘图文本框与浮动形状不在导入范围内，已跳过",
+        },
+    ]
+
+    if table_count > 0:
+        warning_records.append(
+            {
+                "code": WarningCode.TABLES_FLATTENED,
+                "message": f"文档中的表格已转换为 Markdown 纯文本表示（共 {table_count} 个表格）",
+                "count": table_count,
+            }
+        )
 
     return ParsedDocument(
         text=full_text,
         media_type=_DOCX_MEDIA_TYPE,
         encoding="utf-8",
         warnings=warnings,
+        warning_records=warning_records,
         page_count=None,
-        extracted_chars=char_count,
+        extracted_chars=text_units,
+        extracted_units=text_units,
     )
