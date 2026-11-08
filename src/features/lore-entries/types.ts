@@ -104,6 +104,7 @@ export interface LoreEntriesPanelApi {
 }
 
 export interface LoreEntriesPanelProps {
+  initialEntryId?: string;
   worldId: string;
   api: LoreEntriesPanelApi;
   draftStore?: LoreEntryDraftStore;

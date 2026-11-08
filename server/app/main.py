@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 import hashlib
+import importlib
 import json
 import re
 import sqlite3
@@ -15,7 +18,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Query, UploadFile
+from fastapi import FastAPI, File, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -29,10 +32,22 @@ from .import_policy.policy import get_max_bytes_for_suffix
 from .import_policy.warnings import normalize_warning_records
 from .lore_entries import service as lore_service
 from .lore_entries.errors import LoreEntryError
+from .narration.lifecycle import await_request_work
+
+from .narration.core import (
+    ContextSource,
+    DraftError,
+    FakeModelClient,
+    NarrationRequest,
+    generate_draft,
+    validate_request,
+)
 from .lore_search.service import search_chunks
 from .lore_search.types import SearchValidationError, SearchWorldNotFoundError
 from .parsers.extractor import extract_document
 from .parsers.types import ParseError, ParseLimits
+
+MODEL_REQUEST_TIMEOUT = 60.0
 
 ALLOWED_SUFFIXES = {
     ".txt": "text/plain",
@@ -93,6 +108,24 @@ _FORBIDDEN_FILENAME_CHARS = set('\\/:*?"<>|')
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _gateway_error(exc: Exception) -> ApiError:
+    code = getattr(exc, "code", None)
+    message = getattr(exc, "message", None) or str(exc) or "模型网关错误。"
+    status = getattr(exc, "status", None)
+    if isinstance(code, str) and isinstance(status, int):
+        return ApiError(status, code, message)
+    return ApiError(502, "MODEL_GATEWAY_ERROR", "模型网关调用失败。")
+
+
+def _context_error(exc: Exception) -> ApiError:
+    code = getattr(exc, "code", None)
+    message = getattr(exc, "message", None) or str(exc) or "上下文构建失败。"
+    status = getattr(exc, "status", None)
+    if isinstance(code, str) and isinstance(status, int):
+        return ApiError(status, code, message)
+    return ApiError(502, "CONTEXT_ERROR", "上下文构建失败。")
 
 
 def _new_id() -> str:
@@ -249,11 +282,41 @@ def _count_documents(conn: sqlite3.Connection, world_id: str) -> int:
 # ------------------------------------------------------------------ 应用工厂
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def _load_attr(module_name: str, *attrs: str):
+    """延迟加载可选模块；缺失时返回 None，路由据此返回明确的未就绪错误。"""
+    if module_name.startswith("."):
+        # importlib 不接受相对名，补上当前包名
+        module_name = (__package__ or "app") + module_name
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        return None
+    for attr in attrs:
+        if hasattr(module, attr):
+            return getattr(module, attr)
+    return None
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    narration_store=None,
+    context_builder=None,
+) -> FastAPI:
     cfg = settings or load_settings()
     init_db(cfg.db_path)
 
-    app = FastAPI(title="墨境 M1-A/B API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app):
+        try:
+            yield
+        finally:
+            if narration_store is not None and hasattr(narration_store, 'clear'):
+                result = narration_store.clear()
+                if hasattr(result, '__await__'):
+                    await result
+
+    app = FastAPI(title="墨境 API", version="0.2.0", lifespan=lifespan)
     app.state.settings = cfg
 
     if cfg.cors_origins:
@@ -398,7 +461,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "UPDATE documents SET deleted_at = ?, updated_at = ? WHERE world_id = ? AND deleted_at IS NULL",
                 (now, now, world_id),
             )
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
 
     # -------------------------------------------------------------- 文档
 
@@ -659,7 +722,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "UPDATE documents SET deleted_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, document_id),
                 )
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
 
     @app.exception_handler(LoreEntryError)
     async def _lore_entry_error_handler(_request, exc: LoreEntryError) -> JSONResponse:
@@ -717,7 +780,137 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         with db(cfg.db_path) as conn:
             lore_service.delete_entry(conn, entry_id, int(expected_revision))
-        return JSONResponse(status_code=204, content=None)
+        return Response(status_code=204)
+
+    # -------------------------------------------------------------- M2-A 叙事实验
+
+    def _store():
+        nonlocal narration_store
+        if narration_store is not None:
+            return narration_store
+        factory = _load_attr(".model_gateway", "get_store", "default_store")
+        if factory is not None:
+            narration_store = factory() if callable(factory) else factory
+        else:
+            store_cls = _load_attr(".model_gateway", "ModelSessionStore")
+            if store_cls is None:
+                raise ApiError(503, "M2_NOT_READY", "模型网关尚未就绪（缺少 model_gateway 模块）。")
+            narration_store = store_cls()
+        return narration_store
+
+    def _context_builder():
+        nonlocal context_builder
+        if context_builder is not None:
+            return context_builder
+        builder = _load_attr(".narration_context", "build_context")
+        if builder is None:
+            raise ApiError(503, "M2_NOT_READY", "叙事上下文模块尚未就绪（缺少 narration_context）。")
+        context_builder = builder
+        return context_builder
+
+    def _map_draft_error(exc: DraftError) -> ApiError:
+        code = getattr(exc, "code", "MODEL_OUTPUT_INVALID")
+        status = 422 if code in {"ACTION_INVALID", "CONTEXT_INVALID"} else 502
+        return ApiError(status, code, str(exc))
+
+    @app.post("/api/v1/model-sessions", status_code=201)
+    async def create_model_session(payload: dict[str, Any]) -> dict[str, Any]:
+        store = _store()
+        base_url = payload.get("base_url")
+        model = payload.get("model")
+        api_key = payload.get("api_key")
+        if not all(isinstance(x, str) and x.strip() for x in (base_url, model, api_key)):
+            raise ApiError(422, "VALIDATION_ERROR", "base_url、model、api_key 都必须是非空字符串。")
+        try:
+            created = store.create(base_url, model, api_key)
+            if hasattr(created, "__await__"):
+                created = await created
+        except Exception as exc:
+            raise _gateway_error(exc)
+        return created
+
+    @app.delete("/api/v1/model-sessions/{session_id}", status_code=204)
+    async def delete_model_session(session_id: str) -> Response:
+        store = _store()
+        try:
+            result = store.delete(session_id)
+            if hasattr(result, "__await__"):
+                await result
+        except Exception as exc:
+            raise _gateway_error(exc)
+        return Response(status_code=204)
+
+    @app.post("/api/v1/model-sessions/{session_id}/test")
+    async def test_model_session(session_id: str, http_request: Request) -> dict[str, Any]:
+        store = _store()
+        try:
+            result = store.test(session_id)
+            if hasattr(result, "__await__"):
+                result = await await_request_work(http_request, result, MODEL_REQUEST_TIMEOUT)
+        except TimeoutError:
+            raise ApiError(504, "MODEL_TIMEOUT", "模型连接测试超时。")
+        except Exception as exc:
+            raise _gateway_error(exc)
+        return result
+
+    @app.post("/api/v1/worlds/{world_id}/narration-preview")
+    async def narration_preview(world_id: str, payload: dict[str, Any], http_request: Request) -> dict[str, Any]:
+        action = payload.get("action")
+        mode = payload.get("mode", "fake")
+        session_id = payload.get("session_id")
+        if not isinstance(action, str) or not action.strip():
+            raise ApiError(422, "ACTION_INVALID", "请先输入行动。")
+        if mode not in ("fake", "live"):
+            raise ApiError(422, "VALIDATION_ERROR", "mode 只能是 fake 或 live。")
+
+        try:
+            validate_request(NarrationRequest(action=action))
+        except DraftError as exc:
+            raise ApiError(422, exc.code, str(exc))
+        builder = _context_builder()
+        # 连接只在构造上下文期间持有；模型等待前必须关闭，避免长事务
+        with db(cfg.db_path) as conn:
+            try:
+                bundle = builder(conn, world_id, action)
+            except Exception as exc:
+                raise _context_error(exc)
+
+        if mode == "live":
+            if not isinstance(session_id, str) or not session_id:
+                raise ApiError(409, "MODEL_SESSION_EXPIRED", "模型会话无效或已过期。")
+            try:
+                client = _store().get_client(session_id)
+            except Exception as exc:
+                raise _gateway_error(exc)
+        else:
+            client = FakeModelClient()
+
+        request = NarrationRequest(
+            action=action,
+            sources=tuple(
+                ContextSource(source_id=s.source_id, kind=s.kind, text=s.text)
+                for s in bundle.sources
+            ),
+        )
+        try:
+            draft = await await_request_work(http_request, generate_draft(request, client), MODEL_REQUEST_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise ApiError(504, "MODEL_TIMEOUT", "模型响应超过 60 秒，已取消。")
+        except asyncio.CancelledError:
+            raise
+        except DraftError as exc:
+            raise _map_draft_error(exc)
+        except Exception as exc:
+            raise _gateway_error(exc)
+
+        return {
+            "request_id": _new_id(),
+            "mode": mode,
+            "narrative": draft.narrative,
+            "references": list(draft.references),
+            "sources": list(bundle.metadata),
+        }
+
 
     @app.get("/api/v1/capabilities")
     def capabilities() -> dict[str, Any]:

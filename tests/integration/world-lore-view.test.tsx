@@ -69,7 +69,7 @@ describe('WorldLoreView 装配', () => {
 
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
     expect(screen.getByText(/世界资料库模式/)).toBeTruthy();
-    expect(screen.getByText(/AI 角色与剧情生成将在 M2 开启/)).toBeTruthy();
+    expect(screen.getByText(/正式冒险与角色状态提交尚未开启/)).toBeTruthy();
   });
 
   it('四个子页签都能真实挂载', async () => {

@@ -518,3 +518,37 @@ export function deleteLoreEntry(
     signal,
   });
 }
+
+import type { ModelSessionCreated, NarrationPreview, NarrationPreviewRequest } from './types';
+
+/* ================= M2-A 叙事实验（M2_A_API v1.0） ================= */
+
+export function createModelSession(
+  payload: { base_url: string; model: string; api_key: string },
+  signal?: AbortSignal,
+): Promise<ModelSessionCreated> {
+  return request('POST', '/model-sessions', { body: payload, signal });
+}
+
+export function deleteModelSession(sessionId: string, signal?: AbortSignal): Promise<void> {
+  return request<void>('DELETE', '/model-sessions/' + encodeURIComponent(sessionId), { signal });
+}
+
+export function testModelSession(
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; model: string }> {
+  return request('POST', '/model-sessions/' + encodeURIComponent(sessionId) + '/test', { signal });
+}
+
+export function previewNarration(
+  worldId: string,
+  payload: NarrationPreviewRequest,
+  signal?: AbortSignal,
+): Promise<NarrationPreview> {
+  return request('POST', '/worlds/' + encodeURIComponent(worldId) + '/narration-preview', {
+    body: payload,
+    signal,
+    timeoutMs: 60000,
+  });
+}
