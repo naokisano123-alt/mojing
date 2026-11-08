@@ -864,6 +864,8 @@ class TestLoreEntriesSources(unittest.TestCase):
         self.assertEqual(s0.get("chunk_index"), 0)
 
         # 临时关闭外键模拟切片物理丢失或数据异常 -> 派生为 'unavailable'
+        # SQLite only changes foreign_keys outside an active transaction.
+        self.conn.commit()
         self.conn.execute("PRAGMA foreign_keys = OFF")
         self.conn.execute("DELETE FROM chunks WHERE id = ?", (self.chunk_1_id,))
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -876,3 +878,4 @@ class TestLoreEntriesSources(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
