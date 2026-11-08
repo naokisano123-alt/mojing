@@ -115,6 +115,30 @@ class TestModelSessionStore(unittest.IsolatedAsyncioTestCase):
         # 过期访问后，该会话应当已被自动清理
         self.assertNotIn(sid, self.store._sessions)
 
+    def test_get_method_refreshes_ttl_and_hides_key(self) -> None:
+        resp = self.store.create(
+            base_url="https://api.example.com/v1",
+            model="gpt-4o",
+            api_key="sk-secret-key-999",
+        )
+        sid = resp["session_id"]
+
+        # 10 分钟后调用 store.get()
+        self.current_time += timedelta(minutes=10)
+        info = self.store.get(sid)
+        self.assertEqual(info["session_id"], sid)
+        self.assertEqual(info["model"], "gpt-4o")
+        self.assertEqual(info["expires_at"], "2026-11-08T12:40:00Z")
+        self.assertNotIn("api_key", info)
+        self.assertNotIn("sk-secret-key-999", str(info))
+
+        # 超过 30 分钟后 get() 应报 409
+        self.current_time += timedelta(minutes=31)
+        with self.assertRaises(GatewayError) as ctx:
+            self.store.get(sid)
+        self.assertEqual(ctx.exception.code, "MODEL_SESSION_EXPIRED")
+        self.assertEqual(ctx.exception.status, 409)
+
     def test_capacity_limit_max_8_sessions(self) -> None:
         # 创建 8 个会话
         session_ids = []

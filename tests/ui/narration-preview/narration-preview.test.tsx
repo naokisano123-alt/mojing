@@ -12,6 +12,8 @@ import type {
   NarrationPreviewResponse,
   ModelSessionResponse,
   ModelSessionTestResponse,
+  NarrationSessionStore,
+  NarrationDraftStore,
 } from '../../../src/features/narration-preview/types';
 
 function createDeferred<T>() {
@@ -143,8 +145,7 @@ describe('NarrationPreview 组件 UI 行为与交互测试', () => {
     // 验证会话激活面板显示
     expect(await screen.findByTestId('active-session-info')).toBeTruthy();
 
-    // 关键安全验证 1：连接成功后会话面板替换表单，Key 输入框不再存在于 DOM
-    // （集成修正：原断言检查已卸载节点的 value，永远读到旧值；改为断言卸载 + DOM 不含 Key）
+    // 关键安全验证 1（集成修正）：会话建立后表单被替换，Key 输入框已从 DOM 移除
     expect(screen.queryByLabelText(/API Key/)).toBeNull();
     expect(document.body.innerHTML).not.toContain('sk-super-secret-key-12345');
 
@@ -370,5 +371,64 @@ describe('NarrationPreview 组件 UI 行为与交互测试', () => {
       chunk_index: undefined,
       entry_id: 'e-1',
     });
+  });
+
+  it('场景 10：注入 sessionStore 与 draftStore 支持切 Tab 卸载重挂载状态恢复（仅内存）', async () => {
+    const api = createMockApi();
+    const sessionMap = new Map<string, ModelSessionResponse>();
+    const sessionStore: NarrationSessionStore = {
+      get: (k) => sessionMap.get(k),
+      set: (k, v) => sessionMap.set(k, v),
+      delete: (k) => sessionMap.delete(k),
+    };
+
+    const draftMap = new Map<string, string>();
+    const draftStore: NarrationDraftStore = {
+      get: (k) => draftMap.get(k),
+      set: (k, v) => draftMap.set(k, v),
+      delete: (k) => draftMap.delete(k),
+    };
+
+    // 首次挂载
+    const { unmount } = render(
+      <NarrationPreview
+        worldId="w-test"
+        api={api}
+        initialMode="live"
+        sessionStore={sessionStore}
+        draftStore={draftStore}
+      />
+    );
+
+    // 输入草稿与建立会话
+    fireEvent.change(screen.getByTestId('action-input'), { target: { value: '正在构思的行动文本' } });
+    fireEvent.change(screen.getByLabelText(/API Key/), { target: { value: 'sk-store-test' } });
+    fireEvent.click(screen.getByTestId('connect-session-btn'));
+    await screen.findByTestId('active-session-info');
+
+    // 模拟切 Tab 卸载组件
+    unmount();
+
+    // 重新挂载组件（模拟用户切回该 Tab）
+    render(
+      <NarrationPreview
+        worldId="w-test"
+        api={api}
+        initialMode="live"
+        sessionStore={sessionStore}
+        draftStore={draftStore}
+      />
+    );
+
+    // 验证会话自动从内存 store 恢复激活，无需重新输入 Key
+    expect(screen.getByTestId('active-session-info')).toBeTruthy();
+    expect(screen.getByText(/sess-tes/)).toBeTruthy(); // 组件只展示 session_id 前 8 位
+
+    // 验证手写草稿自动恢复
+    expect(screen.getByTestId('action-input')).toHaveValue('正在构思的行动文本');
+
+    // 再次验证零本地持久化
+    expect(localStorage.getItem('api_key')).toBeNull();
+    expect(sessionStorage.getItem('api_key')).toBeNull();
   });
 });

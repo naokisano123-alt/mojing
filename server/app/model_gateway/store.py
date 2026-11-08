@@ -121,6 +121,38 @@ class ModelSessionStore:
         """删除会话，保证幂等。"""
         self._sessions.pop(session_id, None)
 
+    def get(self, session_id: str) -> dict[str, str]:
+        """获取会话公有信息并刷新 TTL。
+
+        返回契约响应字典（不含 API Key）。
+        若会话不存在或已过期，删除并报 409 MODEL_SESSION_EXPIRED。
+        """
+        now = self._clock()
+        session = self._sessions.get(session_id)
+        if session is None:
+            raise GatewayError(
+                code="MODEL_SESSION_EXPIRED",
+                message="模型会话不存在或已失效，请重新配置。",
+                status=409,
+            )
+
+        if now >= session.expires_at:
+            self._sessions.pop(session_id, None)
+            raise GatewayError(
+                code="MODEL_SESSION_EXPIRED",
+                message="模型会话已过期，请重新配置。",
+                status=409,
+            )
+
+        session.last_accessed_at = now
+        session.expires_at = now + timedelta(seconds=self.ttl_seconds)
+
+        return {
+            "session_id": session.session_id,
+            "model": session.model,
+            "expires_at": _format_utc_iso(session.expires_at),
+        }
+
     def get_client(self, session_id: str) -> OpenAIModelClient:
         """获取模型客户端，校验 TTL 并刷新过期时间。
 

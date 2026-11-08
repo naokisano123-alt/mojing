@@ -74,9 +74,29 @@ export interface NarrationPreviewApi {
   ): Promise<NarrationPreviewResponse>;
 }
 
+/**
+ * 内存会话存储器（仅保留在内存中，跨 Tab 重新挂载时复用会话，严禁持久化到 localStorage）
+ */
+export interface NarrationSessionStore {
+  get(key: string): ModelSessionResponse | undefined;
+  set(key: string, value: ModelSessionResponse): void;
+  delete(key: string): void;
+}
+
+/**
+ * 内存草稿暂存器（在用户切换 Tab 查阅资料时保护手写行动草稿）
+ */
+export interface NarrationDraftStore {
+  get(worldId: string): string | undefined;
+  set(worldId: string, actionDraft: string): void;
+  delete(worldId: string): void;
+}
+
 export interface NarrationPreviewProps {
   worldId: string;
   api: NarrationPreviewApi;
   onOpenSource?: (target: SourceJumpTarget) => void;
   initialMode?: NarrationMode;
+  sessionStore?: NarrationSessionStore;
+  draftStore?: NarrationDraftStore;
 }

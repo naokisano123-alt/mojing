@@ -24,7 +24,12 @@ import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
 import { LoreEntriesPanel } from '../../features/lore-entries';
 import { NarrationPreview } from '../../features/narration-preview';
-import type { NarrationPreviewApi } from '../../features/narration-preview/types';
+import type {
+  NarrationPreviewApi,
+  NarrationSessionStore,
+  NarrationDraftStore,
+  ModelSessionResponse,
+} from '../../features/narration-preview/types';
 import type {
   LoreEntriesPanelApi,
   LoreEntry as PanelLoreEntry,
@@ -82,6 +87,37 @@ export function WorldLoreView({
     };
   }
   const draftStore = draftStoreRef.current;
+
+  // 叙事实验：切子页签不丢会话与草稿（仅在内存，不落 localStorage）
+  const narrationSessionRef = useRef<NarrationSessionStore | null>(null);
+  if (!narrationSessionRef.current) {
+    const sessions = new Map<string, ModelSessionResponse>();
+    narrationSessionRef.current = {
+      get: key => sessions.get(key),
+      set: (key, value) => {
+        sessions.set(key, value);
+      },
+      delete: key => {
+        sessions.delete(key);
+      },
+    };
+  }
+  const narrationSessionStore = narrationSessionRef.current;
+
+  const narrationDraftRef = useRef<NarrationDraftStore | null>(null);
+  if (!narrationDraftRef.current) {
+    const drafts = new Map<string, string>();
+    narrationDraftRef.current = {
+      get: key => drafts.get(key),
+      set: (key, value) => {
+        drafts.set(key, value);
+      },
+      delete: key => {
+        drafts.delete(key);
+      },
+    };
+  }
+  const narrationDraftStore = narrationDraftRef.current;
 
   // 当前打开查看器的文档（可带来源区间，用于检索回跳高亮）
   const [viewingDoc, setViewingDoc] = useState<{
@@ -382,6 +418,8 @@ export function WorldLoreView({
         <NarrationPreview
           worldId={worldId}
           api={narrationApi}
+          sessionStore={narrationSessionStore}
+          draftStore={narrationDraftStore}
           onOpenSource={target => {
             if (target.kind === 'entry') {
               setTab('entries');

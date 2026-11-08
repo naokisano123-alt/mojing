@@ -22,18 +22,75 @@ import type {
 import './narration-preview.css';
 
 const ACTION_MAX_LENGTH = 2000;
+const SESSION_STORE_KEY = 'current_active_session';
 
 export function NarrationPreview({
   worldId,
   api,
   onOpenSource,
   initialMode = 'fake',
+  sessionStore,
+  draftStore,
 }: NarrationPreviewProps) {
   // 模式：fake | live
   const [mode, setMode] = useState<NarrationMode>(initialMode);
 
-  // Live 模式会话状态（仅保存在组件内存与状态中，严禁持久化到 localStorage）
-  const [session, setSession] = useState<ModelSessionResponse | null>(null);
+  // 内部默认内存暂存区（当外部未注入 store 时使用，严禁写入 localStorage）
+  const fallbackSessionStoreRef = useRef<Map<string, ModelSessionResponse>>(new Map());
+  const fallbackDraftStoreRef = useRef<Map<string, string>>(new Map());
+
+  const getStoredSession = useCallback(() => {
+    return sessionStore
+      ? sessionStore.get(SESSION_STORE_KEY)
+      : fallbackSessionStoreRef.current.get(SESSION_STORE_KEY);
+  }, [sessionStore]);
+
+  const setStoredSession = useCallback(
+    (sess: ModelSessionResponse) => {
+      if (sessionStore) {
+        sessionStore.set(SESSION_STORE_KEY, sess);
+      } else {
+        fallbackSessionStoreRef.current.set(SESSION_STORE_KEY, sess);
+      }
+    },
+    [sessionStore]
+  );
+
+  const deleteStoredSession = useCallback(() => {
+    if (sessionStore) {
+      sessionStore.delete(SESSION_STORE_KEY);
+    } else {
+      fallbackSessionStoreRef.current.delete(SESSION_STORE_KEY);
+    }
+  }, [sessionStore]);
+
+  const getStoredDraft = useCallback(
+    (wid: string) => {
+      return draftStore ? draftStore.get(wid) : fallbackDraftStoreRef.current.get(wid);
+    },
+    [draftStore]
+  );
+
+  const setStoredDraft = useCallback(
+    (wid: string, text: string) => {
+      if (draftStore) {
+        draftStore.set(wid, text);
+      } else {
+        fallbackDraftStoreRef.current.set(wid, text);
+      }
+    },
+    [draftStore]
+  );
+
+  // Live 模式会话状态（仅保存在内存会话区，跨 Tab 重挂时复用，严禁持久化到 localStorage）
+  const [session, setSession] = useState<ModelSessionResponse | null>(() => {
+    const existing = getStoredSession();
+    if (existing && new Date(existing.expires_at).getTime() > Date.now()) {
+      return existing;
+    }
+    return null;
+  });
+
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
   const [modelName, setModelName] = useState('gpt-4o-mini');
   const [apiKey, setApiKey] = useState('');
@@ -46,7 +103,9 @@ export function NarrationPreview({
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // 叙事生成与交互状态
-  const [action, setAction] = useState('');
+  const [action, setAction] = useState<string>(() => {
+    return getStoredDraft(worldId) || '';
+  });
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<{ code: string; message: string } | null>(null);
   const [stoppedNotice, setStoppedNotice] = useState<string | null>(null);
@@ -55,6 +114,13 @@ export function NarrationPreview({
   // 引用与并发控制 Ref
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentWorldIdRef = useRef(worldId);
+
+  // 监听输入变更，即时暂存至内存 draftStore
+  const handleActionChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setAction(val);
+    setStoredDraft(currentWorldIdRef.current, val);
+  };
 
   // 监听 worldId 切换，重置并 abort 正在进行的请求，防止迟到响应污染
   useEffect(() => {
@@ -68,7 +134,11 @@ export function NarrationPreview({
     setGenerateError(null);
     setStoppedNotice(null);
     setSessionExpiredNotice(null);
-  }, [worldId]);
+
+    // 恢复该世界下的未提交草稿
+    const savedDraft = getStoredDraft(worldId) || '';
+    setAction(savedDraft);
+  }, [worldId, getStoredDraft]);
 
   // 组件卸载时彻底 abort 并清理控制器
   useEffect(() => {
@@ -102,6 +172,7 @@ export function NarrationPreview({
       // 提交成功立即清空密码框中的敏感 Key
       setApiKey('');
       setSession(res);
+      setStoredSession(res);
     } catch (err: any) {
       // 失败时保留用户当前输入的 base_url, modelName, apiKey 供其修正，不静默擦除
       setSessionError(err?.message || err?.code || '建立模型会话失败');
@@ -119,6 +190,7 @@ export function NarrationPreview({
       // 契约规定删除幂等，忽略错误
     } finally {
       setSession(null);
+      deleteStoredSession();
       setTestResult(null);
       setSessionExpiredNotice(null);
     }
@@ -139,6 +211,7 @@ export function NarrationPreview({
     } catch (err: any) {
       if (err?.code === 'MODEL_SESSION_EXPIRED' || err?.status === 409) {
         setSession(null);
+        deleteStoredSession();
         setSessionExpiredNotice('模型会话已过期，请重新配置并连接');
       } else {
         setTestResult({ ok: false, message: err?.message || err?.code || '连接测试失败' });
@@ -198,6 +271,7 @@ export function NarrationPreview({
         setStoppedNotice('已取消等待。注意：停止操作能取消客户端等待与服务端任务，但不能承诺上游服务商未扣费。');
       } else if (err?.code === 'MODEL_SESSION_EXPIRED' || err?.status === 409) {
         setSession(null);
+        deleteStoredSession();
         setSessionExpiredNotice('模型会话已过期（服务端闲置超时 30 分钟或服务已重启），请重新连接');
         setGenerateError({ code: 'MODEL_SESSION_EXPIRED', message: '会话已过期，请重新连接' });
       } else {
@@ -213,7 +287,7 @@ export function NarrationPreview({
         abortControllerRef.current = null;
       }
     }
-  }, [action, generating, mode, session, api]);
+  }, [action, generating, mode, session, api, deleteStoredSession]);
 
   // 停止生成
   const handleStop = () => {
@@ -314,7 +388,7 @@ export function NarrationPreview({
                 </span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                凭据状态：API Key 已加密暂存服务端内存会话，浏览器未持久化存储。
+                凭据状态：API Key 已安全暂存服务端内存会话，浏览器未持久化存储。
               </div>
 
               {testResult && (
@@ -439,7 +513,7 @@ export function NarrationPreview({
           <textarea
             className="narration-textarea"
             value={action}
-            onChange={(e) => setAction(e.target.value)}
+            onChange={handleActionChange}
             placeholder="描述你的角色想要采取的行动，例如：向集市铁匠打听古老遗迹的入口与守卫分布..."
             disabled={generating}
             data-testid="action-input"

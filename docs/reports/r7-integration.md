@@ -40,6 +40,22 @@
 
 R7-M / R7-L / R7-A 三包到位后按独立 import 分支核验合并，再补：`finish_reason` 校验、URL 边界、上下文有界读取、面板异步生命周期、entry 精确定位。
 
+## 4.1 追加交付：三个更新版 R6 包（收到并已合并）
+
+文件名仍标 R6、baseline 仍是 `8087d09`，但内容是对应模块的修订版（不是 R7 包）。核对方式：逐文件 sha256 与当前分支比对，用 `files/` 覆盖并保留作者。
+
+| 包 | 变化 | 处理 |
+| --- | --- | --- |
+| Marcin | `NarrationPreview` +81 行：新增 `sessionStore` / `draftStore` 可选 props（切 Tab 不丢会话与草稿）、请求 abort 与卸载清理 | 已采纳；`WorldLoreView` 注入稳定内存 store |
+| Li | 系统提示补充引用对应要求；`ModelSessionStore.get()` 返回公有会话信息并刷新 TTL | 已采纳（当前路由未调用 `get`，保留给后续会话回显） |
+| Ma | 类型/入口微调，`service.py` 与当前一致 | 已采纳 |
+
+集成修正（integration_fix）：
+- 场景 2 仍断言已卸载节点的 value（必然失败）→ 改为断言输入框移除 + body 不含 Key
+- 场景 10 断言 `/sess-test/`，但组件只显示 session_id 前 8 位 → 改为前缀 `/sess-tes/`
+
+回归：`pytest` 244、`npm test` 62、`npm run test:ui` 22、`npm run build` 通过。
+
 ## 5. 未做
 
 - 安卓真机复测
