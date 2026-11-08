@@ -2,7 +2,9 @@
 
 用户已要求Codex独立接手后续开发，不再等待四助手进度，也不继续派发任务。
 
-最新背包阶段见[背包账本](../reports/codex-inventory.md)。
+最新存档分支阶段见[检查点与分支](../reports/codex-checkpoints.md)。
+
+背包阶段见[背包账本](../reports/codex-inventory.md)。
 
 角色状态阶段见[角色账本](../reports/codex-character-state.md)。
 

@@ -8,6 +8,8 @@ import {
   type InventoryItem,
 } from "./api";
 import { InventoryEditor } from "./InventoryEditor";
+import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
+import { CheckpointPanel } from "./CheckpointPanel";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -18,12 +20,14 @@ export function AdventureJournal({
   onConfigure,
   onOpenSource,
   api = adventureApi,
+  checkpointApi = defaultCheckpointApi,
 }: {
   worldId: string;
   sessionId?: string;
   onConfigure: () => void;
   onOpenSource: (source: NarrationSource) => void;
   api?: typeof adventureApi;
+  checkpointApi?: typeof defaultCheckpointApi;
 }) {
   const [characterName, setCharacterName] = useState("旅人");
   const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
@@ -339,6 +343,27 @@ export function AdventureJournal({
           >
             刷新记录 / 恢复草案
           </button>
+          {run.origin_checkpoint_id && (
+            <p className="muted">
+              当前为存档分支，继承检查点之前的确认历史，原路线保持不变。
+            </p>
+          )}
+          <CheckpointPanel
+            api={checkpointApi}
+            run={run}
+            disabled={busy}
+            onRestored={async (branch) => {
+              setRuns((prev) => [
+                branch,
+                ...prev.filter((item) => item.id !== branch.id),
+              ]);
+              if (locked.current) {
+                setError("分支已创建，请在当前操作结束后从旅程列表切换。");
+                return;
+              }
+              await choose(branch.id);
+            }}
+          />
           {run.character ? (
             <CharacterCard state={run.character} title="当前角色状态" />
           ) : (

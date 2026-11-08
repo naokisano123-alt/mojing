@@ -73,6 +73,11 @@ def init_db(path: Path | str) -> None:
         conn.executescript(ADVENTURE_SCHEMA)
         if 'character_json' not in {row[1] for row in conn.execute('PRAGMA table_info(adventures)')}:
             conn.execute('ALTER TABLE adventures ADD COLUMN character_json TEXT')
+        for column in ('origin_checkpoint_id', 'restore_request_id'):
+            if column not in {row[1] for row in conn.execute('PRAGMA table_info(adventures)')}:
+                conn.execute(f'ALTER TABLE adventures ADD COLUMN {column} TEXT')
+        from .adventures.checkpoints import SCHEMA as CHECKPOINT_SCHEMA
+        conn.executescript(CHECKPOINT_SCHEMA)
         conn.commit()
 
 

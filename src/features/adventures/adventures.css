@@ -142,3 +142,31 @@
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.journal-checkpoints {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  min-width: 0;
+}
+.journal-checkpoints ul {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.journal-checkpoints li {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  overflow-wrap: anywhere;
+}
+.checkpoint-controls {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
