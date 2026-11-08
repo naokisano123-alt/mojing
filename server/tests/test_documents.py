@@ -322,3 +322,45 @@ def test_txt_over_2_mib_still_rejected(client):
     response = upload(client, world["id"], "大.txt", payload, "text/plain")
     assert response.status_code == 413
     assert response.json()["error"]["details"]["max_bytes"] == 2 * 1024 * 1024
+
+
+@pytest.mark.parametrize("kind", ["pdf", "docx", "partial-pdf"])
+def test_rich_document_warnings_survive_http_upload_and_restart(client, db_path, kind):
+    """Exercise real parsers through HTTP, including warnings with no count."""
+    from server.tests.parsers.sample_helpers import create_test_docx, create_test_pdf
+
+    world = create_world(client)
+    if kind == "docx":
+        filename = "valid.docx"
+        payload = create_test_docx([("p", "A traveler enters the harbor.")])
+        expected_code = "TEXTBOXES_SKIPPED"
+    else:
+        filename = "valid.pdf"
+        pages = ["A traveler enters the harbor."]
+        if kind == "partial-pdf":
+            pages.append("")
+        payload = create_test_pdf(pages)
+        expected_code = "PARTIAL_TEXT" if kind == "partial-pdf" else "COLUMN_ORDER_UNCERTAIN"
+
+    response = upload(client, world["id"], filename, payload)
+    assert response.status_code == 201, response.text
+    document = response.json()
+    assert document["encoding_semantics"] == "extracted_text"
+    warnings = document["warnings"]
+    assert any(w["code"] == expected_code for w in warnings)
+    assert any("count" not in w for w in warnings)
+    if kind == "partial-pdf":
+        assert next(w for w in warnings if w["code"] == "PARTIAL_TEXT")["count"] == 1
+
+    # Verify JSON warnings and the actual extracted content were committed.
+    with TestClient(create_app(Settings(db_path=db_path))) as restarted:
+        detail = restarted.get(f"/api/v1/documents/{document['id']}").json()
+        assert detail["warnings"] == warnings
+        raw = _raw_text(restarted, document["id"])
+        assert "traveler" in raw
+        chunks = restarted.get(
+            f"/api/v1/documents/{document['id']}/chunks",
+            params={"include_text": True},
+        ).json()["items"]
+        assert "".join(chunk["text"] for chunk in chunks) == raw
+

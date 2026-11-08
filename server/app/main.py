@@ -460,10 +460,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             encoding_semantics = "extracted_text"
             records = getattr(parsed, "warning_records", None) or []
             if records:
-                warnings = [
-                    {"code": record.code, "message": record.message, "count": record.count}
-                    for record in records
-                ]
+                # DocumentWarningRecord is a TypedDict; count is optional.
+                warnings = [dict(record) for record in records]
             else:
                 warnings = [_warning_payload(item) for item in parsed.warnings]
 
@@ -762,3 +760,4 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+

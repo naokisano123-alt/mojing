@@ -31,6 +31,7 @@ import {
   deleteLoreEntry,
 } from '../../api/client';
 import './documents.css';
+import { getUploadPolicy, toLoreSearchItem } from './loreAdapters';
 
 export interface WorldLoreViewProps {
   worldId: string;
@@ -51,7 +52,7 @@ export function WorldLoreView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('list');
-  const [formats, setFormats] = useState<string[]>(['.txt', '.md']);
+  const [uploadPolicy, setUploadPolicy] = useState(() => getUploadPolicy());
 
   // 当前打开查看器的文档（可带来源区间，用于检索回跳高亮）
   const [viewingDoc, setViewingDoc] = useState<{
@@ -75,10 +76,10 @@ export function WorldLoreView({
     let alive = true;
     getCapabilities()
       .then(caps => {
-        if (alive) setFormats(caps.formats);
+        if (alive) setUploadPolicy(getUploadPolicy(caps));
       })
       .catch(() => {
-        if (alive) setFormats(['.txt', '.md']);
+        if (alive) setUploadPolicy(getUploadPolicy());
       });
     return () => {
       alive = false;
@@ -187,28 +188,11 @@ export function WorldLoreView({
       total: result.total,
       limit: result.limit,
       offset: result.offset,
-      items: result.items.map(item => ({
-        world_id: item.world_id,
-        document_id: item.document_id,
-        chunk_id: item.chunk_id,
-        chunk_index: item.chunk_index,
-        filename: item.document_filename,
-        heading_path: item.heading_path,
-        start_char: item.start_char,
-        end_char: item.end_char,
-        snippet: item.snippet,
-        match_field: item.match_field,
-        match_start_char: item.match_start === null ? 0 : item.start_char + item.match_start,
-        match_end_char: item.match_end === null ? 0 : item.start_char + item.match_end,
-        match_chunk_start_char: item.match_start ?? 0,
-        match_chunk_end_char: item.match_end ?? 0,
-        match_coords_scope: 'chunk',
-      })),
+      items: result.items.map(toLoreSearchItem),
     };
   }
 
   const documents = worldDetail?.documents || [];
-  const supportsRichFormats = formats.includes('.pdf') || formats.includes('.docx');
 
   return (
     <div className="narrow doc-hub">
@@ -346,8 +330,7 @@ export function WorldLoreView({
           worldId={worldId}
           onSuccess={handleUploadSuccess}
           onCancel={() => setTab('list')}
-          supportedFormats={formats}
-          maxBytes={supportsRichFormats ? 8 * 1024 * 1024 : 2 * 1024 * 1024}
+          {...uploadPolicy}
           onViewExisting={id => setViewingDoc({ documentId: id, mode: 'chunks' })}
           onRefreshRequest={() => void loadWorld()}
         />
@@ -400,3 +383,4 @@ export function WorldLoreView({
     </div>
   );
 }
+

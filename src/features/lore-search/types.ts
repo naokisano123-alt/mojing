@@ -16,10 +16,10 @@ export interface LoreSearchItem {
   end_char: number;
   snippet: string;
   match_field: MatchField;
-  match_start_char: number;
-  match_end_char: number;
-  match_chunk_start_char: number;
-  match_chunk_end_char: number;
+  match_start_char: number | null;
+  match_end_char: number | null;
+  match_chunk_start_char: number | null;
+  match_chunk_end_char: number | null;
   match_coords_scope: string;
 }
 
@@ -40,8 +40,8 @@ export interface LoreSearchParams {
 export interface LoreSourceTarget {
   documentId: string;
   chunkIndex: number;
-  startChar: number;
-  endChar: number;
+  startChar?: number;
+  endChar?: number;
 }
 
 export interface LoreSearchPanelProps {
@@ -52,3 +52,4 @@ export interface LoreSearchPanelProps {
   pageSize?: number;
   className?: string;
 }
+
