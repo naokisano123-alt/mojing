@@ -3,6 +3,7 @@ import {
   Upload,
   BookOpen,
   Search,
+  ClipboardList,
   Info,
   Compass,
   AlertCircle,
@@ -20,6 +21,15 @@ import { DocumentUpload } from './DocumentUpload';
 import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
+import { LoreEntriesPanel } from '../../features/lore-entries';
+import type { LoreEntriesPanelApi, LoreEntry as PanelLoreEntry } from '../../features/lore-entries/types';
+import {
+  listLoreEntries,
+  getLoreEntry,
+  createLoreEntry,
+  updateLoreEntry,
+  deleteLoreEntry,
+} from '../../api/client';
 import './documents.css';
 
 export interface WorldLoreViewProps {
@@ -29,7 +39,7 @@ export interface WorldLoreViewProps {
   onPlayDemo?: () => void;
 }
 
-type Tab = 'list' | 'search' | 'upload';
+type Tab = 'list' | 'search' | 'entries' | 'upload';
 
 export function WorldLoreView({
   worldId,
@@ -127,6 +137,46 @@ export function WorldLoreView({
     setTab('list');
   }
 
+  // 条目面板 API 适配：面板只认注入接口，HTTP 细节留在这一层
+  const loreApi: LoreEntriesPanelApi = {
+    list: async params => {
+      const page = await listLoreEntries(
+        {
+          worldId: params.worldId,
+          type: params.type,
+          status: params.status,
+          limit: params.limit,
+          offset: params.offset,
+        },
+        params.signal,
+      );
+      return { items: page.items as unknown as PanelLoreEntry[], total: page.total };
+    },
+    get: async (entryId, signal) =>
+      (await getLoreEntry(entryId, signal)) as unknown as PanelLoreEntry,
+    create: async (worldId, payload) =>
+      (await createLoreEntry(worldId, payload as never)) as unknown as PanelLoreEntry,
+    update: async (entryId, payload, expectedRevision) =>
+      (await updateLoreEntry(entryId, payload as never, expectedRevision)) as unknown as PanelLoreEntry,
+    remove: (entryId, expectedRevision) => deleteLoreEntry(entryId, expectedRevision),
+    searchSources: async ({ worldId, query, signal }) => {
+      const result = await searchLore({ worldId, query, limit: 20 }, signal);
+      return result.items.map(item => ({
+        world_id: item.world_id,
+        document_id: item.document_id,
+        chunk_id: item.chunk_id,
+        chunk_index: item.chunk_index,
+        document_filename: item.document_filename,
+        filename: item.document_filename,
+        heading_path: item.heading_path,
+        start_char: item.start_char,
+        end_char: item.end_char,
+        snippet: item.snippet,
+        match_field: item.match_field,
+      }));
+    },
+  };
+
   // 契约 DTO → 检索面板 DTO 的薄适配层（面板类型由 Ma 维护，不共用 src/api/types）
   async function runSearch(
     params: { worldId: string; query: string; limit?: number; offset?: number },
@@ -147,9 +197,9 @@ export function WorldLoreView({
         start_char: item.start_char,
         end_char: item.end_char,
         snippet: item.snippet,
-        match_field: 'text' as const,
-        match_start_char: item.start_char + (item.match_start ?? 0),
-        match_end_char: item.start_char + (item.match_end ?? 0),
+        match_field: item.match_field,
+        match_start_char: item.match_start === null ? 0 : item.start_char + item.match_start,
+        match_end_char: item.match_end === null ? 0 : item.start_char + item.match_end,
         match_chunk_start_char: item.match_start ?? 0,
         match_chunk_end_char: item.match_end ?? 0,
         match_coords_scope: 'chunk',
@@ -215,6 +265,13 @@ export function WorldLoreView({
         </button>
         <button
           type="button"
+          className={tab === 'entries' ? 'active' : ''}
+          onClick={() => setTab('entries')}
+        >
+          <ClipboardList size={15} /> 人工设定
+        </button>
+        <button
+          type="button"
           className={tab === 'upload' ? 'active' : ''}
           onClick={() => setTab('upload')}
         >
@@ -252,6 +309,24 @@ export function WorldLoreView({
         <LoreSearchPanel
           worldId={worldId}
           search={runSearch}
+          onOpenSource={target =>
+            setViewingDoc({
+              documentId: target.documentId,
+              mode: 'chunks',
+              source: {
+                chunkIndex: target.chunkIndex,
+                startChar: target.startChar,
+                endChar: target.endChar,
+              },
+            })
+          }
+        />
+      )}
+
+      {tab === 'entries' && (
+        <LoreEntriesPanel
+          worldId={worldId}
+          api={loreApi}
           onOpenSource={target =>
             setViewingDoc({
               documentId: target.documentId,

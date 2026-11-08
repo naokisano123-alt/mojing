@@ -455,3 +455,53 @@
     justify-content: space-between;
   }
 }
+
+/* 资料查看器警告与解析提示样式 (B5 修复) */
+.viewer-warnings-container {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.viewer-warning-banner {
+  padding: 10px 14px;
+  background: color-mix(in srgb, #ba6452 14%, var(--paper));
+  border: 1px solid color-mix(in srgb, #ba6452 35%, transparent);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #ba6452;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.viewer-warning-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.viewer-warnings-box {
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--accent, #ad8554) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent, #ad8554) 25%, var(--line));
+  border-radius: 8px;
+  font-size: 11px;
+}
+.viewer-warnings-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  color: var(--accent, #ad8554);
+  margin-bottom: 6px;
+}
+.viewer-warnings-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.7;
+}
+.viewer-warning-item {
+  margin-bottom: 2px;
+}

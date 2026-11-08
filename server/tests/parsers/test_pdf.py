@@ -143,9 +143,11 @@ class TestPdfParser(unittest.TestCase):
         with self.assertRaises(ParseError) as ctx:
             parse_pdf(pdf_bytes, "many_chars.pdf", strict_limits)
 
-        self.assertEqual(ctx.exception.status, 413)
-        self.assertEqual(ctx.exception.code, "FILE_TOO_LARGE")
+        self.assertEqual(ctx.exception.status, 422)
+        self.assertEqual(ctx.exception.code, "EXTRACTION_LIMIT")
         self.assertIn("文本量超出限制", ctx.exception.message)
+        self.assertIn("limit", ctx.exception.details)
+        self.assertIn("actual", ctx.exception.details)
 
 
 if __name__ == "__main__":

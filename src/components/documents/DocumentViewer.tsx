@@ -47,7 +47,37 @@ export interface DocumentViewerProps {
 const CHUNK_PAGE_SIZE = 100; // 每页切片拉取上限
 const PAGE_SIZE_RAW = 20_000; // 契约 §4.10 单页 20000 单位
 
+
+function isPartialTextWarning(w: unknown): boolean {
+  if (!w) return false;
+  if (typeof w === 'string') {
+    return w.includes('PARTIAL_TEXT') || w.includes('部分内容未提取');
+  }
+  if (typeof w === 'object' && w !== null) {
+    const rec = w as { code?: string; message?: string };
+    return (
+      rec.code === 'PARTIAL_TEXT' ||
+      (rec.message ? rec.message.includes('部分内容未提取') : false)
+    );
+  }
+  return false;
+}
+
+function formatWarningText(w: unknown): string {
+  if (typeof w === 'string') return w;
+  if (typeof w === 'object' && w !== null) {
+    const rec = w as { code?: string; message?: string; count?: number };
+    const msg = rec.message || rec.code || '未知解析警告';
+    if (typeof rec.count === 'number' && rec.count > 1) {
+      return `${msg}（共 ${rec.count} 处）`;
+    }
+    return msg;
+  }
+  return String(w);
+}
+
 export function DocumentViewer({
+
   documentId,
   initialMode = 'chunks',
   initialChunkIndex,
@@ -342,11 +372,40 @@ export function DocumentViewer({
             </div>
             {doc && (
               <div className="viewer-meta-line">
-                <Tag>{doc.encoding.toUpperCase()}</Tag>
+                {doc.encoding_semantics === 'extracted_text' ? (
+                  <Tag>EXTRACTED TEXT</Tag>
+                ) : (
+                  <Tag>{doc.encoding.toUpperCase()}</Tag>
+                )}
                 <Tag>{(doc.byte_size / 1024).toFixed(1)} KB</Tag>
                 <span>{doc.chunk_count} 个章节切片</span>
                 <span>{doc.text_length} 字符</span>
                 <span>{doc.line_count} 行</span>
+              </div>
+            )}
+            {doc && doc.warnings && doc.warnings.length > 0 && (
+              <div className="viewer-warnings-container">
+                {doc.warnings.some(isPartialTextWarning) && (
+                  <div className="viewer-warning-banner" role="alert">
+                    <AlertCircle size={16} />
+                    <div>
+                      <strong>部分内容未提取</strong>：该文档包含复杂排版、图片或不支持的元素，部分文本未能完整提取。
+                    </div>
+                  </div>
+                )}
+                <div className="viewer-warnings-box" role="status">
+                  <div className="viewer-warnings-title">
+                    <AlertCircle size={13} />
+                    <span>导入解析提示 ({doc.warnings.length})</span>
+                  </div>
+                  <ul className="viewer-warnings-list">
+                    {doc.warnings.map((w, idx) => (
+                      <li key={idx} className="viewer-warning-item">
+                        {formatWarningText(w)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </div>

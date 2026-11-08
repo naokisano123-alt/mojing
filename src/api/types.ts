@@ -146,7 +146,9 @@ export interface SearchResultItem {
   start_char: number;
   end_char: number;
   snippet: string;
-  /** 命中在块内的区间（UTF-16），无法定位时为 null */
+  /** 命中字段：正文 / 标题 / 文件名（契约 M1_R3_API §2.3） */
+  match_field: 'text' | 'heading' | 'filename';
+  /** 命中在块内的区间（UTF-16），非正文命中时为 null */
   match_start: number | null;
   match_end: number | null;
 }
@@ -163,4 +165,55 @@ export interface CapabilitiesResponse {
   formats: string[];
   max_bytes: Record<string, number>;
   search: boolean;
+}
+
+/* ================= M1-D 人工条目（M1_R3_API §1.1） ================= */
+
+export type LoreEntryType = 'character' | 'location' | 'faction' | 'rule' | 'other';
+export type LoreEntryStatus = 'draft' | 'confirmed';
+export type SourceAvailability = 'active' | 'deleted' | 'unavailable';
+
+export interface LoreEntrySourceLink {
+  document_id: Uuid;
+  chunk_id: Uuid;
+  start_char: number;
+  end_char: number;
+  excerpt: string;
+  availability: SourceAvailability;
+}
+
+export interface LoreEntryDto {
+  id: Uuid;
+  world_id: Uuid;
+  type: LoreEntryType;
+  title: string;
+  summary: string;
+  status: LoreEntryStatus;
+  revision: number;
+  origin: 'manual';
+  source_links: LoreEntrySourceLink[];
+  needs_source_review: boolean;
+  created_at: IsoTime;
+  updated_at: IsoTime;
+  deleted_at: IsoTime | null;
+}
+
+export interface LoreEntryPage {
+  items: LoreEntryDto[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface LoreEntryDraftPayload {
+  type: LoreEntryType;
+  title: string;
+  summary: string;
+  status: LoreEntryStatus;
+  source_links: Array<{
+    document_id: Uuid;
+    chunk_id: Uuid;
+    start_char: number;
+    end_char: number;
+  }>;
 }

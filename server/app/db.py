@@ -66,6 +66,9 @@ def init_db(path: Path | str) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
+        from .lore_entries.schema import ensure_lore_entries_schema
+
+        ensure_lore_entries_schema(conn)
         conn.commit()
 
 
