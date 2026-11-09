@@ -1053,5 +1053,13 @@ def create_app(
     return app
 
 
-app = create_app()
+
+def __getattr__(name: str) -> Any:
+    # Uvicorn's app.main:app entry remains available without opening a default
+    # database when an embedded runtime imports only the application factory.
+    if name == "app":
+        application = create_app()
+        globals()["app"] = application
+        return application
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
