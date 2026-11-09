@@ -162,6 +162,13 @@ def _world_dict(row: sqlite3.Row, document_count: int) -> dict[str, Any]:
     }
 
 
+_DOCUMENT_METADATA_COLUMNS = (
+    "id, world_id, filename, media_type, byte_size, encoding, content_sha256, "
+    "text_length, line_count, chunk_count, source_kind, encoding_semantics, warnings, "
+    "status, created_at, updated_at, deleted_at"
+)
+
+
 def _document_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -449,7 +456,7 @@ def create_app(
         with db(cfg.db_path) as conn:
             row = _get_world(conn, world_id)
             docs = conn.execute(
-                "SELECT * FROM documents WHERE world_id = ? AND deleted_at IS NULL ORDER BY created_at ASC",
+                f"SELECT {_DOCUMENT_METADATA_COLUMNS} FROM documents WHERE world_id = ? AND deleted_at IS NULL ORDER BY created_at ASC",
                 (world_id,),
             ).fetchall()
         payload = _world_dict(row, len(docs))
@@ -682,7 +689,7 @@ def create_app(
             where = "world_id = ?" if include_deleted else "world_id = ? AND deleted_at IS NULL"
             total = int(conn.execute(f"SELECT COUNT(*) AS n FROM documents WHERE {where}", (world_id,)).fetchone()["n"])
             rows = conn.execute(
-                f"SELECT * FROM documents WHERE {where} ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?",
+                f"SELECT {_DOCUMENT_METADATA_COLUMNS} FROM documents WHERE {where} ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?",
                 (world_id, limit, offset),
             ).fetchall()
         return {
