@@ -28,12 +28,24 @@
 | 命令 | 结果 |
 | --- | --- |
 | `pytest tests/m3` | **7 passed**：迁移幂等（连跑 3 次）、旧旅程补实例、新旅程建实例、回合确认推进分钟与版本、版本冲突 409、快照恢复新建实例、跨世界快照拒绝 |
-| `pytest`（全量） | **329 passed**（原 322 + 新增 7） |
-| `npm test` / `npm run test:ui` / `npm run build` | 由 CI 复跑（本轮无前端改动） |
+| `pytest tests/m3`（补齐后） | **13 passed**：+ 同分钟多实例、提交失败整事务回滚、Worker 开关与用量、消息路由（Fake 与 503）、Fake 验收链 |
+| `pytest`（全量） | **335 passed** |
+| `npm test` / `npm run test:ui` / `npm run build` | **62 / 45 / 通过**（本轮实跑） |
+| Android APK | 由 PR 触发（workflow 只在 main 与 PR 上跑） |
+
+## 3.1 补齐的接线（第二轮）
+
+| 项 | 实现 |
+| --- | --- |
+| 跨模块适配层 | `m3/core/adapters.py`：`DomainAdapter` 协议 + 注册表；`snapshot_all` / `restore_all`；启动时尝试加载 `m3.events` / `m3.knowledge` |
+| 检查点领域快照 | `instance_snapshot.domains` 保存各模块快照；分支恢复时按 `new_instance_id` 调各模块 `restore` |
+| Worker 生命周期骨架 | `m3/core/worker.py`：`pulse_enabled` 持久开关（默认关闭）、`ensure_running` 409 `PULSE_DISABLED`、模型用量表 `m3_model_usage` 与按游戏日汇总 |
+| 玩家消息读路由 | `GET /api/v1/adventures/{id}/world-news`：解析实例 → 固定 `player` 持有人 → 有模块走 `list_known`，缺失返回 503 `M3_NOT_READY` |
+| Fake 验收链 | `tests/m3/test_wiring.py`：实例 → 30 分钟推进 → 玩家消息 → 检查点 → 恢复分支（新实例、消息随快照恢复、角色钱物不变） |
 
 ## 4. 未完成 / 待集成
 
-- 事件账本、初始局势（Marcin / `m3/events`）、脉动队列（Li / `m3/pulse`）、知识投影（Ma / `m3/knowledge`）尚未到包
+- 事件账本、初始局势（Marcin / `m3/events`）、脉动队列（Li / `m3/pulse`）、知识投影（Ma / `m3/knowledge`）尚未到包；骨架已就位，等真实实现替换
 - `world_transfer` 目前只回填实例版本，**未导入**事件/知识快照（等对应模块的快照接口）
 - 玩家消息读路由 `GET /adventures/{id}/world-news` 仅预留，等 Ma 的投影实现
 - 检查点快照目前只含实例根，领域快照待接入各模块 `snapshot/restore`

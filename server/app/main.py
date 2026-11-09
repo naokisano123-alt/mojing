@@ -329,6 +329,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app):
+        from .m3.core import adapters as _m3_adapters
+
+        _m3_adapters.load_builtin_adapters()
         try:
             yield
         finally:
@@ -1074,6 +1077,26 @@ def create_app(
 
     from .adventures.routes import register_routes
     register_routes(app, cfg, _store, _context_builder)
+
+    from .adventures.service import get_adventure
+    from .m3.core import adapters as m3_adapters
+    from .m3.core import service as m3_instances
+
+    @app.get("/api/v1/adventures/{adventure_id}/world-news")
+    def world_news(
+        adventure_id: str,
+        before: str | None = None,
+        limit: int = Query(30, ge=1, le=50),
+    ) -> dict[str, Any]:
+        """玩家消息投影：只返回该实例玩家有渠道得知的消息（模块未接入时 503）。"""
+        with db(cfg.db_path) as conn:
+            get_adventure(conn, adventure_id)
+            instance = m3_instances.for_adventure(conn, adventure_id)
+            adapter = m3_adapters.get_adapter("knowledge")
+            if adapter is None:
+                raise ApiError(503, "M3_NOT_READY", "玩家消息投影尚未接入（缺少 knowledge 模块）。")
+            result = adapter.list_known(conn, instance["id"], "player", before=before, limit=limit)
+            return {"items": result.get("items", []), "next_before": result.get("next_before")}
     return app
 
 

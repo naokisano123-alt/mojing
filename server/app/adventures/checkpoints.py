@@ -8,7 +8,7 @@ from fastapi import Query
 from ..db import db
 from ..errors import ApiError
 from . import memory, service
-from ..m3.core import service as instance_service
+from ..m3.core import adapters, service as instance_service
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS adventure_checkpoints (
@@ -57,7 +57,9 @@ def create_checkpoint(conn, adventure_id, name, request_id, revision):
     id = str(uuid4())
     cursor = memory.cursor(conn, adventure_id)
     instance = instance_service.ensure_for_adventure(conn, adventure_id)
-    instance_snapshot = json.dumps(instance_service.snapshot(conn, instance['id']), ensure_ascii=False)
+    snapshot = instance_service.snapshot(conn, instance['id'])
+    snapshot['domains'] = adapters.snapshot_all(conn, instance['id'])
+    instance_snapshot = json.dumps(snapshot, ensure_ascii=False)
     conn.execute('''INSERT INTO adventure_checkpoints
                  (id,adventure_id,request_id,name,revision,character_json,mode,created_at,memory_cursor,instance_snapshot)
                  VALUES(?,?,?,?,?,?,?,?,?,?)''',
@@ -89,10 +91,17 @@ def restore(conn, checkpoint_id, name, request_id):
                  (id, name, checkpoint['mode'], checkpoint['revision'], time.time(),
                   checkpoint['character_json'], checkpoint_id, request_id, source['id']))
     if checkpoint['instance_snapshot']:
-        instance_service.restore(
+        snapshot = json.loads(checkpoint['instance_snapshot'])
+        restored = instance_service.restore(
             conn,
-            json.loads(checkpoint['instance_snapshot']),
+            snapshot,
             adventure_id=id,
+            world_id=source['world_id'],
+        )
+        adapters.restore_all(
+            conn,
+            snapshot.get('domains', {}),
+            new_instance_id=restored['id'],
             world_id=source['world_id'],
         )
     else:

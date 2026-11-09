@@ -25,6 +25,14 @@ CREATE TABLE IF NOT EXISTS world_instances (
 );
 CREATE INDEX IF NOT EXISTS idx_world_instances_world ON world_instances(world_id);
 CREATE TABLE IF NOT EXISTS m3_schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS m3_model_usage (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    purpose    TEXT NOT NULL,
+    calls      INTEGER NOT NULL,
+    tokens     INTEGER NOT NULL,
+    game_day   TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 """
 
 
