@@ -456,6 +456,14 @@ def create_app(
         payload["documents"] = [_document_dict(doc) for doc in docs]
         return payload
 
+    @app.get("/api/v1/worlds/{world_id}/export")
+    def download_world(world_id: str, include_saves: bool = False) -> Response:
+        from .world_export import export_world
+
+        with db(cfg.db_path) as conn:
+            conn.execute("BEGIN")
+            return export_world(conn, _get_world(conn, world_id), include_saves, Path(cfg.db_path).parent)
+
     @app.patch("/api/v1/worlds/{world_id}")
     def update_world(world_id: str, payload: WorldPatch) -> dict[str, Any]:
         with db(cfg.db_path) as conn:

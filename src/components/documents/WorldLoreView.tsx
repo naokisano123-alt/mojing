@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Upload,
+  Download,
   BookOpen,
   Search,
   ClipboardList,
@@ -10,6 +11,7 @@ import {
 import type { WorldDetail, WorldDocument } from '../../api/types';
 import {
   getWorld,
+  buildUrl,
   deleteDocument,
   getCapabilities,
   searchLore,
@@ -67,6 +69,7 @@ export function WorldLoreView({
   modelProfileEnabled = false,
   onModelSessionChange,
 }: WorldLoreViewProps) {
+  const [includeSaves, setIncludeSaves] = useState(false);
   const [worldDetail, setWorldDetail] = useState<WorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +258,15 @@ export function WorldLoreView({
         description={worldDetail?.description || '在这个世界开启旅程，或先导入你的世界设定。'}
         action={<Tag>世界资料库</Tag>}
       />
+
+      {!loading && worldDetail && <div className="world-export">
+        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/export`,
+          includeSaves ? { include_saves: true } : undefined)}>
+          <Download size={16} aria-hidden="true" />导出世界设定
+        </a>
+        <label><input type="checkbox" checked={includeSaves}
+          onChange={event => setIncludeSaves(event.target.checked)} /> 一并导出存档</label>
+      </div>}
 
       {/* 切换 Tab */}
       <div className="tabs" style={{ marginTop: 0 }}>

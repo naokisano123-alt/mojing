@@ -54,3 +54,22 @@ it("legacy characters without inventory render an empty backpack", () => {
   );
   expect(screen.getByText("暂无物品")).toBeTruthy();
 });
+
+it("edits the description of a carried item without editing its quantity", async () => {
+  function Backpack() {
+    const [description, setDescription] = useState("旧介绍");
+    return <CharacterCard title="当前角色" descriptions={{ 罗盘: description }}
+      state={{ name: "旅人", stamina: 100, spirit: 100, coins: 0, elapsed_minutes: 0,
+        location: "起点", inventory: [{ name: "罗盘", quantity: 1 }] }}
+      onSaveDescription={async (_name, value) => { setDescription(value); }} />;
+  }
+  render(<Backpack />);
+  fireEvent.click(screen.getByText("罗盘 × 1"));
+  fireEvent.click(screen.getByRole("button", { name: "编辑介绍" }));
+  const editor = screen.getByRole("textbox", { name: "罗盘的介绍" });
+  expect(editor).toHaveValue("旧介绍");
+  fireEvent.change(editor, { target: { value: "只在霜河边转动。" } });
+  fireEvent.click(screen.getByRole("button", { name: "保存介绍" }));
+  expect(await screen.findByText("只在霜河边转动。", { selector: "p" })).toBeVisible();
+  expect(screen.getByText("罗盘 × 1")).toBeVisible();
+});

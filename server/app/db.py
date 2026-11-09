@@ -78,6 +78,8 @@ def init_db(path: Path | str) -> None:
                 conn.execute(f'ALTER TABLE adventures ADD COLUMN {column} TEXT')
         from .adventures.checkpoints import SCHEMA as CHECKPOINT_SCHEMA
         conn.executescript(CHECKPOINT_SCHEMA)
+        from .adventures.item_descriptions import SCHEMA as ITEM_DESCRIPTION_SCHEMA
+        conn.executescript(ITEM_DESCRIPTION_SCHEMA)
         conn.commit()
 
 
