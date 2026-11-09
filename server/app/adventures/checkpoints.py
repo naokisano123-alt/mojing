@@ -79,8 +79,11 @@ def restore(conn, checkpoint_id, name, request_id):
     if count != checkpoint['revision']:
         raise ApiError(409, 'CHECKPOINT_HISTORY_INVALID', '存档历史不完整，不能安全恢复。')
     id = str(uuid4())
-    conn.execute('INSERT INTO adventures(id,world_id,name,mode,revision,created_at,character_json,origin_checkpoint_id,restore_request_id) VALUES(?,?,?,?,?,?,?,?,?)',
-                 (id, source['world_id'], name, checkpoint['mode'], checkpoint['revision'], time.time(), checkpoint['character_json'], checkpoint_id, request_id))
+    conn.execute('''INSERT INTO adventures(id,world_id,name,mode,revision,created_at,character_json,
+                    origin_checkpoint_id,restore_request_id,opening_json)
+                    SELECT ?,world_id,?,?,?,?,?,?,?,opening_json FROM adventures WHERE id=?''',
+                 (id, name, checkpoint['mode'], checkpoint['revision'], time.time(),
+                  checkpoint['character_json'], checkpoint_id, request_id, source['id']))
     conn.execute("INSERT INTO adventure_turns SELECT ?,sequence,'inherited:'||sequence,action,result,created_at FROM adventure_turns WHERE adventure_id=? AND sequence<=?",
                  (id, source['id'], checkpoint['revision']))
     copied = conn.execute("""INSERT INTO adventure_memory_events

@@ -260,3 +260,29 @@ it("confirmed suggestions append at the caret and a focused editor sends in one 
   expect(api.prepare).toHaveBeenCalledTimes(1);
   expect(api.prepare.mock.calls[0]).toContainEqual(expect.objectContaining({ action: "问候店主\n去窗边看看" }));
 });
+
+it("shows a configured opening and commits an interrupted advance with its clock", async () => {
+  const { api, ready } = setup(true);
+  const original = await api.detail();
+  const opening = {
+    name: "细器铺试工", intro: "黎斯站在南窗细器铺里。", starts_at: "1200-01-01T08:00",
+    character: original.character!, shortcut: "接下来三天照常做工。",
+  };
+  api.detail.mockResolvedValueOnce({ ...original, opening });
+  ready.result!.clock_required = true;
+  ready.result!.clock = {
+    requested_minutes: 4320, elapsed_minutes: 1680,
+    from: "1200-01-01T08:00", to: "1200-01-02T12:00", interrupted: true,
+    events: [{ title: "急单", description: "塞文问你接不接急件。", at: "1200-01-02T12:00", count: 1, interrupt: true }],
+  };
+  render(<AdventureJournal {...props} api={api} />);
+  await screen.findByText("黎斯站在南窗细器铺里。");
+  expect(screen.queryByText("急单")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: opening.shortcut }));
+  expect(screen.getByLabelText("你的行动")).toHaveValue(opening.shortcut);
+  fireEvent.click(screen.getByRole("button", { name: "发送行动" }));
+  await screen.findByText("塞文问你接不接急件。");
+  expect(api.commit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByText("确认并写入回合"));
+  await waitFor(() => expect(api.commit).toHaveBeenCalledWith("run", "draft", { apply_changes: true }));
+});

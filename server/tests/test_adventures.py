@@ -98,7 +98,7 @@ def test_discarded_or_failed_draft_cannot_commit(client, db_path):
     assert confirm(client, run).status_code == 409
     assert client.get(f"/api/v1/adventures/{run['id']}").json()['latest_draft'] is None
     with sqlite3.connect(db_path) as conn:
-        conn.execute("INSERT INTO adventure_drafts VALUES(?,?,?,?,?,?,?)", ('expired', run['id'], '旧行动', 0, 'pending', 0, None))
+        conn.execute("INSERT INTO adventure_drafts(id,adventure_id,action,base_revision,status,created_at,result) VALUES(?,?,?,?,?,?,?)", ('expired', run['id'], '旧行动', 0, 'pending', 0, None))
     assert client.get(f"/api/v1/adventures/{run['id']}/drafts/expired").json()['status'] == 'failed'
     assert prepare(client, run, 'expired', action='旧行动').status_code == 409
     assert prepare(client, run, 'new').status_code == 200

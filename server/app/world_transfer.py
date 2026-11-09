@@ -14,13 +14,16 @@ import zlib
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
+from .adventures import scenario
 from .adventures.memory import validate_event
 from .adventures.state import character
 from .errors import ApiError
 from .world_export import _write_json
 
 VERSION = 1
+SETTINGS_OPENINGS_VERSION = 2
 SAVES_VERSION = 2
+SAVES_OPENINGS_VERSION = 3
 SETTINGS_FORMAT = "mojing-world-settings"
 SAVES_FORMAT = "mojing-world-saves"
 LIMIT = 128 * 1024 * 1024
@@ -32,9 +35,10 @@ WORLD_TABLES = {
     "lore_entries": "id type title summary status revision origin created_at updated_at",
     "lore_entry_sources": "id entry_id document_id chunk_id start_char end_char excerpt created_at",
     "item_descriptions": "name description",
+    "world_openings": "id opening_json",
 }
 SAVE_TABLES = {
-    "adventures": "id name mode revision created_at character_json origin_checkpoint_id",
+    "adventures": "id name mode revision created_at character_json origin_checkpoint_id opening_json",
     "adventure_turns": "adventure_id sequence draft_id action result created_at",
     "adventure_checkpoints": "id adventure_id name revision character_json mode created_at memory_cursor",
     "adventure_memory_events": "adventure_id sequence turn origin change_json",
@@ -69,10 +73,12 @@ def _rows(conn, table, columns, world_id):
 
 
 def _world_payload(conn, world):
+    has_openings = conn.execute("SELECT 1 FROM world_openings WHERE world_id=? LIMIT 1", (world["id"],)).fetchone()
     return {
-        "format": SETTINGS_FORMAT, "version": VERSION,
+        "format": SETTINGS_FORMAT, "version": SETTINGS_OPENINGS_VERSION if has_openings else VERSION,
         "world": {key: world[key] for key in WORLD_COLUMNS.split()},
-        **{table: _rows(conn, table, columns, world["id"]) for table, columns in WORLD_TABLES.items()},
+        **{table: _rows(conn, table, columns, world["id"]) for table, columns in WORLD_TABLES.items()
+           if table != "world_openings" or has_openings},
     }
 
 
@@ -99,10 +105,14 @@ def transfer_export(conn, world, part, scratch_dir):
         archive = settings
         if part != "world":
             saves = stack.enter_context(TemporaryFile(dir=scratch_dir))
+            has_openings = conn.execute(
+                "SELECT 1 FROM adventures WHERE world_id=? AND opening_json IS NOT NULL LIMIT 1", (world["id"],),
+            ).fetchone()
             _write_json(saves, {
-                "format": SAVES_FORMAT, "version": SAVES_VERSION,
+                "format": SAVES_FORMAT, "version": SAVES_OPENINGS_VERSION if has_openings else SAVES_VERSION,
                 "world_id": world["id"], "settings_sha256": _digest(settings),
-                **{table: _rows(conn, table, columns, world["id"]) for table, columns in SAVE_TABLES.items()},
+                **{table: _rows(conn, table, columns if has_openings else columns.replace(" opening_json", ""), world["id"])
+                   for table, columns in SAVE_TABLES.items()},
             })
             if size + saves.tell() > LIMIT:
                 raise _too_large()
@@ -146,7 +156,8 @@ def _read_part(file, parts, remaining):
         raise _invalid()
     kind = payload.get("format")
     version = payload.get("version")
-    versions = (VERSION, SAVES_VERSION) if kind == SAVES_FORMAT else (VERSION,)
+    versions = ((VERSION, SAVES_VERSION, SAVES_OPENINGS_VERSION)
+                if kind == SAVES_FORMAT else (VERSION, SETTINGS_OPENINGS_VERSION))
     if (kind not in (SETTINGS_FORMAT, SAVES_FORMAT) or kind in parts
             or type(version) is not int or version not in versions):
         raise _invalid()
@@ -185,7 +196,7 @@ def _validated(row, table, columns):
         raise _invalid()
     values = {key: row[key] for key in columns.split()}
     for key, value in values.items():
-        if value is None and key in {"character_json", "origin_checkpoint_id"}:
+        if value is None and key in {"character_json", "origin_checkpoint_id", "opening_json"}:
             continue
         if key in INTEGER_FIELDS:
             if type(value) is not int or not 0 <= value <= 2**53 - 1:
@@ -224,6 +235,8 @@ def _copy_settings(conn, settings, world_id, records, ids):
     for table, rows in records.items():
         for original in rows:
             row = _remap(original, table, ids)
+            if table == "world_openings":
+                row["opening_json"] = json.dumps(scenario.normalize(json.loads(row["opening_json"])), ensure_ascii=False)
             if table == "documents" and not isinstance(json.loads(row["warnings"] or "[]"), list):
                 raise _invalid()
             if table == "chunks":
@@ -249,7 +262,7 @@ def _remap(row, table, ids):
     }
 
 
-def _remap_result(result, ids):
+def _remap_result(result, ids, opening):
     # A reference to a source since deleted remains unavailable in the copy.
     def reference(kind, value):
         if not isinstance(value, str):
@@ -271,6 +284,21 @@ def _remap_result(result, ids):
     for key in ("state_before", "state_after", "projected_state"):
         if result.get(key) is not None:
             character(result[key])
+    if "clock" in result:
+        clock = result["clock"]
+        before = result.get("state_before")
+        after = result.get("state_after")
+        if opening is None or not before or not after or not isinstance(clock, dict):
+            raise _invalid()
+        minutes = clock.get("requested_minutes")
+        if type(minutes) is not int or not 1 <= minutes <= scenario.MAX_ADVANCE:
+            raise _invalid()
+        try:
+            expected = scenario.plan(opening, before["elapsed_minutes"], minutes)
+        except ApiError:
+            raise _invalid() from None
+        if expected != clock or before["elapsed_minutes"] + clock["elapsed_minutes"] != after["elapsed_minutes"]:
+            raise _invalid()
     for source in result["sources"]:
         source["source_id"] = source_id(source["source_id"])
         for field in ("entry_id", "document_id", "chunk_id"):
@@ -282,6 +310,8 @@ def _remap_result(result, ids):
 
 def _copy_saves(conn, world_id, records, ids):
     runs = {run["id"]: run for run in records["adventures"]}
+    openings = {run_id: scenario.normalize(json.loads(run["opening_json"])) if run["opening_json"] else None
+                for run_id, run in runs.items()}
     histories = {run_id: [] for run_id in runs}
     for row in records["adventure_turns"]:
         histories[row["adventure_id"]].append(row["sequence"])
@@ -306,6 +336,10 @@ def _copy_saves(conn, world_id, records, ids):
             row = _remap(original, table, ids)
             if table == "adventures":
                 row["world_id"] = world_id
+                if openings[original["id"]]:
+                    if not row["character_json"] or json.loads(row["character_json"]) is None:
+                        raise _invalid()
+                    row["opening_json"] = json.dumps(openings[original["id"]], ensure_ascii=False)
             if table in ("adventures", "adventure_checkpoints"):
                 state = json.loads(row["character_json"] or "null")
                 if state is not None:
@@ -313,7 +347,7 @@ def _copy_saves(conn, world_id, records, ids):
                 if row["mode"] not in {"fake", "live"}:
                     raise _invalid()
             if table == "adventure_turns":
-                row["result"] = _remap_result(row["result"], ids)
+                row["result"] = _remap_result(row["result"], ids, openings[original["adventure_id"]])
             if table == "adventure_checkpoints":
                 run_id = original["adventure_id"]
                 cursor = row["memory_cursor"]
@@ -343,7 +377,7 @@ def _existing_settings(conn, source_id, digest):
         if _local_digest(conn, world) == (world["local_digest"] or digest):
             settings = _world_payload(conn, world)
             for table in WORLD_TABLES:
-                settings[table] = list(settings[table])
+                settings[table] = list(settings.get(table, ()))
             return settings, json.loads(world["id_map"]) if world["id_map"] else None
     raise ApiError(422, "WORLD_TRANSFER_SETTINGS_REQUIRED", "找不到匹配版本，请选择这份存档对应的世界观文件一起导入。")
 
@@ -369,13 +403,20 @@ def import_transfer(conn, uploads, max_documents):
             source_id, digest = saves["world_id"], saves["settings_sha256"]
             settings, previous_ids = _existing_settings(conn, source_id, digest)
 
+        if settings["version"] == VERSION:
+            settings["world_openings"] = []
         world_records = _records(settings, WORLD_TABLES)
+        if len(world_records["world_openings"]) > scenario.MAX_OPENINGS:
+            raise _invalid()
         if len(world_records["documents"]) > max_documents:
             raise ApiError(422, "WORLD_DOCUMENT_LIMIT", "这份世界观的文档数超出当前部署上限。", {"limit": max_documents})
         if saves is not None and saves["version"] == VERSION:
             saves["adventure_memory_events"] = []
             for checkpoint in saves["adventure_checkpoints"]:
                 checkpoint["memory_cursor"] = 0
+        if saves is not None and saves["version"] < SAVES_OPENINGS_VERSION:
+            for run in saves["adventures"]:
+                run["opening_json"] = None
         save_records = _records(saves, SAVE_TABLES) if saves is not None else {}
         ids = {
             table: {row["id"]: str(uuid4()) for row in rows if "id" in row}

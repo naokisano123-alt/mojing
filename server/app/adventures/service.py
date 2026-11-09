@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict
 from .state import character, project, StateError
-from . import memory
+from . import memory, scenario
 import re
 import time
 from uuid import uuid4
@@ -45,20 +45,29 @@ def run_dict(row):
     value = dict(row)
     value.pop('restore_request_id', None)
     value['character'] = json.loads(value.pop('character_json', None) or 'null')
+    raw_opening = value.pop('opening_json', None)
+    if raw_opening:
+        value['opening'] = scenario.public(json.loads(raw_opening))
     return value
 
 
-def create_adventure(conn, world_id, name, mode, initial_character=None):
+def create_adventure(conn, world_id, name, mode, initial_character=None, opening_id=None):
     world_active(conn, world_id)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or mode not in ('fake', 'live'):
         raise ApiError(422, 'VALIDATION_ERROR', '请填写1–80字的名称并选择生成模式。')
+    if opening_id is not None and not isinstance(opening_id, str):
+        raise ApiError(422, 'OPENING_INVALID', '开局标识无效。')
+    opening = scenario.get_opening(conn, world_id, opening_id) if opening_id is not None else None
+    if opening:
+        initial_character = opening['character']
     try:
         state = asdict(character(initial_character if initial_character is not None else {}))
     except (StateError, TypeError) as exc:
         raise ApiError(422, 'CHARACTER_INVALID', str(exc)) from None
     id = str(uuid4())
-    conn.execute('INSERT INTO adventures(id,world_id,name,mode,created_at,character_json) VALUES(?,?,?,?,?,?)',
-                 (id, world_id, name.strip(), mode, time.time(), json.dumps(state, ensure_ascii=False)))
+    conn.execute('''INSERT INTO adventures(id,world_id,name,mode,created_at,character_json,opening_json)
+                 VALUES(?,?,?,?,?,?,?)''', (id, world_id, name.strip(), mode, time.time(),
+                  json.dumps(state, ensure_ascii=False), json.dumps(opening, ensure_ascii=False) if opening else None))
     return get_adventure(conn, id)
 
 
@@ -82,23 +91,28 @@ def get_draft(conn, adventure_id, id):
     return value
 
 
-def reserve(conn, adventure_id, id, action, revision):
+def reserve(conn, adventure_id, id, action, revision, advance_minutes=None):
     revision_number(revision)
     if not isinstance(id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', id):
         raise ApiError(422, 'VALIDATION_ERROR', '请求标识格式无效。')
     # Serialize only the short reservation, never a model/network wait.
     conn.execute('BEGIN IMMEDIATE')
     run = get_adventure(conn, adventure_id)
+    if run.get('opening'):
+        advance_minutes = scenario.duration(action, advance_minutes)
+    elif advance_minutes is not None:
+        raise ApiError(422, 'CLOCK_NO_OPENING', '时间快进仅用于从开局方案开始的旅程。')
     old = conn.execute('SELECT id FROM adventure_drafts WHERE adventure_id=? AND id=?', (adventure_id, id)).fetchone()
     if old:
         draft = get_draft(conn, adventure_id, id)
-        if draft['action'] != action or draft['base_revision'] != revision:
+        if (draft['action'] != action or draft['base_revision'] != revision
+                or draft['advance_minutes'] != advance_minutes):
             raise ApiError(409, 'REQUEST_CONFLICT', '同一请求标识不能用于不同的行动。')
         return draft, False
     if run['revision'] != revision:
         raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后重新生成。')
-    conn.execute('INSERT INTO adventure_drafts(id,adventure_id,action,base_revision,status,created_at) VALUES(?,?,?,?,?,?)',
-                 (id, adventure_id, action, revision, 'pending', time.time()))
+    conn.execute('''INSERT INTO adventure_drafts(id,adventure_id,action,base_revision,status,created_at,advance_minutes)
+                 VALUES(?,?,?,?,?,?,?)''', (id, adventure_id, action, revision, 'pending', time.time(), advance_minutes))
     return get_draft(conn, adventure_id, id), True
 
 
@@ -136,6 +150,10 @@ def commit(conn, adventure_id, id, apply_changes=False):
     if result.get('memory_cursor', 0) != cursor:
         raise ApiError(409, 'MEMORY_CONFLICT', '日志在草案生成后已更新，请重新生成。')
     after, accepted_memory = before, []
+    if result.get('clock_required') and not apply_changes:
+        raise ApiError(422, 'CLOCK_CONFIRM_REQUIRED', '确认这段回合时须同时采用时间结算。')
+    if not apply_changes:
+        result.pop('clock', None)
     if apply_changes:
         accepted_memory = result.get('memory_proposal', [])
         if result.get('proposed_changes') is None and not accepted_memory:

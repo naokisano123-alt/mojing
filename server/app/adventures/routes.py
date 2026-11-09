@@ -1,4 +1,4 @@
-import asyncio
+import json
 from .state import StateError, character
 
 from fastapi import Query, Request, Response
@@ -9,12 +9,45 @@ from ..model_gateway.errors import GatewayError
 from ..narration.core import DraftError, FakeModelClient, HistoryTurn, NarrationRequest, generate_draft, validate_request
 from ..narration.lifecycle import await_request_work
 from ..narration_context.types import ContextError, safe_u16_truncate
-from . import item_descriptions, memory, service
+from . import item_descriptions, memory, scenario, service
 
 
 def register_routes(app, cfg, get_store, get_builder):
     from .checkpoints import register_checkpoint_routes
     register_checkpoint_routes(app, cfg)
+
+    @app.get('/api/v1/worlds/{world_id}/openings')
+    def list_openings(world_id: str):
+        with db(cfg.db_path) as conn:
+            service.world_active(conn, world_id)
+            return {'items': scenario.list_openings(conn, world_id)}
+
+    @app.get('/api/v1/worlds/{world_id}/opening-settings')
+    def opening_settings(world_id: str):
+        with db(cfg.db_path) as conn:
+            service.world_active(conn, world_id)
+            return {'items': scenario.list_openings(conn, world_id, author=True)}
+
+    @app.post('/api/v1/worlds/{world_id}/opening-settings', status_code=201)
+    def create_opening(world_id: str, payload: dict):
+        with db(cfg.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            service.world_active(conn, world_id)
+            return scenario.save_opening(conn, world_id, payload)
+
+    @app.put('/api/v1/worlds/{world_id}/opening-settings/{opening_id}')
+    def update_opening(world_id: str, opening_id: str, payload: dict):
+        with db(cfg.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            service.world_active(conn, world_id)
+            return scenario.save_opening(conn, world_id, payload, opening_id)
+
+    @app.delete('/api/v1/worlds/{world_id}/opening-settings/{opening_id}', status_code=204)
+    def delete_opening(world_id: str, opening_id: str):
+        with db(cfg.db_path) as conn:
+            service.world_active(conn, world_id)
+            conn.execute("DELETE FROM world_openings WHERE world_id=? AND id=?", (world_id, opening_id))
+            return Response(status_code=204)
 
     @app.get('/api/v1/worlds/{world_id}/adventures')
     def list_adventures(world_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
@@ -26,7 +59,8 @@ def register_routes(app, cfg, get_store, get_builder):
     @app.post('/api/v1/worlds/{world_id}/adventures', status_code=201)
     def create_adventure(world_id: str, payload: dict):
         with db(cfg.db_path) as conn:
-            return service.create_adventure(conn, world_id, payload.get('name'), payload.get('mode', 'fake'), payload.get('character'))
+            return service.create_adventure(conn, world_id, payload.get('name'), payload.get('mode', 'fake'),
+                                            payload.get('character'), payload.get('opening_id'))
 
     @app.get('/api/v1/adventures/{adventure_id}')
     def detail(adventure_id: str, before: int | None = Query(None, ge=1, le=9223372036854775807)):
@@ -90,7 +124,8 @@ def register_routes(app, cfg, get_store, get_builder):
             raise ApiError(422, exc.code, str(exc))
         draft_id = payload.get('request_id')
         with db(cfg.db_path) as conn:
-            reserved, fresh = service.reserve(conn, adventure_id, draft_id, action, payload.get('expected_revision'))
+            reserved, fresh = service.reserve(conn, adventure_id, draft_id, action, payload.get('expected_revision'),
+                                               payload.get('advance_minutes'))
         if not fresh:
             if reserved['status'] in ('ready', 'committed'):
                 return reserved
@@ -103,11 +138,19 @@ def register_routes(app, cfg, get_store, get_builder):
                 if run['revision'] != reserved['base_revision']:
                     raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后重新生成。')
                 world = conn.execute('SELECT name, description FROM worlds WHERE id=?', (run['world_id'],)).fetchone()
+                raw_opening = conn.execute('SELECT opening_json FROM adventures WHERE id=?', (adventure_id,)).fetchone()[0]
+                opening = json.loads(raw_opening) if raw_opening else None
                 bundle = get_builder()(conn, run['world_id'], action)
                 recent = service.turns(conn, adventure_id, limit=6)
                 snapshot = memory.replay(conn, adventure_id)
-                history = tuple(HistoryTurn(safe_u16_truncate(t['action'], 500),
-                                            safe_u16_truncate(t['result']['narrative'], 1400)) for t in recent)
+                history = tuple(HistoryTurn(
+                    safe_u16_truncate(t['action'], 500),
+                    safe_u16_truncate(t['result']['narrative'], 1150 if t['result'].get('clock', {}).get('events') else 1400)
+                    + safe_u16_truncate(
+                        '【事件】' + '；'.join(f"{event['title']}：{event['description']}" for event in t['result']['clock']['events'])
+                        if t['result'].get('clock', {}).get('events') else '', 250,
+                    ),
+                ) for t in recent)
                 facts, excerpts = memory.context(
                     conn, adventure_id, snapshot, action, (run['character'] or {}).get('location', ''),
                     [f"{turn.action} {turn.narrative}" for turn in history], recent[0]['sequence'] if recent else 1,
@@ -122,10 +165,22 @@ def register_routes(app, cfg, get_store, get_builder):
                 client = FakeModelClient()
             state = character(run['character']) if run['character'] is not None else None
             intro = safe_u16_truncate(f"{world['name']}\n{world['description']}", 1300)
+            requested = reserved['advance_minutes']
+            clock = None
+            clock_max = None
+            if opening:
+                intro += '\n开局：' + safe_u16_truncate(opening['intro'], 1000)
+                intro += '\n当前世界时间：' + scenario.world_time(opening, state.elapsed_minutes)
+                if requested is not None:
+                    clock = scenario.plan(opening, state.elapsed_minutes, requested)
+                else:
+                    available = min(1440, 1_000_000_000 - state.elapsed_minutes)
+                    clock_max = scenario.plan(opening, state.elapsed_minutes, available)['elapsed_minutes']
             request = NarrationRequest(action, tuple(bundle.sources), history, state, world_intro=intro, suggest_actions=True,
                                        item_descriptions=item_descriptions.for_prompt(notes, action),
                                        adventure_memory=facts, memory_excerpts=excerpts,
-                                       memory_items=tuple(snapshot["items"].values()))
+                                       memory_items=tuple(snapshot["items"].values()),
+                                       clock=clock, clock_max_minutes=clock_max)
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
                       'references': list(draft.references), 'sources': list(bundle.metadata),
@@ -133,6 +188,13 @@ def register_routes(app, cfg, get_store, get_builder):
                       'state_before': run['character'], 'proposed_changes': draft.proposed_changes,
                       'projected_state': draft.projected_state, 'memory_cursor': snapshot['cursor'],
                       'memory_proposal': list(draft.memory_changes)}
+            if opening and clock is None and draft.projected_state is not None:
+                advanced = draft.projected_state['elapsed_minutes'] - state.elapsed_minutes
+                if advanced:
+                    clock = scenario.plan(opening, state.elapsed_minutes, advanced)
+            if clock:
+                result['clock'] = clock
+                result['clock_required'] = requested is not None or bool(clock['events'])
             with db(cfg.db_path) as conn:
                 return service.finish(conn, adventure_id, draft_id, result)
         except BaseException as exc:
