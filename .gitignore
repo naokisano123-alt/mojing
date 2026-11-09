@@ -29,3 +29,4 @@ android/local.properties
 *.jks
 *.keystore
 server/tmp*/
+.tmp-build/

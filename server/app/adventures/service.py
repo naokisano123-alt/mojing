@@ -183,12 +183,26 @@ def commit(conn, adventure_id, id, apply_changes=False):
     # M3：实例版本与游戏分钟必须与回合确认同事务推进
     instance = instance_service.ensure_for_adventure(conn, adventure_id)
     minutes = draft['advance_minutes'] if draft['advance_minutes'] is not None else 0
-    instance_service.advance(
+    updated = instance_service.advance(
         conn,
         instance['id'],
         expected_revision=instance['world_revision'],
         minutes=int(minutes),
     )
+    # M3：队列登记必须与前台确认同事务；脉动关闭时 schedule 自身不产生任务
+    try:
+        from ..m3.pulse.worker import schedule_on_turn_commit
+    except ImportError:
+        schedule_on_turn_commit = None
+    if schedule_on_turn_commit is not None:
+        schedule_on_turn_commit(
+            conn,
+            instance_id=updated['id'],
+            adventure_id=adventure_id,
+            adventure_revision=run['revision'] + 1,
+            world_revision=updated['world_revision'],
+            world_minute=updated['world_minute'],
+        )
     return get_adventure(conn, adventure_id)
 
 

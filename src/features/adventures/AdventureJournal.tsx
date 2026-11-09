@@ -15,6 +15,7 @@ import { InventoryEditor } from "./InventoryEditor";
 import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
+import { WorldKnowledgePanel } from "../world-knowledge";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -70,6 +71,7 @@ export function AdventureJournal({
   const [name, setName] = useState("新的旅程"),
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
+  const [newsOpen, setNewsOpen] = useState(false);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
@@ -587,6 +589,14 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
+          <details
+            className="journal-sources"
+            aria-label="世界消息"
+            onToggle={event => setNewsOpen(event.currentTarget.open)}
+          >
+            <summary>世界消息 · 只显示你有渠道得知的消息</summary>
+            {newsOpen && <WorldKnowledgePanel adventureId={run.id} />}
+          </details>
         </>
       )}
     </section>
