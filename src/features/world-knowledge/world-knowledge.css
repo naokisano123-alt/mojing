@@ -1,0 +1,182 @@
+.world-knowledge-panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.world-knowledge-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 36px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.world-knowledge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.world-knowledge-hint {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin: 4px 0 0;
+}
+
+.world-knowledge-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.world-knowledge-filter-btn {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--muted);
+  border-radius: 18px;
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 12px;
+}
+
+.world-knowledge-filter-btn.is-selected {
+  border-color: var(--green);
+  background: var(--soft);
+  color: var(--green);
+  font-weight: 500;
+}
+
+.world-knowledge-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.world-knowledge-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.world-knowledge-card[data-knowledge-type="rumor"],
+.world-knowledge-card[data-knowledge-type="suspected"] {
+  border-style: dashed;
+}
+
+.world-knowledge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.world-knowledge-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  background: var(--paper);
+  color: var(--green);
+}
+
+.world-knowledge-badge[data-type="rumor"],
+.world-knowledge-badge[data-type="mistaken"] {
+  color: var(--accent);
+}
+
+.world-knowledge-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.world-knowledge-content {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--text);
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.world-knowledge-empty {
+  padding: 20px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.world-knowledge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+@media (max-width: 700px) {
+  .world-knowledge-panel {
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+
+  .world-knowledge-filters {
+    gap: 6px;
+  }
+
+  .world-knowledge-filter-btn {
+    flex: 1 1 auto;
+    min-height: 40px;
+    padding: 6px 10px;
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .world-knowledge-card {
+    padding: 12px;
+  }
+
+  .world-knowledge-title {
+    font-size: 14px;
+  }
+
+  .world-knowledge-content {
+    font-size: 13px;
+    line-height: 1.8;
+  }
+}
