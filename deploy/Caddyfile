@@ -8,6 +8,14 @@
 		Referrer-Policy no-referrer
 		Cache-Control no-store
 	}
+	handle /api/v1/world-transfers {
+		request_body {
+			max_size 129MiB
+		}
+		reverse_proxy api:8000 {
+			header_up -Authorization
+		}
+	}
 	handle /api/* {
 		request_body {
 			max_size 9MiB

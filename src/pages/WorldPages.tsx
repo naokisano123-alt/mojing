@@ -4,6 +4,7 @@ import { ArrowUpRight, Plus, Upload, FileText, X, ArrowRight, BookOpen } from 'l
 import type { World } from '../model';
 import type { WorldSummary } from '../api/types';
 import { clock } from '../model';
+import { WorldTransferImport } from '../components/documents/WorldTransferImport';
 import { Back, Landscape, PageTitle, Tag } from '../components/UI';
 export function Home({worlds,enter,create,remoteWorlds,remoteStatus,remoteError,onRetryRemote,onEnterRemote,onCreateRemote}:{
   worlds:World[];enter:(id:string)=>void;create:()=>void;
@@ -31,6 +32,7 @@ export function Home({worlds,enter,create,remoteWorlds,remoteStatus,remoteError,
     <div className="section-label"><span>世界资料库 <small>{String(remoteWorlds.length).padStart(2,'0')}</small></span><span className="muted text-xs">AI 冒险 · 服务端存档</span></div>
     {remoteStatus==='loading'&&<p className="muted text-xs">正在连接资料库服务…</p>}
     {remoteStatus==='error'&&<p role="alert" className="error">{remoteError} <button type="button" className="text-button" onClick={onRetryRemote}>重新连接</button></p>}
+    {remoteStatus==='ready'&&<WorldTransferImport onImported={onEnterRemote} />}
     {remoteStatus==='ready'&&<div className="world-grid">
       {remoteWorlds.map((w,i)=><article className="world-card" key={w.id}><button className="world-cover" onClick={()=>onEnterRemote(w)} aria-label={`查看${w.name}的世界资料库`}><Landscape night={false}/><span className="cover-tag">世界资料库</span><span className="cover-number">LORE / {String(i+1).padStart(2,'0')}</span></button><div className="world-body"><div className="flex items-center justify-between gap-2"><h2>{w.name}</h2><Tag>世界资料库 · 已就绪</Tag></div><p className="muted description">{w.description||'尚未填写世界介绍。'}</p><div className="world-progress"><span className="status-dot"/>已导入 {w.document_count} 个文档 · 可开启冒险</div><button className="continue-button" onClick={()=>onEnterRemote(w)}>进入世界<ArrowRight size={18}/></button></div></article>)}
       <button className="new-world-card" onClick={()=>setCreating(true)}><span className="new-world-icon"><Plus size={25}/></span><h3>新建世界资料库</h3><p>导入 TXT / Markdown，保存原文与章节来源</p><span className="text-button">创建资料库世界 <ArrowUpRight size={15}/></span></button>

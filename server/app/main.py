@@ -15,7 +15,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -464,6 +464,22 @@ def create_app(
             conn.execute("BEGIN")
             return export_world(conn, _get_world(conn, world_id), include_saves, Path(cfg.db_path).parent)
 
+    @app.get("/api/v1/worlds/{world_id}/transfer")
+    def download_world_transfer(world_id: str, part: Literal["world", "saves", "zip"]) -> Response:
+        from .world_transfer import transfer_export
+
+        with db(cfg.db_path) as conn:
+            conn.execute("BEGIN")
+            return transfer_export(conn, _get_world(conn, world_id), part, Path(cfg.db_path).parent)
+
+    @app.post("/api/v1/world-transfers", status_code=201)
+    def restore_world_transfer(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        from .world_transfer import import_transfer
+
+        with db(cfg.db_path) as conn:
+            world_id = import_transfer(conn, files, cfg.max_documents_per_world)
+            return _world_dict(_get_world(conn, world_id), _count_documents(conn, world_id))
+
     @app.patch("/api/v1/worlds/{world_id}")
     def update_world(world_id: str, payload: WorldPatch) -> dict[str, Any]:
         with db(cfg.db_path) as conn:
@@ -584,6 +600,7 @@ def create_app(
         document_id = _new_id()
         now = _now()
         with db(cfg.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
             _get_world(conn, world_id)
             if not allow_duplicate:
                 existing = conn.execute(

@@ -69,7 +69,6 @@ export function WorldLoreView({
   modelProfileEnabled = false,
   onModelSessionChange,
 }: WorldLoreViewProps) {
-  const [includeSaves, setIncludeSaves] = useState(false);
   const [worldDetail, setWorldDetail] = useState<WorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,14 +171,13 @@ export function WorldLoreView({
 
   function handleUploadSuccess(newDoc: WorldDocument) {
     setWorldDetail(prev => {
-      if (!prev) return null;
+      if (!prev || prev.documents.some(document => document.id === newDoc.id)) return prev;
       return {
         ...prev,
         document_count: prev.document_count + 1,
         documents: [newDoc, ...prev.documents],
       };
     });
-    setTab('list');
   }
 
   // 模型叙事实验 API 适配（M2_A_API v1.0）
@@ -260,12 +258,13 @@ export function WorldLoreView({
       />
 
       {!loading && worldDetail && <div className="world-export">
-        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/export`,
-          includeSaves ? { include_saves: true } : undefined)}>
-          <Download size={16} aria-hidden="true" />导出世界设定
-        </a>
-        <label><input type="checkbox" checked={includeSaves}
-          onChange={event => setIncludeSaves(event.target.checked)} /> 一并导出存档</label>
+        {modelProfileEnabled && <a className="primary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`,
+          { part: 'zip', destination: 'folder' })}>
+          <Download size={16} aria-hidden="true" />导出两份文件
+        </a>}
+        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'world' })}>世界观 JSON</a>
+        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'saves' })}>存档 JSON</a>
+        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'zip' })}>打包为 ZIP</a>
       </div>}
 
       {/* 切换 Tab */}

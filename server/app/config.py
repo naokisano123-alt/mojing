@@ -43,7 +43,7 @@ class Settings:
     max_pdf_pages: int = 200
     max_text_units: int = 2_000_000
     max_docx_unzipped_bytes: int = 100 * 1024 * 1024
-    max_documents_per_world: int = 20
+    max_documents_per_world: int = 100
     allow_gb18030: bool = True
     allow_big5: bool = False
     public_origin: str = ""
@@ -68,7 +68,7 @@ def load_settings(db_path: Path | str | None = None) -> Settings:
         max_pdf_pages=_env_int("MOJING_MAX_PDF_PAGES", 200),
         max_text_units=_env_int("MOJING_MAX_TEXT_UNITS", 2_000_000),
         max_docx_unzipped_bytes=_env_int("MOJING_MAX_DOCX_UNZIPPED", 100 * 1024 * 1024),
-        max_documents_per_world=_env_int("MOJING_MAX_DOCUMENTS_PER_WORLD", 20),
+        max_documents_per_world=_env_int("MOJING_MAX_DOCUMENTS_PER_WORLD", 100),
         allow_gb18030=_env_bool("MOJING_ALLOW_GB18030", True),
         allow_big5=_env_bool("MOJING_ALLOW_BIG5", False),
         public_origin=os.getenv("MOJING_PUBLIC_ORIGIN", "").strip(),

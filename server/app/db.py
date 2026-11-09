@@ -21,6 +21,15 @@ CREATE TABLE IF NOT EXISTS worlds (
     deleted_at   TEXT
 );
 
+CREATE TABLE IF NOT EXISTS world_transfer_sources (
+    world_id      TEXT PRIMARY KEY REFERENCES worlds(id),
+    source_id     TEXT NOT NULL,
+    source_digest TEXT NOT NULL,
+    local_digest  TEXT NOT NULL,
+    id_map        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_world_transfer_source ON world_transfer_sources(source_id, source_digest);
+
 CREATE TABLE IF NOT EXISTS documents (
     id              TEXT PRIMARY KEY,
     world_id        TEXT NOT NULL REFERENCES worlds(id),
