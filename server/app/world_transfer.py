@@ -18,12 +18,15 @@ from .adventures import scenario
 from .adventures.memory import validate_event
 from .adventures.state import character
 from .errors import ApiError
+from .m3 import events as world_events, knowledge as world_knowledge
+from .m3.core import service as instance_service
 from .world_export import _write_json
 
 VERSION = 1
 SETTINGS_OPENINGS_VERSION = 2
 SAVES_VERSION = 2
 SAVES_OPENINGS_VERSION = 3
+SAVES_INSTANCES_VERSION = 4
 SETTINGS_FORMAT = "mojing-world-settings"
 SAVES_FORMAT = "mojing-world-saves"
 LIMIT = 128 * 1024 * 1024
@@ -95,6 +98,50 @@ def _too_large():
     return ApiError(413, "WORLD_TRANSFER_LIMIT", "迁移文件的总大小或解压大小超过 128 MiB。")
 
 
+def _instance_snapshot(conn, instance_id):
+    snapshot = instance_service.snapshot(conn, instance_id)
+    snapshot["domains"] = {
+        "events": world_events.snapshot(conn, instance_id),
+        "knowledge": world_knowledge.snapshot(conn, instance_id),
+    }
+    return snapshot
+
+
+def _saved_instances(conn, world_id):
+    return conn.execute("""
+        SELECT i.id, i.adventure_id FROM world_instances i JOIN adventures a ON a.id=i.adventure_id
+        WHERE a.world_id=? AND (
+            i.revision<>a.revision
+            OR EXISTS (SELECT 1 FROM world_events e WHERE e.instance_id=i.id)
+            OR EXISTS (SELECT 1 FROM m3_knowledge_facts k WHERE k.instance_id=i.id)
+        )
+        ORDER BY a.rowid
+    """, (world_id,))
+
+
+def _save_payload(conn, world, settings_digest):
+    instances = _saved_instances(conn, world["id"]).fetchall()
+    has_openings = conn.execute(
+        "SELECT 1 FROM adventures WHERE world_id=? AND opening_json IS NOT NULL LIMIT 1", (world["id"],),
+    ).fetchone()
+    version = SAVES_OPENINGS_VERSION if has_openings else SAVES_VERSION
+    tables = SAVE_TABLES
+    if instances:
+        version = SAVES_INSTANCES_VERSION
+        tables = {**SAVE_TABLES, "adventure_checkpoints": SAVE_TABLES["adventure_checkpoints"] + " instance_snapshot"}
+    payload = {
+        "format": SAVES_FORMAT, "version": version, "world_id": world["id"], "settings_sha256": settings_digest,
+        **{table: _rows(conn, table, columns if version >= SAVES_OPENINGS_VERSION else columns.replace(" opening_json", ""), world["id"])
+           for table, columns in tables.items()},
+    }
+    if instances:
+        payload["world_instances"] = (
+            {"adventure_id": row["adventure_id"], "snapshot": _instance_snapshot(conn, row["id"])}
+            for row in instances
+        )
+    return payload
+
+
 def transfer_export(conn, world, part, scratch_dir):
     with ExitStack() as stack:
         settings = stack.enter_context(TemporaryFile(dir=scratch_dir))
@@ -105,15 +152,7 @@ def transfer_export(conn, world, part, scratch_dir):
         archive = settings
         if part != "world":
             saves = stack.enter_context(TemporaryFile(dir=scratch_dir))
-            has_openings = conn.execute(
-                "SELECT 1 FROM adventures WHERE world_id=? AND opening_json IS NOT NULL LIMIT 1", (world["id"],),
-            ).fetchone()
-            _write_json(saves, {
-                "format": SAVES_FORMAT, "version": SAVES_OPENINGS_VERSION if has_openings else SAVES_VERSION,
-                "world_id": world["id"], "settings_sha256": _digest(settings),
-                **{table: _rows(conn, table, columns if has_openings else columns.replace(" opening_json", ""), world["id"])
-                   for table, columns in SAVE_TABLES.items()},
-            })
+            _write_json(saves, _save_payload(conn, world, _digest(settings)))
             if size + saves.tell() > LIMIT:
                 raise _too_large()
             archive = saves
@@ -156,7 +195,7 @@ def _read_part(file, parts, remaining):
         raise _invalid()
     kind = payload.get("format")
     version = payload.get("version")
-    versions = ((VERSION, SAVES_VERSION, SAVES_OPENINGS_VERSION)
+    versions = ((VERSION, SAVES_VERSION, SAVES_OPENINGS_VERSION, SAVES_INSTANCES_VERSION)
                 if kind == SAVES_FORMAT else (VERSION, SETTINGS_OPENINGS_VERSION))
     if (kind not in (SETTINGS_FORMAT, SAVES_FORMAT) or kind in parts
             or type(version) is not int or version not in versions):
@@ -196,7 +235,7 @@ def _validated(row, table, columns):
         raise _invalid()
     values = {key: row[key] for key in columns.split()}
     for key, value in values.items():
-        if value is None and key in {"character_json", "origin_checkpoint_id", "opening_json"}:
+        if value is None and key in {"character_json", "origin_checkpoint_id", "opening_json", "instance_snapshot"}:
             continue
         if key in INTEGER_FIELDS:
             if type(value) is not int or not 0 <= value <= 2**53 - 1:
@@ -308,7 +347,49 @@ def _remap_result(result, ids, opening):
     return json.dumps(result, ensure_ascii=False, allow_nan=False)
 
 
-def _copy_saves(conn, world_id, records, ids):
+def _restore_instance(conn, snapshot, world_id, source_world_id, source_map, adventure_id=None):
+    root = snapshot["instance"]
+    minute, revision, canon = root["world_minute"], root["world_revision"], root["canon_version"]
+    if (type(snapshot["version"]) is not int or snapshot["version"] != instance_service.SNAPSHOT_VERSION
+            or root["world_id"] != source_world_id
+            or any(type(value) is not int or not 0 <= value < 2**53 for value in (minute, revision))
+            or (canon is not None and not isinstance(canon, str))):
+        raise _invalid()
+    domains = snapshot["domains"]
+    if not isinstance(domains, dict) or set(domains) - {"events", "knowledge"}:
+        raise _invalid()
+    target = instance_service.create_instance(
+        conn, world_id, adventure_id=adventure_id, world_minute=minute,
+        world_revision=revision, canon_version=canon,
+    )
+    instance_id = target["id"]
+    try:
+        if "events" in domains:
+            if domains["events"]["world_minute"] != minute:
+                raise _invalid()
+            world_events.restore(
+                conn, instance_id, domains["events"], source_id_map=source_map,
+                allowed_source_ids=set(source_map.values()),
+            )
+        if "knowledge" in domains:
+            world_knowledge.restore(conn, instance_id, domains["knowledge"])
+    except ApiError as exc:
+        raise _invalid() from exc
+    return instance_id
+
+
+def _restore_checkpoint_snapshot(conn, raw, world_id, source_world_id, source_map):
+    # Validate and remap in a temporary instance, then discard its rows.
+    conn.execute("SAVEPOINT validate_m3_checkpoint")
+    try:
+        instance_id = _restore_instance(conn, json.loads(raw), world_id, source_world_id, source_map)
+        return json.dumps(_instance_snapshot(conn, instance_id), ensure_ascii=False)
+    finally:
+        conn.execute("ROLLBACK TO SAVEPOINT validate_m3_checkpoint")
+        conn.execute("RELEASE SAVEPOINT validate_m3_checkpoint")
+
+
+def _copy_saves(conn, world_id, records, ids, source_world_id, source_map):
     runs = {run["id"]: run for run in records["adventures"]}
     openings = {run_id: scenario.normalize(json.loads(run["opening_json"])) if run["opening_json"] else None
                 for run_id, run in runs.items()}
@@ -355,6 +436,10 @@ def _copy_saves(conn, world_id, records, ids):
                         or (cursor and memory[run_id][cursor - 1]["turn"] > row["revision"])):
                     raise _invalid()
                 row["request_id"] = row["id"]
+                if raw := row.get("instance_snapshot"):
+                    row["instance_snapshot"] = _restore_checkpoint_snapshot(
+                        conn, raw, world_id, source_world_id, source_map,
+                    )
             _insert(conn, table, row)
 
 
@@ -417,7 +502,18 @@ def import_transfer(conn, uploads, max_documents):
         if saves is not None and saves["version"] < SAVES_OPENINGS_VERSION:
             for run in saves["adventures"]:
                 run["opening_json"] = None
-        save_records = _records(saves, SAVE_TABLES) if saves is not None else {}
+        save_tables = SAVE_TABLES
+        portable_instances = {}
+        if saves is not None and saves["version"] == SAVES_INSTANCES_VERSION:
+            save_tables = {**SAVE_TABLES, "adventure_checkpoints": SAVE_TABLES["adventure_checkpoints"] + " instance_snapshot"}
+            if not isinstance(saves["world_instances"], list):
+                raise _invalid()
+            for item in saves["world_instances"]:
+                adventure_id = item["adventure_id"]
+                if not isinstance(adventure_id, str) or adventure_id in portable_instances:
+                    raise _invalid()
+                portable_instances[adventure_id] = item["snapshot"]
+        save_records = _records(saves, save_tables) if saves is not None else {}
         ids = {
             table: {row["id"]: str(uuid4()) for row in rows if "id" in row}
             for table, rows in {**world_records, **save_records}.items()
@@ -436,7 +532,21 @@ def import_transfer(conn, uploads, max_documents):
             "local_digest": _local_digest(conn, world), "id_map": json.dumps(source_ids),
         })
         if saves is not None:
-            _copy_saves(conn, world_id, save_records, {**ids, **source_ids})
+            if set(portable_instances) - ids["adventures"].keys():
+                raise _invalid()
+            source_map = {
+                f"{prefix}:{old}": f"{prefix}:{new}"
+                for table, prefix in (("chunks", "chunk"), ("lore_entries", "entry"))
+                for old, new in source_ids[table].items()
+            }
+            _copy_saves(conn, world_id, save_records, {**ids, **source_ids}, source_id, source_map)
+            for run in save_records["adventures"]:
+                original = run["id"]
+                new_id = ids["adventures"][original]
+                if original in portable_instances:
+                    _restore_instance(conn, portable_instances[original], world_id, source_id, source_map, new_id)
+                else:
+                    instance_service.ensure_for_adventure(conn, new_id)
         return world_id
     except (BadZipFile, zlib.error, ValueError, sqlite3.IntegrityError,
             RuntimeError, TypeError, KeyError, AttributeError, OverflowError) as exc:

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Iterator
 
@@ -72,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id, chunk_inde
 def init_db(path: Path | str) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
         from .lore_entries.schema import ensure_lore_entries_schema
@@ -99,6 +99,18 @@ def init_db(path: Path | str) -> None:
         conn.executescript(MEMORY_SCHEMA)
         from .adventures.item_descriptions import SCHEMA as ITEM_DESCRIPTION_SCHEMA
         conn.executescript(ITEM_DESCRIPTION_SCHEMA)
+        if 'instance_snapshot' not in {row[1] for row in conn.execute('PRAGMA table_info(adventure_checkpoints)')}:
+            conn.execute('ALTER TABLE adventure_checkpoints ADD COLUMN instance_snapshot TEXT')
+        from .m3.core.schema import ensure_schema as ensure_m3_schema
+
+        ensure_m3_schema(conn)
+        from .m3.events.schema import ensure_events_schema
+        from .m3.knowledge.schema import ensure_knowledge_schema
+        from .m3.pulse.schema import ensure_pulse_schema
+
+        ensure_events_schema(conn)
+        ensure_knowledge_schema(conn)
+        ensure_pulse_schema(conn, ensure_instance_table=False)
         conn.commit()
 
 

@@ -8,12 +8,14 @@ from fastapi import Query
 from ..db import db
 from ..errors import ApiError
 from . import memory, service
+from ..m3.core import adapters, service as instance_service
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS adventure_checkpoints (
  id TEXT PRIMARY KEY, adventure_id TEXT NOT NULL REFERENCES adventures(id),
  request_id TEXT NOT NULL, name TEXT NOT NULL, revision INTEGER NOT NULL,
  character_json TEXT, mode TEXT NOT NULL, created_at REAL NOT NULL,
+ instance_snapshot TEXT,
  UNIQUE(adventure_id,request_id)
 );
 CREATE INDEX IF NOT EXISTS idx_checkpoints_run ON adventure_checkpoints(adventure_id,created_at);
@@ -37,6 +39,7 @@ def checkpoint_dict(row):
     result = dict(row)
     result['character'] = json.loads(result.pop('character_json') or 'null')
     result.pop('request_id', None)
+    result.pop('instance_snapshot', None)
     return result
 
 
@@ -54,11 +57,15 @@ def create_checkpoint(conn, adventure_id, name, request_id, revision):
         raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后再存档。')
     id = str(uuid4())
     cursor = memory.cursor(conn, adventure_id)
+    instance = instance_service.ensure_for_adventure(conn, adventure_id)
+    snapshot = instance_service.snapshot(conn, instance['id'])
+    snapshot['domains'] = adapters.snapshot_all(conn, instance['id'])
+    instance_snapshot = json.dumps(snapshot, ensure_ascii=False)
     conn.execute('''INSERT INTO adventure_checkpoints
-                 (id,adventure_id,request_id,name,revision,character_json,mode,created_at,memory_cursor)
-                 VALUES(?,?,?,?,?,?,?,?,?)''',
+                 (id,adventure_id,request_id,name,revision,character_json,mode,created_at,memory_cursor,instance_snapshot)
+                 VALUES(?,?,?,?,?,?,?,?,?,?)''',
                  (id, adventure_id, request_id, name, revision, json.dumps(run['character'], ensure_ascii=False),
-                  run['mode'], time.time(), cursor))
+                  run['mode'], time.time(), cursor, instance_snapshot))
     return checkpoint_dict(conn.execute('SELECT * FROM adventure_checkpoints WHERE id=?', (id,)).fetchone())
 
 
@@ -84,6 +91,22 @@ def restore(conn, checkpoint_id, name, request_id):
                     SELECT ?,world_id,?,?,?,?,?,?,?,opening_json FROM adventures WHERE id=?''',
                  (id, name, checkpoint['mode'], checkpoint['revision'], time.time(),
                   checkpoint['character_json'], checkpoint_id, request_id, source['id']))
+    if checkpoint['instance_snapshot']:
+        snapshot = json.loads(checkpoint['instance_snapshot'])
+        restored = instance_service.restore(
+            conn,
+            snapshot,
+            adventure_id=id,
+            world_id=source['world_id'],
+        )
+        adapters.restore_all(
+            conn,
+            snapshot.get('domains', {}),
+            new_instance_id=restored['id'],
+            world_id=source['world_id'],
+        )
+    else:
+        instance_service.ensure_for_adventure(conn, id)
     conn.execute("INSERT INTO adventure_turns SELECT ?,sequence,'inherited:'||sequence,action,result,created_at FROM adventure_turns WHERE adventure_id=? AND sequence<=?",
                  (id, source['id'], checkpoint['revision']))
     copied = conn.execute("""INSERT INTO adventure_memory_events
@@ -99,7 +122,7 @@ def register_checkpoint_routes(app, cfg):
     def list_checkpoints(adventure_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
         with db(cfg.db_path) as conn:
             service.get_adventure(conn, adventure_id)
-            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT * FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
+            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT id,adventure_id,name,revision,character_json,mode,created_at,memory_cursor FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
 
     @app.post('/api/v1/adventures/{adventure_id}/checkpoints', status_code=201)
     def save(adventure_id: str, payload: dict):
