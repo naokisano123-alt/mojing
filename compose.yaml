@@ -1,0 +1,33 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: web
+    environment:
+      MOJING_PUBLIC_ORIGIN: ${MOJING_PUBLIC_ORIGIN:?Set the site HTTPS origin}
+      MOJING_PASSWORD_HASH: ${MOJING_PASSWORD_HASH:?Set a hashed password}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+    depends_on:
+      - api
+    restart: unless-stopped
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: api
+    environment:
+      MOJING_PUBLIC_ORIGIN: ${MOJING_PUBLIC_ORIGIN:?Set the site HTTPS origin}
+      MOJING_ALLOWED_MODEL_BASE_URLS: ${MOJING_ALLOWED_MODEL_BASE_URLS:-}
+      MOJING_DB_PATH: /data/mojing.db
+    volumes:
+      - game_data:/data
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  game_data:

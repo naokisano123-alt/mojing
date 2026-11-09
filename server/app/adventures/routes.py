@@ -78,6 +78,7 @@ def register_routes(app, cfg, get_store, get_builder):
                 run = service.get_adventure(conn, adventure_id)
                 if run['revision'] != reserved['base_revision']:
                     raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后重新生成。')
+                world = conn.execute('SELECT name, description FROM worlds WHERE id=?', (run['world_id'],)).fetchone()
                 bundle = get_builder()(conn, run['world_id'], action)
                 recent = service.turns(conn, adventure_id, limit=6)
             history = tuple(HistoryTurn(safe_u16_truncate(t['action'], 500), safe_u16_truncate(t['result']['narrative'], 1400)) for t in recent)
@@ -89,7 +90,8 @@ def register_routes(app, cfg, get_store, get_builder):
             else:
                 client = FakeModelClient()
             state = character(run['character']) if run['character'] is not None else None
-            request = NarrationRequest(action, tuple(bundle.sources), history, state)
+            intro = safe_u16_truncate(f"{world['name']}\n{world['description']}", 1300)
+            request = NarrationRequest(action, tuple(bundle.sources), history, state, world_intro=intro)
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
                       'references': list(draft.references), 'sources': list(bundle.metadata),

@@ -13,7 +13,7 @@ from app.model_gateway import ModelSessionStore
 
 
 def setup_run(client, mode='fake'):
-    world = client.post('/api/v1/worlds', json={'name': '旅程世界'}).json()['id']
+    world = client.post('/api/v1/worlds', json={'name': '旅程世界', 'description': '群岛被常年的潮雾包围。'}).json()['id']
     run = client.post(f'/api/v1/worlds/{world}/adventures', json={'name': '港口旅程', 'mode': mode}).json()
     return world, run
 
@@ -63,8 +63,12 @@ def test_live_receives_only_confirmed_history_and_cached_retry(db_path):
         }}]})
 
     store = ModelSessionStore(http_transport=httpx.MockTransport(model))
-    session = store.create('https://model.invalid', 'test', 'secret')
-    with TestClient(create_app(Settings(db_path=db_path), narration_store=store)) as client:
+    origin = 'https://adventure.example.com'
+    settings = Settings(db_path=db_path, public_origin=origin, allowed_model_base_urls=('https://model.invalid',))
+    with TestClient(create_app(settings, narration_store=store), headers={'Origin': origin}) as client:
+        session = client.post('/api/v1/model-sessions', json={
+            'base_url': 'https://model.invalid/', 'model': 'test', 'api_key': 'secret',
+        }).json()
         _, run = setup_run(client, 'live')
         def draft(key, rev, action):
             return client.post(f"/api/v1/adventures/{run['id']}/drafts", json={
@@ -74,6 +78,7 @@ def test_live_receives_only_confirmed_history_and_cached_retry(db_path):
         assert draft('a', 0, '敲门').status_code == 200
         assert len(prompts) == 1
         assert '已确认的历史剧情' not in prompts[0]
+        assert '群岛被常年的潮雾包围。' in prompts[0]
         assert confirm(client, run, 'a').status_code == 200
         assert draft('b', 1, '向守望者问好').status_code == 200
         assert '灯塔守望者为你打开门。' in prompts[-1]
@@ -174,3 +179,26 @@ def test_disconnected_generation_fails_reservation_without_committing(tmp_path):
             assert conn.execute('SELECT status FROM adventure_drafts').fetchone()[0] == 'failed'
             assert conn.execute('SELECT revision FROM adventures').fetchone()[0] == 0
     asyncio.run(exercise())
+
+
+def test_hosted_writes_require_own_origin_and_model_url_allowlist(db_path):
+    origin = 'https://adventure.example.com'
+    settings = Settings(db_path=db_path, public_origin=origin, allowed_model_base_urls=('https://model.invalid/v1',))
+    with TestClient(create_app(settings)) as client:
+        for headers in ({}, {'Origin': 'https://other.example.com'}):
+            assert client.post('/api/v1/worlds', json={'name': '世界'}, headers=headers).status_code == 403
+        assert client.get('/docs').status_code == 404
+        assert client.get('/api/v1/worlds').json()['total'] == 0
+        headers = {'Origin': origin}
+        for url in ('https://127.0.0.1/v1', 'https://model.invalid/other', 'http://model.invalid/v1'):
+            response = client.post('/api/v1/model-sessions', headers=headers, json={
+                'base_url': url, 'model': 'test', 'api_key': 'secret',
+            })
+            assert response.status_code == 422
+            assert response.json()['error']['code'] == 'MODEL_ENDPOINT_NOT_ALLOWED'
+        response = client.post('/api/v1/model-sessions', headers=headers, json={
+            'base_url': 'https://model.invalid/v1/', 'model': 'test', 'api_key': 'secret',
+        })
+        assert response.status_code == 201
+        assert response.headers['cache-control'] == 'no-store'
+        assert 'secret' not in response.text

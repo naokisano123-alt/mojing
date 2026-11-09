@@ -31,7 +31,6 @@ def _env_origins(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     raw = os.getenv(name)
     if not raw:
         return default
-    http_raw = os.getenv("MOJING_HTTP_ORIGINS")
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     return tuple(parts) or default
 
@@ -47,6 +46,8 @@ class Settings:
     max_documents_per_world: int = 20
     allow_gb18030: bool = True
     allow_big5: bool = False
+    public_origin: str = ""
+    allowed_model_base_urls: tuple[str, ...] = ()
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: (
             "http://localhost:5173",
@@ -69,6 +70,8 @@ def load_settings(db_path: Path | str | None = None) -> Settings:
         max_documents_per_world=_env_int("MOJING_MAX_DOCUMENTS_PER_WORLD", 20),
         allow_gb18030=_env_bool("MOJING_ALLOW_GB18030", True),
         allow_big5=_env_bool("MOJING_ALLOW_BIG5", False),
+        public_origin=os.getenv("MOJING_PUBLIC_ORIGIN", "").strip(),
+        allowed_model_base_urls=_env_origins("MOJING_ALLOWED_MODEL_BASE_URLS", ()),
         cors_origins=_env_origins(
             "MOJING_CORS_ORIGINS",
             ("http://localhost:5173", "http://127.0.0.1:5173"),

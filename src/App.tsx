@@ -7,6 +7,7 @@ import { Home, CreateWorld } from './pages/WorldPages';
 import { WorldLoreView } from './components/documents';
 import { listWorlds as fetchRemoteWorldList, createWorld as createRemoteWorld, ApiClientError } from './api/client';
 import type { WorldSummary } from './api/types';
+import type { ModelSessionResponse } from './features/narration-preview/types';
 import Story from './pages/Story';
 import Settings from './pages/Settings';
 import { Atlas, Character, Saves } from './pages/DetailPages';
@@ -37,6 +38,7 @@ export default function App() {
   const [editors, setEditors] = useState<Record<string, boolean>>({});
   const [fateOpen, setFateOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [modelSession, setModelSession] = useState<ModelSessionResponse | null>(null);
   const [remoteWorlds, setRemoteWorlds] = useState<WorldSummary[]>([]);
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remoteError, setRemoteError] = useState('');
@@ -169,7 +171,7 @@ export default function App() {
     setRemoteWorlds(current => [...current, created]);
     setRemoteStatus('ready');
     openLore(created);
-    setToast('世界资料库已创建，可以导入 TXT / Markdown 了。');
+    setToast('世界已创建。可以开始冒险，也可以先导入设定。');
   }
   function openLore(target: WorldSummary) {
     setLoreWorld({ id: target.id, name: target.name });
@@ -209,7 +211,7 @@ export default function App() {
     {page === 'home' && <header className="app-header">
       <button className="brand" onClick={() => go('home')} aria-label="墨境 · 我的世界"><span className="brand-mark">墨</span><span>墨境<small>MOJING</small></span></button>
       <div className="header-center">在文字中，遇见另一种人生</div>
-      <div className="header-actions"><span className="demo-badge">M0 · 演示</span>
+      <div className="header-actions">
         <button className="icon-button" aria-label="游戏设置" title="游戏设置" onClick={() => go('settings')}><SettingsIcon size={20} /></button>
       </div>
     </header>}
@@ -247,7 +249,7 @@ export default function App() {
           }} />}
           {page === 'settings' && <Settings state={state} update={s => setState(prev => ({ ...prev, ...s }))} back={() => go('home', 'right')} />}
           {page === 'lore' && (loreWorld
-            ? <WorldLoreView worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} onPlayDemo={playDemoFromLore} />
+            ? <WorldLoreView key={loreWorld.id} initialTab="journal" modelSession={modelSession} onModelSessionChange={setModelSession} worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} onPlayDemo={playDemoFromLore} />
             : <div className="narrow"><button className="text-button back" onClick={() => go('home', 'right')}>← 返回我的世界</button><p className="muted">请从“我的世界”中选择一个世界资料库进入。</p></div>)}
         </div>
       </div>

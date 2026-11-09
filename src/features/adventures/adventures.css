@@ -52,7 +52,8 @@
 }
 .journal-prose {
   font-family: "Noto Serif SC", "Songti SC", serif;
-  line-height: 2;
+  font-size: var(--reading-size, 16px);
+  line-height: var(--reading-leading, 2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
