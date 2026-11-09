@@ -28,8 +28,9 @@ LOCAL_USER = "player"
 class LocalAccess:
     """Protect loopback data from other apps and cross-origin browser requests."""
 
-    def __init__(self, app: ASGIApp, password: str) -> None:
+    def __init__(self, app: ASGIApp, password: str, origin: str) -> None:
         self.app = app
+        self.origin = origin
         self.credentials = b"Basic " + base64.b64encode(f"{LOCAL_USER}:{password}".encode())
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -48,7 +49,7 @@ class LocalAccess:
             await response(scope, receive, send)
             return
 
-        if scope["method"] not in {"GET", "HEAD", "OPTIONS"} and headers.get("origin") != LOCAL_ORIGIN:
+        if scope["method"] not in {"GET", "HEAD", "OPTIONS"} and headers.get("origin") != self.origin:
             error = ApiError(403, "ORIGIN_FORBIDDEN", "请从墨境的本机网页内发起操作。")
             await JSONResponse(status_code=error.status, content=error.body())(scope, receive, send)
             return
@@ -64,9 +65,9 @@ class LocalAccess:
         await self.app(scope, receive, send_with_headers)
 
 
-def attach_local_ui(app: FastAPI, dist_dir: Path, password: str) -> None:
+def attach_local_ui(app: FastAPI, dist_dir: Path, password: str, port: int = LOCAL_PORT) -> None:
     app.mount("/", StaticFiles(directory=dist_dir, html=True), name="local-ui")
-    app.add_middleware(LocalAccess, password=password)
+    app.add_middleware(LocalAccess, password=password, origin=f"http://{LOCAL_HOST}:{port}")
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=[LOCAL_HOST])
 
 
@@ -84,6 +85,24 @@ def read_or_create_password(path: Path) -> str:
         return password
 
 
+def create_local_app(
+    dist_dir: Path, data_dir: Path, password: str, port: int = LOCAL_PORT,
+    *, https_model_only: bool = False,
+) -> FastAPI:
+    if not (dist_dir / "index.html").is_file():
+        raise ValueError("缺少前端构建产物，请先执行安装命令。")
+    data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.environ["MOJING_DB_PATH"] = str(data_dir / "mojing.db")
+    os.environ.pop("MOJING_PUBLIC_ORIGIN", None)
+
+    from .config import load_settings
+    from .main import create_app
+
+    app = create_app(replace(load_settings(), cors_origins=(), https_model_only=https_model_only))
+    attach_local_ui(app, dist_dir, password, port)
+    return app
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="在本机运行墨境")
     parser.add_argument("--dist", type=Path, required=True)
@@ -91,17 +110,9 @@ def main() -> None:
     args = parser.parse_args()
     if not (args.dist / "index.html").is_file():
         parser.error("缺少前端构建产物，请先执行安装命令。")
-
     args.data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.environ["MOJING_DB_PATH"] = str(args.data_dir / "mojing.db")
-    os.environ.pop("MOJING_PUBLIC_ORIGIN", None)
-
-    from .config import load_settings
-    from .main import create_app
-
-    app = create_app(replace(load_settings(), cors_origins=()))
     password = read_or_create_password(args.data_dir / "browser-password")
-    attach_local_ui(app, args.dist, password)
+    app = create_local_app(args.dist, args.data_dir, password)
 
     print(f"在这部手机的浏览器打开 {LOCAL_ORIGIN}", flush=True)
     print(f"本机登录用户名：{LOCAL_USER}   密码：{password}", flush=True)

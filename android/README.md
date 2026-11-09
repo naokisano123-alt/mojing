@@ -1,0 +1,21 @@
+# 墨境 Android 应用
+
+Android 7.0 及以上的 64 位 ARM 设备可安装预览 APK。应用启动后直接进入墨境，世界资料和冒险存档都保存在应用自己的目录。
+
+1. 在首页新建世界，进入「冒险记录」。
+2. 点「连接模型 API」，填写服务商的 HTTPS API 根地址、准确的模型名和 API Key，再点「测试连接」。
+3. 返回并新建真实模型旅程。写行动、确认回合后，进度会自动保存。也可以先创建免 Key 的模拟旅程。
+
+模型 API Key 暂存于应用进程内存。会话到期或安卓结束进程后需要重新连接；已确认的进度可以继续。卸载或清除应用数据会删除本机存档。预览 APK 使用调试签名，不同签名的包无法直接覆盖安装。
+
+## 构建
+
+需要 JDK 17 或 21、Gradle 8.11.1、Android SDK 35（含 Build Tools 35.0.0）、Python 3.12、Node.js 22。从仓库根目录运行：
+
+```bash
+npm ci
+npm run build
+gradle -p android :app:assembleDebug
+```
+
+APK 输出于 `android/app/build/outputs/apk/debug/app-debug.apk`。应用复用 `server/app` 中的冒险和资料库代码，前端构建产物与 Python 运行时都包含在 APK 里。应用内引擎只接受本机回环访问，WebView 自动认证，外部模型地址需使用 HTTPS。Android 构建使用独立的 Python 依赖清单，电脑开发和云端部署沿用原依赖。

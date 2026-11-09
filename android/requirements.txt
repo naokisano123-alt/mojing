@@ -1,0 +1,9 @@
+# Android uses the pure-Python Pydantic v1 wheel; the desktop stack is unchanged.
+fastapi==0.125.0
+pydantic==1.10.26
+uvicorn==0.54.0
+python-multipart==0.0.33
+httpx==0.28.1
+pypdf==6.21.4
+python-docx==1.1.2
+lxml==5.3.0
