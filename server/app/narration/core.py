@@ -52,6 +52,8 @@ class NarrationRequest:
     adventure_memory: tuple[dict, ...] | None = None
     memory_items: tuple[dict, ...] = ()
     memory_excerpts: tuple[dict, ...] = ()
+    clock: dict | None = None
+    clock_max_minutes: int | None = None
 
 
 @dataclass(frozen=True)
@@ -125,10 +127,17 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
         if request.adventure_memory is not None:
             if changes is not None and not isinstance(changes, dict):
                 raise StateError('状态提议须为对象。')
+            effective = {**(changes or {}), 'minutes': 0} if request.clock else changes
             memory_changes, projected = memory.plan(
-                request.memory_items, value.get('memory_updates', []), request.character, changes,
+                request.memory_items, value.get('memory_updates', []), request.character, effective,
                 {item['id'] for item in request.adventure_memory},
             )
+            if request.clock:
+                minutes = request.clock['elapsed_minutes']
+                projected['elapsed_minutes'] += minutes
+                changes = {**(changes or {}), 'minutes': minutes}
+            elif request.clock_max_minutes is not None and (changes or {}).get('minutes', 0) > request.clock_max_minutes:
+                raise StateError('此行动跨过了本回合可推进的时间。请缩短行动，或使用时间快进。')
         elif changes is not None:
             projected = asdict(project(request.character, changes))
     except (StateError, TypeError, ValueError) as exc:
@@ -170,9 +179,12 @@ class FakeModelClient:
             'narrative': '【测试模型 · 未调用真实 AI】你尝试：' + request.action.strip(),
             'references': [request.sources[0].source_id] if request.sources else [],
         }
-        if request.character:
+        if request.character and request.clock is None:
             state = request.character
-            changes = {'minutes': min(10, 1000000000-state.elapsed_minutes), 'stamina_delta': -1 if state.stamina else 0}
+            minutes = min(10, 1_000_000_000 - state.elapsed_minutes)
+            if request.clock_max_minutes is not None:
+                minutes = min(minutes, request.clock_max_minutes)
+            changes = {'minutes': minutes, 'stamina_delta': -1 if state.stamina else 0}
             items = {item.name: item.quantity for item in state.inventory}
             if (len(items) < 40 or '测试纪念签' in items) and items.get('测试纪念签', 0) < 9999:
                 changes['inventory_changes'] = [{'name': '测试纪念签', 'delta': 1}]

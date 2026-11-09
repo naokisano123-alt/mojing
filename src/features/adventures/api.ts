@@ -44,6 +44,41 @@ export interface MemoryCorrection {
   item: MemoryFields | null;
   reason: string;
 }
+export interface Opening {
+  name: string;
+  intro: string;
+  starts_at: string;
+  character: CharacterState;
+  shortcut: string;
+}
+export interface ScenarioEvent {
+  title: string;
+  description: string;
+  at_minute: number;
+  every_minutes: number | null;
+  interrupt: boolean;
+}
+export interface OpeningSettings extends Opening {
+  events: ScenarioEvent[];
+}
+export interface ClockResult {
+  requested_minutes: number;
+  elapsed_minutes: number;
+  from: string;
+  to: string;
+  interrupted: boolean;
+  events: { title: string; description: string; at: string; count: number; interrupt: boolean }[];
+}
+const openingsPath = (id: string) => "/worlds/" + encodeURIComponent(id) + "/opening-settings";
+export const openingApi = {
+  settings: (world: string, signal?: AbortSignal) =>
+    request<{ items: (OpeningSettings & { id: string })[] }>("GET", openingsPath(world), { signal }),
+  save: (world: string, body: OpeningSettings, id?: string) =>
+    request<OpeningSettings & { id: string }>(id ? "PUT" : "POST",
+      openingsPath(world) + (id ? "/" + encodeURIComponent(id) : ""), { body }),
+  remove: (world: string, id: string) =>
+    request<void>("DELETE", openingsPath(world) + "/" + encodeURIComponent(id)),
+};
 export interface JournalResult extends NarrationPreviewResponse {
   suggestions?: string[];
   state_before?: CharacterState | null;
@@ -54,9 +89,12 @@ export interface JournalResult extends NarrationPreviewResponse {
   memory_cursor?: number;
   memory_proposal?: MemoryChange[];
   memory_changes?: MemoryChange[];
+  clock?: ClockResult;
+  clock_required?: boolean;
 }
 export interface Run {
   origin_checkpoint_id?: string | null;
+  opening?: Opening;
   character?: CharacterState | null;
   id: string;
   world_id: string;
@@ -83,6 +121,9 @@ export interface Detail extends Run {
 }
 const path = (id: string) => "/adventures/" + encodeURIComponent(id);
 export const adventureApi = {
+  listOpenings: (world: string, signal?: AbortSignal) => request<{ items: (Opening & { id: string })[] }>(
+    "GET", "/worlds/" + encodeURIComponent(world) + "/openings", { signal },
+  ),
   list: (world: string, signal?: AbortSignal, offset = 0) =>
     request<{ items: Run[] }>(
       "GET",
@@ -94,11 +135,12 @@ export const adventureApi = {
     name: string,
     mode: "fake" | "live",
     character?: Partial<CharacterState>,
+    openingId?: string,
   ) =>
     request<Run>(
       "POST",
       "/worlds/" + encodeURIComponent(world) + "/adventures",
-      { body: { name, mode, character } },
+      { body: { name, mode, character, opening_id: openingId } },
     ),
   detail: (id: string, signal?: AbortSignal, before?: number) =>
     request<Detail>("GET", path(id), { signal, queryParams: { before } }),
@@ -115,6 +157,7 @@ export const adventureApi = {
       action: string;
       expected_revision: number;
       session_id?: string;
+      advance_minutes?: number;
     },
     signal?: AbortSignal,
   ) =>

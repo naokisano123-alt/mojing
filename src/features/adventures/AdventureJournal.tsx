@@ -6,6 +6,8 @@ import {
   type Run,
   type Turn,
   type InventoryItem,
+  type Opening,
+  type ClockResult,
 } from "./api";
 import { ActionComposer } from "../../components/ActionComposer";
 import { ApiClientError } from "../../api/client";
@@ -16,6 +18,23 @@ import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
+
+function worldTime(start: string, minutes: number) {
+  return new Date(Date.parse(start + "Z") + minutes * 60000).toISOString().slice(0, 16).replace("T", " ");
+}
+
+function ClockSummary({ clock, pending }: { clock: ClockResult; pending?: boolean }) {
+  return <aside className="journal-character" aria-label={pending ? "待确认时间结算" : "时间结算"}>
+    <strong>{pending ? "待确认 · " : ""}{clock.interrupted ? "遇到需要决定的事件，时间停在" : "世界时间推进至"} {clock.to.replace("T", " ")}</strong>
+    <p>本回合经过 {clock.elapsed_minutes} 分钟{clock.elapsed_minutes < clock.requested_minutes ? `（原计划 ${clock.requested_minutes} 分钟）` : ""}</p>
+    {clock.events.length > 0 && <ul>
+      {clock.events.map((event, index) => <li key={index}>
+        <strong>{event.title}{event.count > 1 ? ` × ${event.count}` : ""}</strong>
+        <p>{event.description}</p>
+      </li>)}
+    </ul>}
+  </aside>;
+}
 
 export function AdventureJournal({
   worldId,
@@ -34,6 +53,10 @@ export function AdventureJournal({
   api?: typeof adventureApi;
   checkpointApi?: typeof defaultCheckpointApi;
 }) {
+  const [openings, setOpenings] = useState<(Opening & { id: string })[]>([]);
+  const [openingId, setOpeningId] = useState("");
+  const [advanceHours, setAdvanceHours] = useState<number>();
+  const selectedOpening = openings.find(item => item.id === openingId);
   const [characterName, setCharacterName] = useState("旅人");
   const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
   const [initialCoins, setInitialCoins] = useState(0);
@@ -51,7 +74,8 @@ export function AdventureJournal({
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
   const hasMemoryProposal = Boolean(draft?.result?.memory_proposal?.length);
-  const applyChanges = draftKey !== null && (acceptedDraft?.key === draftKey ? acceptedDraft.value : hasMemoryProposal);
+  const requiredClock = Boolean(draft?.result?.clock_required);
+  const applyChanges = draftKey !== null && (requiredClock || (acceptedDraft?.key === draftKey ? acceptedDraft.value : hasMemoryProposal));
   const staleMemory = draft?.result?.memory_cursor !== undefined && draft.result.memory_cursor !== run?.memory?.cursor;
   useEffect(() => {
     if (draft?.status === "ready") draftCard.current?.scrollIntoView?.({ block: "start" });
@@ -76,6 +100,12 @@ export function AdventureJournal({
     const generation = ++epoch.current;
     const controller = new AbortController();
     setLoadingRuns(true);
+    setOpenings([]);
+    setOpeningId("");
+    setAdvanceHours(undefined);
+    void api.listOpenings?.(worldId, controller.signal).then(data => {
+      if (valid(generation)) setOpenings(data.items);
+    }).catch(() => { /* Older endpoints still allow freeform creation. */ });
     setShowCreate(false);
     setRuns([]);
     setRun(null);
@@ -142,6 +172,7 @@ export function AdventureJournal({
     setRun(null);
     setDraft(null);
     setExpanded(false);
+    setAdvanceHours(undefined);
     setAction("");
     const generation = epoch.current;
     setError("");
@@ -158,6 +189,10 @@ export function AdventureJournal({
   const generate = (submittedAction: string) =>
     operate(async () => {
       if (!run || !submittedAction.trim()) return;
+      if (advanceHours !== undefined && (!Number.isInteger(advanceHours) || advanceHours < 1 || advanceHours > 168)) {
+        setError("请输入 1 至 168 小时的快进时长。");
+        return;
+      }
       const generation = epoch.current,
         controller = new AbortController();
       active.current = controller;
@@ -171,6 +206,7 @@ export function AdventureJournal({
           action: submittedAction,
           expected_revision: run.revision,
           session_id: run.mode === "live" ? sessionId : undefined,
+          ...(advanceHours === undefined ? {} : { advance_minutes: advanceHours * 60 }),
         },
         controller.signal,
       );
@@ -199,7 +235,7 @@ export function AdventureJournal({
       else await api.commit(run.id, draft.id);
       if (valid(generation)) {
         await refresh(run.id);
-        if (valid(generation)) { setExpanded(false); setAction(""); }
+        if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); }
       }
     });
   const older = () =>
@@ -263,6 +299,17 @@ export function AdventureJournal({
             onChange={(e) => setName(e.target.value)}
           />
           </label>
+          {openings.length > 0 && <label>选择开局
+            <select value={openingId} onChange={event => setOpeningId(event.target.value)}>
+              <option value="">自由开局</option>
+              {openings.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>}
+          {selectedOpening ? <details className="journal-sources">
+            <summary>预览开局 · {selectedOpening.starts_at.replace("T", " ")}</summary>
+            <p className="journal-prose">{selectedOpening.intro}</p>
+            <CharacterCard state={selectedOpening.character} title="初始状态" />
+          </details> : <>
           <label>角色姓名
           <input
             aria-label="角色姓名"
@@ -298,6 +345,7 @@ export function AdventureJournal({
             items={initialInventory}
             onChange={setInitialInventory}
           />
+          </>}
           <select
             aria-label="新冒险模式"
             value={nextMode}
@@ -312,17 +360,16 @@ export function AdventureJournal({
             onClick={() =>
               operate(async () => {
                 const generation = epoch.current,
-                  created = await api.create(worldId, name, nextMode, {
-                    name: characterName,
-                    location: initialLocation,
-                    coins: initialCoins,
-                    inventory: initialInventory,
-                  });
+                  created = selectedOpening
+                    ? await api.create(worldId, name, nextMode, undefined, selectedOpening.id)
+                    : await api.create(worldId, name, nextMode, {
+                      name: characterName, location: initialLocation, coins: initialCoins, inventory: initialInventory,
+                    });
                 if (valid(generation)) {
                   setRuns((prev) => [created, ...prev]);
                   setShowCreate(false);
                   await refresh(created.id);
-                  if (valid(generation)) { setExpanded(false); setAction(""); }
+                  if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); }
                 }
               })
             }
@@ -382,6 +429,13 @@ export function AdventureJournal({
               已确认 {run.revision} 回合
             </span>
           </div>
+          {run.opening && run.character && <p className="muted">
+            世界时间 · {worldTime(run.opening.starts_at, run.character.elapsed_minutes)}
+          </p>}
+          {run.opening && <details open={run.revision === 0} className="journal-sources">
+            <summary>开场 · {run.opening.name}</summary>
+            <p className="journal-prose">{run.opening.intro}</p>
+          </details>}
           <button
             className="text-button"
             disabled={busy}
@@ -444,6 +498,7 @@ export function AdventureJournal({
               <span className="muted">第 {turn.sequence} 回合</span>
               <p className="journal-action">{turn.action}</p>
               {renderResult(turn.result)}
+              {turn.result.clock && <ClockSummary clock={turn.result.clock} />}
               <MemoryChanges changes={turn.result.memory_changes} title="本回合日志" />
             </article>
           ))}
@@ -480,8 +535,10 @@ export function AdventureJournal({
               {draft.result.projected_state && <CharacterCard
                 state={draft.result.projected_state} title="模型状态提议 · 尚未生效"
               />}
+              {draft.result.clock && <ClockSummary clock={draft.result.clock} pending />}
               <MemoryChanges changes={draft.result.memory_proposal} title="待确认日志提议" />
-              {(draft.result.projected_state || hasMemoryProposal) && <label className="journal-apply">
+              {requiredClock && <p className="muted">确认后会一并保存时间、事件和本回合的状态变化。</p>}
+              {!requiredClock && (draft.result.projected_state || hasMemoryProposal) && <label className="journal-apply">
                 <input type="checkbox" checked={applyChanges} disabled={busy || staleMemory}
                   onChange={event => setAcceptedDraft({ key: draftKey, value: event.target.checked })} />
                 {hasMemoryProposal ? "一并采用日志与结算提议" : "采用这份状态提议（默认只保存叙事）"}
@@ -512,9 +569,21 @@ export function AdventureJournal({
           {run.mode === "live" && !sessionId && (
             <p className="error">连接模型 API 后，即可继续这段旅程。</p>
           )}
+          {run.opening && draft?.status !== "ready" && draft?.status !== "pending" && <div className="flex flex-wrap gap-2">
+            <button type="button" className="secondary" disabled={busy} onClick={() => {
+              setAdvanceHours(value => value === undefined ? 24 : undefined);
+              setExpanded(true);
+            }}>{advanceHours === undefined ? "指定快进时长" : "取消指定时长"}</button>
+            {advanceHours !== undefined && <label>快进小时数 <input type="number" min={1} max={168}
+              value={Number.isNaN(advanceHours) ? "" : advanceHours} disabled={busy}
+              onChange={event => setAdvanceHours(event.target.valueAsNumber)} /></label>}
+          </div>}
           {draft?.status !== "ready" && draft?.status !== "pending" && <ActionComposer id="journal-action-editor" draft={action} setDraft={setAction}
             expanded={expanded} setExpanded={setExpanded}
-            suggestions={run.turns[run.turns.length - 1]?.result.suggestions ?? []} limit={2000}
+            suggestions={[...new Set([
+              ...(run.turns[run.turns.length - 1]?.result.suggestions ?? []),
+              ...(run.opening?.shortcut ? [run.opening.shortcut] : []),
+            ])]} limit={2000}
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}

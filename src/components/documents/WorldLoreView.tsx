@@ -1,3 +1,4 @@
+import { OpeningEditor } from "../../features/adventures/OpeningEditor";
 import { useState, useEffect, useRef } from 'react';
 import {
   Upload,
@@ -58,7 +59,7 @@ export interface WorldLoreViewProps {
   onModelSessionChange?: (session: ModelSessionResponse | null) => void;
 }
 
-type Tab = 'list' | 'search' | 'entries' | 'narration' | 'journal' | 'upload';
+type Tab = 'list' | 'search' | 'entries' | 'narration' | 'journal' | 'upload' | 'openings';
 
 export function WorldLoreView({
   worldId,
@@ -330,14 +331,19 @@ export function WorldLoreView({
         </p>
       )}
 
-      {tab === 'list' && (
+      {tab === 'list' && <>
+        <button type="button" className="secondary mb-3" onClick={() => switchTab('openings')}>开局与日程</button>
         <DocumentList
           documents={documents}
           loading={loading}
           onSelectDocument={(doc, mode) => setViewingDoc({ documentId: doc.id, mode })}
           onDeleteDocument={handleDeleteDocument}
         />
-      )}
+      </>}
+      {tab === 'openings' && <>
+        <button type="button" className="text-button mb-3" onClick={() => switchTab('list')}>返回资料列表</button>
+        <OpeningEditor key={worldId} worldId={worldId} />
+      </>}
 
       {tab === 'search' && (
         <LoreSearchPanel
