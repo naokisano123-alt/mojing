@@ -91,10 +91,11 @@ def register_routes(app, cfg, get_store, get_builder):
                 client = FakeModelClient()
             state = character(run['character']) if run['character'] is not None else None
             intro = safe_u16_truncate(f"{world['name']}\n{world['description']}", 1300)
-            request = NarrationRequest(action, tuple(bundle.sources), history, state, world_intro=intro)
+            request = NarrationRequest(action, tuple(bundle.sources), history, state, world_intro=intro, suggest_actions=True)
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
                       'references': list(draft.references), 'sources': list(bundle.metadata),
+                      'suggestions': list(draft.suggestions),
                       'state_before': run['character'], 'proposed_changes': draft.proposed_changes,
                       'projected_state': asdict(project(state, draft.proposed_changes)) if draft.proposed_changes is not None else None}
             with db(cfg.db_path) as conn:

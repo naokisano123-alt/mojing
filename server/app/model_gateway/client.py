@@ -21,7 +21,7 @@ def _build_system_prompt() -> str:
         "【输出要求】\n"
         "1. 必须且仅输出合法的标准 JSON 对象，禁止添加任何 Markdown 格式标记、思考过程或多余解释。\n"
         "叙事建议为 300–600 个中文字，保持简洁。\n"
-        "2. 根 JSON 对象必须且仅包含以下两个字段：\n"
+        "2. 根 JSON 对象至少包含以下两个字段，其他字段仅可按下文明确授权添加：\n"
         '   - "narrative": string（生成的下一段叙事，不超过 12000 个 UTF-16 单位）\n'
         '   - "references": string[]（本段叙事中实际作为依据引用的资料 source_id 列表；未引用任何资料时必须输出空数组 []）\n'
         "3. references 中的每一项必须是且只能是输入资料中提供的 source_id（例如 chunk:<id> 或 entry:<id>），严禁编造未提供的标识。\n\n"
@@ -54,7 +54,7 @@ def _build_user_prompt(request: NarrationRequest) -> str:
         sections.append(json.dumps([{'action': h.action, 'narrative': h.narrative} for h in request.history], ensure_ascii=False))
     sections.append("【玩家行动】")
     sections.append(request.action.strip())
-    sections.append('\n请严格按要求输出 JSON 对象 {"narrative": "...", "references": [...]}：')
+    sections.append('\n请严格按上述字段要求输出 JSON 对象：')
     return "\n".join(sections)
 
 
@@ -156,10 +156,17 @@ class OpenAIModelClient:
         return content
 
     async def generate(self, request: NarrationRequest) -> object:
+        system_prompt = _build_system_prompt()
+        if request.character:
+            system_prompt += '\n本次已提供角色状态，允许在根对象额外输出proposed_changes，字段限制见角色状态说明；其余要求不变。'
+        if request.suggest_actions:
+            system_prompt += ('\n根对象可额外包含 suggestions 字段，为 0 到 3 个互不重复的行动建议。'
+                              '每项用一句可直接作为玩家行动的中文短句，最多 120 字，'
+                              '基于这一回合结束时的情境，只提玩家可以尝试的事，不预判结果或泄露未知设定。')
         data = await self._post({
             'model': self.model,
             'messages': [
-                {'role': 'system', 'content': _build_system_prompt() + ('\n本次已提供角色状态，允许在根对象额外输出proposed_changes，字段限制见角色状态说明；其余要求不变。' if request.character else '')},
+                {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': _build_user_prompt(request)},
             ],
             'temperature': 0.7,

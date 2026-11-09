@@ -5,7 +5,7 @@ import type { Branch, Fate, Page, Save, World } from './model';
 import { changeFate, forkSave, loadState, makeWorld, simulateTurn, snapshot, uid } from './model';
 import { Home, CreateWorld } from './pages/WorldPages';
 import { WorldLoreView } from './components/documents';
-import { listWorlds as fetchRemoteWorldList, createWorld as createRemoteWorld, ApiClientError } from './api/client';
+import { listWorlds as fetchRemoteWorldList, createWorld as createRemoteWorld, ApiClientError, restoreModelProfile } from './api/client';
 import type { WorldSummary } from './api/types';
 import type { ModelSessionResponse } from './features/narration-preview/types';
 import Story from './pages/Story';
@@ -39,6 +39,26 @@ export default function App() {
   const [fateOpen, setFateOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [modelSession, setModelSession] = useState<ModelSessionResponse | null>(null);
+  const [modelProfileEnabled, setModelProfileEnabled] = useState(false);
+  const modelEdited = useRef(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void restoreModelProfile(controller.signal).then(({ session }) => {
+      if (controller.signal.aborted) return;
+      setModelProfileEnabled(true);
+      if (!modelEdited.current) setModelSession(session);
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted && error instanceof ApiClientError && error.code === 'MODEL_PROFILE_UNAVAILABLE') {
+        setModelProfileEnabled(true);
+        setToast(error.friendlyMessage);
+      }
+    });
+    return () => controller.abort();
+  }, []);
+  function changeModelSession(session: ModelSessionResponse | null) {
+    modelEdited.current = true;
+    setModelSession(session);
+  }
   const [remoteWorlds, setRemoteWorlds] = useState<WorldSummary[]>([]);
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remoteError, setRemoteError] = useState('');
@@ -181,13 +201,6 @@ export default function App() {
     setFateOpen(false);
     window.scrollTo(0, 0);
   }
-  function playDemoFromLore() {
-    const demo = state.worlds[0];
-    if (!demo) { setToast('没有可用的演示世界。'); return; }
-    setState(s => ({ ...s, current: demo.id }));
-    go('story');
-    setToast('演示模式：本地关键词模拟，不会使用你导入的文档内容。');
-  }
   function setFate(mode: Fate) {
     if (busy) return;
     updateBranch(b => changeFate(b, mode));
@@ -249,7 +262,7 @@ export default function App() {
           }} />}
           {page === 'settings' && <Settings state={state} update={s => setState(prev => ({ ...prev, ...s }))} back={() => go('home', 'right')} />}
           {page === 'lore' && (loreWorld
-            ? <WorldLoreView key={loreWorld.id} initialTab="journal" modelSession={modelSession} onModelSessionChange={setModelSession} worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} onPlayDemo={playDemoFromLore} />
+            ? <WorldLoreView key={loreWorld.id} initialTab="journal" modelSession={modelSession} modelProfileEnabled={modelProfileEnabled} onModelSessionChange={changeModelSession} worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} />
             : <div className="narrow"><button className="text-button back" onClick={() => go('home', 'right')}>← 返回我的世界</button><p className="muted">请从“我的世界”中选择一个世界资料库进入。</p></div>)}
         </div>
       </div>

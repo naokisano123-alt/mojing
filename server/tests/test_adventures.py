@@ -59,7 +59,8 @@ def test_live_receives_only_confirmed_history_and_cached_retry(db_path):
         body = json.loads(request.content)
         prompts.append(body['messages'][1]['content'])
         return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {
-            'content': json.dumps({'narrative': '灯塔守望者为你打开门。', 'references': []}),
+            'content': json.dumps({'narrative': '灯塔守望者为你打开门。', 'references': [],
+                                   'suggestions': [' 问候守望者 ', '问候守望者', 0]}),
         }}]})
 
     store = ModelSessionStore(http_transport=httpx.MockTransport(model))
@@ -74,7 +75,9 @@ def test_live_receives_only_confirmed_history_and_cached_retry(db_path):
             return client.post(f"/api/v1/adventures/{run['id']}/drafts", json={
                 'request_id': key, 'expected_revision': rev, 'action': action, 'session_id': session['session_id'],
             })
-        assert draft('a', 0, '敲门').status_code == 200
+        first = draft('a', 0, '敲门')
+        assert first.status_code == 200
+        assert first.json()['result']['suggestions'] == ['问候守望者']
         assert draft('a', 0, '敲门').status_code == 200
         assert len(prompts) == 1
         assert '已确认的历史剧情' not in prompts[0]
@@ -83,7 +86,9 @@ def test_live_receives_only_confirmed_history_and_cached_retry(db_path):
         assert draft('b', 1, '向守望者问好').status_code == 200
         assert '灯塔守望者为你打开门。' in prompts[-1]
         assert '已确认的历史剧情' in prompts[-1]
-        assert client.get(f"/api/v1/adventures/{run['id']}").json()['revision'] == 1
+        recorded = client.get(f"/api/v1/adventures/{run['id']}").json()
+        assert recorded['revision'] == 1
+        assert recorded['turns'][-1]['result']['suggestions'] == ['问候守望者']
 
 
 def test_discarded_or_failed_draft_cannot_commit(client, db_path):

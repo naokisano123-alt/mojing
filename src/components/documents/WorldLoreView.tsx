@@ -5,7 +5,6 @@ import {
   Search,
   ClipboardList,
   FlaskConical,
-  Compass,
   AlertCircle,
 } from 'lucide-react';
 import type { WorldDetail, WorldDocument } from '../../api/types';
@@ -40,6 +39,7 @@ import {
   deleteLoreEntry,
   createModelSession,
   deleteModelSession,
+  deleteModelProfile,
   testModelSession,
   previewNarration,
 } from '../../api/client';
@@ -50,9 +50,9 @@ export interface WorldLoreViewProps {
   worldId: string;
   worldName: string;
   onBack: () => void;
-  onPlayDemo?: () => void;
   initialTab?: 'list' | 'journal';
   modelSession?: ModelSessionResponse | null;
+  modelProfileEnabled?: boolean;
   onModelSessionChange?: (session: ModelSessionResponse | null) => void;
 }
 
@@ -62,9 +62,9 @@ export function WorldLoreView({
   worldId,
   worldName,
   onBack,
-  onPlayDemo,
   initialTab = 'list',
   modelSession = null,
+  modelProfileEnabled = false,
   onModelSessionChange,
 }: WorldLoreViewProps) {
   const [worldDetail, setWorldDetail] = useState<WorldDetail | null>(null);
@@ -102,9 +102,6 @@ export function WorldLoreView({
     mode?: 'chunks' | 'raw';
     source?: { chunkId?: string; chunkIndex?: number; startChar?: number; endChar?: number };
   } | null>(null);
-
-  // M0 降级试玩确认弹窗 (契约 §7.1)
-  const [showDemoConfirm, setShowDemoConfirm] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,6 +183,7 @@ export function WorldLoreView({
   const narrationApi: NarrationPreviewApi = {
     createSession: (config, signal) => createModelSession(config, signal),
     deleteSession: (id, signal) => deleteModelSession(id, signal),
+    deleteProfile: modelProfileEnabled || modelSession?.remembered ? deleteModelProfile : undefined,
     testSession: (id, signal) => testModelSession(id, signal),
     preview: (targetWorldId, payload, signal) =>
       previewNarration(targetWorldId, payload, signal),
@@ -419,23 +417,6 @@ export function WorldLoreView({
         />
       )}
 
-      {/* 契约 §7.1 降级体验入口 */}
-      {onPlayDemo && (
-        <div className="lore-demo-bar">
-          <div className="flex items-center gap-2">
-            <Compass size={16} />
-            <span>想试试交互？可开启本地模拟试玩（不会使用本世界的设定）。</span>
-          </div>
-          <button
-            type="button"
-            className="lore-demo-btn"
-            onClick={() => setShowDemoConfirm(true)}
-          >
-            以演示模式试玩 (M0 体验)
-          </button>
-        </div>
-      )}
-
       {/* 文档切片与原文查看器（可带检索来源区间） */}
       {viewingDoc && (
         <DocumentViewer
@@ -446,40 +427,6 @@ export function WorldLoreView({
         />
       )}
 
-      {/* 契约 §7.1 降级试玩确认对话框 */}
-      {showDemoConfirm && (
-        <div className="modal-backdrop" onClick={() => setShowDemoConfirm(false)}>
-          <div
-            className="modal"
-            style={{ maxWidth: '420px' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 style={{ fontSize: '18px', marginBottom: '12px' }}>开启演示模式试玩？</h3>
-            <p className="muted text-xs leading-relaxed mb-4">
-              当前剧情为本地关键词模拟演示，不会根据您导入的文档内容生成回答。是否继续？
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="primary full"
-                onClick={() => {
-                  setShowDemoConfirm(false);
-                  onPlayDemo?.();
-                }}
-              >
-                确认进入试玩
-              </button>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setShowDemoConfirm(false)}
-              >
-                取消
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -90,3 +90,9 @@
 .atlas-entry.undiscovered:disabled { pointer-events: none; }
 /* Category strips use page swipes; vertical reading and pinch zoom stay native. */
 .immersive .tabs, .immersive .atlas-entry { touch-action: pan-y pinch-zoom; }
+
+/* The action cards share the story scroll surface. */
+.composer.in-flow-composer { position: static; z-index: auto; padding: 12px 0; }
+.in-flow-composer .action-options { max-height: none; overflow: visible; }
+.keyboard-open .in-flow-composer .action-options { display: flex; }
+.story-layout .turn { scroll-margin-top: calc(var(--world-bar-height) + 12px); }

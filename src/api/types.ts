@@ -227,7 +227,8 @@ export type NarrationMode = 'fake' | 'live';
 export interface ModelSessionCreated {
   session_id: string;
   model: string;
-  expires_at: string;
+  expires_at: string | null;
+  remembered?: boolean;
 }
 
 export interface NarrationSourceRef {

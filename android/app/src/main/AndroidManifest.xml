@@ -5,7 +5,7 @@
         android:name=".MojingApplication"
         android:allowBackup="false"
         android:icon="@drawable/ic_mojing"
-        android:label="墨境"
+        android:label="${appLabel}"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/MojingTheme">
         <activity

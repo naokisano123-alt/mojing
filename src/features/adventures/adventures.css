@@ -5,8 +5,7 @@
   min-width: 0;
 }
 .adventure-journal input,
-.adventure-journal select,
-.adventure-journal textarea {
+.adventure-journal select {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--line);
@@ -15,11 +14,6 @@
   background: var(--paper);
   color: var(--text);
   font: inherit;
-}
-.adventure-journal textarea {
-  min-height: 110px;
-  resize: vertical;
-  line-height: 1.8;
 }
 .journal-create {
   display: grid;
@@ -63,12 +57,6 @@
   padding-left: 12px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-.journal-sources {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 12px 0;
 }
 .journal-character {
   margin: 12px 0;
@@ -171,3 +159,8 @@
   gap: 10px;
   margin-bottom: 12px;
 }
+
+.journal-sources { margin-top: 10px; color: var(--muted); }
+.journal-sources summary { cursor: pointer; min-height: 32px; padding: 5px 0; }
+.journal-sources > div { display: grid; justify-items: start; gap: 4px; }
+.journal-sources button { text-align: left; overflow-wrap: anywhere; }

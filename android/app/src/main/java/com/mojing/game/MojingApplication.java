@@ -11,7 +11,7 @@ import java.io.InputStream;
 import java.util.concurrent.CompletableFuture;
 
 public final class MojingApplication extends Application {
-    static final int PORT = 8796;
+    static final int PORT = BuildConfig.APPLICATION_ID.endsWith(".playtest") ? 8797 : 8796;
     static final String HOST = "127.0.0.1";
     static final String URL = "http://" + HOST + ":" + PORT + "/";
     private CompletableFuture<String> engine;
@@ -33,7 +33,7 @@ public final class MojingApplication extends Application {
         Python.start(new AndroidPlatform(this));
         return Python.getInstance().getModule("mojing_android")
             .callAttr("start", web.getAbsolutePath(),
-                new File(getFilesDir(), "adventures").getAbsolutePath(), PORT)
+                new File(getFilesDir(), "adventures").getAbsolutePath(), PORT, new ModelProfile(this))
             .toJava(String.class);
     }
 

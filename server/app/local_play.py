@@ -87,7 +87,7 @@ def read_or_create_password(path: Path) -> str:
 
 def create_local_app(
     dist_dir: Path, data_dir: Path, password: str, port: int = LOCAL_PORT,
-    *, https_model_only: bool = False,
+    *, https_model_only: bool = False, model_profile=None,
 ) -> FastAPI:
     if not (dist_dir / "index.html").is_file():
         raise ValueError("缺少前端构建产物，请先执行安装命令。")
@@ -98,7 +98,13 @@ def create_local_app(
     from .config import load_settings
     from .main import create_app
 
-    app = create_app(replace(load_settings(), cors_origins=(), https_model_only=https_model_only))
+    from .model_gateway import ModelSessionStore
+
+    app = create_app(
+        replace(load_settings(), cors_origins=(), https_model_only=https_model_only),
+        narration_store=ModelSessionStore(ttl_seconds=None) if model_profile is not None else None,
+        model_profile=model_profile,
+    )
     attach_local_ui(app, dist_dir, password, port)
     return app
 

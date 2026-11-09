@@ -28,7 +28,8 @@ export interface ModelSessionConfig {
 export interface ModelSessionResponse {
   session_id: string;
   model: string;
-  expires_at: string;
+  expires_at: string | null;
+  remembered?: boolean;
 }
 
 export interface ModelSessionTestResponse {
@@ -68,6 +69,7 @@ export interface NarrationApiError {
 export interface NarrationPreviewApi {
   createSession(config: ModelSessionConfig, signal?: AbortSignal): Promise<ModelSessionResponse>;
   deleteSession(id: string, signal?: AbortSignal): Promise<void>;
+  deleteProfile?(signal?: AbortSignal): Promise<void>;
   testSession(id: string, signal?: AbortSignal): Promise<ModelSessionTestResponse>;
   preview(
     worldId: string,

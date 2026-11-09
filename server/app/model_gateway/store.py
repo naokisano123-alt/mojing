@@ -40,7 +40,7 @@ class ModelSession:
     api_key: str = field(repr=False)
     created_at: datetime
     last_accessed_at: datetime
-    expires_at: datetime
+    expires_at: datetime | None
 
 
 class ModelSessionStore:
@@ -58,7 +58,7 @@ class ModelSessionStore:
 
     def __init__(
         self,
-        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+        ttl_seconds: int | None = DEFAULT_TTL_SECONDS,
         max_sessions: int = MAX_SESSIONS,
         clock: Callable[[], datetime] | None = None,
         http_transport: httpx.AsyncBaseTransport | None = None,
@@ -74,12 +74,12 @@ class ModelSessionStore:
     def _purge_expired(self, now: datetime) -> None:
         """清理所有已过期的死会话。"""
         expired_ids = [
-            sid for sid, s in self._sessions.items() if now >= s.expires_at
+            sid for sid, s in self._sessions.items() if s.expires_at is not None and now >= s.expires_at
         ]
         for sid in expired_ids:
             self._sessions.pop(sid, None)
 
-    def create(self, base_url: str, model: str, api_key: str) -> dict[str, str]:
+    def create(self, base_url: str, model: str, api_key: str) -> dict[str, str | None]:
         """创建新模型会话，返回契约响应字典（不含 API Key）。"""
         now = self._clock()
         self._purge_expired(now)
@@ -98,7 +98,7 @@ class ModelSessionStore:
             raise GatewayError("INVALID_API_KEY", "API Key 不能为空。", status=422)
 
         session_id = secrets.token_urlsafe(24)
-        expires_at = now + timedelta(seconds=self.ttl_seconds)
+        expires_at = now + timedelta(seconds=self.ttl_seconds) if self.ttl_seconds is not None else None
 
         session = ModelSession(
             session_id=session_id,
@@ -114,7 +114,7 @@ class ModelSessionStore:
         return {
             "session_id": session.session_id,
             "model": session.model,
-            "expires_at": _format_utc_iso(session.expires_at),
+            "expires_at": _format_utc_iso(session.expires_at) if session.expires_at is not None else None,
         }
 
     def delete(self, session_id: str) -> None:
@@ -136,7 +136,7 @@ class ModelSessionStore:
                 status=409,
             )
 
-        if now >= session.expires_at:
+        if session.expires_at is not None and now >= session.expires_at:
             self._sessions.pop(session_id, None)
             raise GatewayError(
                 code="MODEL_SESSION_EXPIRED",
@@ -146,7 +146,8 @@ class ModelSessionStore:
 
         # 刷新 TTL
         session.last_accessed_at = now
-        session.expires_at = now + timedelta(seconds=self.ttl_seconds)
+        if self.ttl_seconds is not None:
+            session.expires_at = now + timedelta(seconds=self.ttl_seconds)
 
         return OpenAIModelClient(
             base_url=session.base_url,

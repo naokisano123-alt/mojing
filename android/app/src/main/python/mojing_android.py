@@ -11,9 +11,9 @@ import uvicorn
 from app.local_play import LOCAL_HOST, create_local_app
 
 
-def start(dist: str, data: str, port: int) -> str:
+def start(dist: str, data: str, port: int, model_profile=None) -> str:
     password = secrets.token_urlsafe(24)
-    app = create_local_app(Path(dist), Path(data), password, port, https_model_only=True)
+    app = create_local_app(Path(dist), Path(data), password, port, https_model_only=True, model_profile=model_profile)
     server = uvicorn.Server(uvicorn.Config(
         app, host=LOCAL_HOST, port=port, loop="asyncio", http="h11",
         ws="none", proxy_headers=False, access_log=False,

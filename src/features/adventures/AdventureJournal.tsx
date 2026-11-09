@@ -7,6 +7,7 @@ import {
   type Turn,
   type InventoryItem,
 } from "./api";
+import { ActionComposer } from "../../components/ActionComposer";
 import { ApiClientError } from "../../api/client";
 import { InventoryEditor } from "./InventoryEditor";
 import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
@@ -44,6 +45,7 @@ export function AdventureJournal({
     [run, setRun] = useState<Detail | null>(null);
   const [name, setName] = useState("新的旅程"),
     [mode, setMode] = useState<"fake" | "live">();
+  const [expanded, setExpanded] = useState(false);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   useEffect(() => setApplyChanges(false), [draft?.id]);
@@ -74,6 +76,7 @@ export function AdventureJournal({
     setRuns([]);
     setRun(null);
     setDraft(null);
+    setExpanded(false);
     setAction("");
     setError("");
     setBusy(false);
@@ -134,6 +137,7 @@ export function AdventureJournal({
     setBusy(false);
     setRun(null);
     setDraft(null);
+    setExpanded(false);
     setAction("");
     const generation = epoch.current;
     setError("");
@@ -147,9 +151,9 @@ export function AdventureJournal({
       if (valid(generation)) setError(String(e));
     }
   };
-  const generate = () =>
+  const generate = (submittedAction: string) =>
     operate(async () => {
-      if (!run || !action.trim()) return;
+      if (!run || !submittedAction.trim()) return;
       const generation = epoch.current,
         controller = new AbortController();
       active.current = controller;
@@ -160,7 +164,7 @@ export function AdventureJournal({
         run.id,
         {
           request_id: id,
-          action,
+          action: submittedAction,
           expected_revision: run.revision,
           session_id: run.mode === "live" ? sessionId : undefined,
         },
@@ -168,6 +172,7 @@ export function AdventureJournal({
       );
       if (valid(generation) && !controller.signal.aborted) {
         setDraft(result);
+        setExpanded(false);
         active.current = null;
       }
     });
@@ -190,7 +195,7 @@ export function AdventureJournal({
       else await api.commit(run.id, draft.id);
       if (valid(generation)) {
         await refresh(run.id);
-        if (valid(generation)) setAction("");
+        if (valid(generation)) { setExpanded(false); setAction(""); }
       }
     });
   const older = () =>
@@ -201,6 +206,21 @@ export function AdventureJournal({
       if (valid(generation))
         setRun({ ...run, turns: [...detail.turns, ...run.turns] });
     });
+  const renderSources = (result: Turn["result"]) => {
+    const sources = result.references.flatMap(id => {
+      const source = result.sources.find(item => item.source_id === id);
+      return source ? [source] : [];
+    });
+    return sources.length > 0 && (
+      <details className="journal-sources">
+        <summary>来源：{sources.length} 条引用</summary>
+        <div>{sources.map(source => (
+          <button type="button" key={source.source_id} className="text-button"
+            onClick={() => onOpenSource(source)}>{source.title}</button>
+        ))}</div>
+      </details>
+    );
+  };
   const renderResult = (result: Turn["result"]) => (
     <>
       <div className="journal-prose">{result.narrative}</div>
@@ -214,21 +234,7 @@ export function AdventureJournal({
           }
         />
       )}
-      <div className="journal-sources">
-        {result.references.map((id) => {
-          const source = result.sources.find((s) => s.source_id === id);
-          return source ? (
-            <button
-              type="button"
-              key={id}
-              className="text-button"
-              onClick={() => onOpenSource(source)}
-            >
-              来源：{source.title}
-            </button>
-          ) : null;
-        })}
-      </div>
+      {renderSources(result)}
     </>
   );
   return (
@@ -312,7 +318,7 @@ export function AdventureJournal({
                   setRuns((prev) => [created, ...prev]);
                   setShowCreate(false);
                   await refresh(created.id);
-                  if (valid(generation)) setAction("");
+                  if (valid(generation)) { setExpanded(false); setAction(""); }
                 }
               })
             }
@@ -479,6 +485,7 @@ export function AdventureJournal({
                     if (valid(generation)) {
                       setAction((current) => current || draft.action);
                       setDraft(null);
+                      setExpanded(true);
                     }
                   })
                 }
@@ -490,35 +497,12 @@ export function AdventureJournal({
           {run.mode === "live" && !sessionId && (
             <p className="error">连接模型 API 后，即可继续这段旅程。</p>
           )}
-          <textarea
-            aria-label="下一步行动"
-            placeholder="接下来，你打算做些什么？"
-            value={action}
-            maxLength={2000}
-            disabled={busy}
-            onChange={(e) => setAction(e.target.value)}
-          />
-          <div className="journal-footer">
-            <span className="muted">{action.length}/2000</span>
-            {busy && active.current ? (
-              <button className="secondary" onClick={stop}>
-                停止生成
-              </button>
-            ) : (
-              <button
-                className="primary"
-                disabled={
-                  busy ||
-                  !action.trim() ||
-                  draft?.status === "ready" ||
-                  (run.mode === "live" && !sessionId)
-                }
-                onClick={generate}
-              >
-                生成下一段草案
-              </button>
-            )}
-          </div>
+          {draft?.status !== "ready" && draft?.status !== "pending" && <ActionComposer id="journal-action-editor" draft={action} setDraft={setAction}
+            expanded={expanded} setExpanded={setExpanded}
+            suggestions={run.turns[run.turns.length - 1]?.result.suggestions ?? []} limit={2000}
+            busy={busy} stopping={busy && active.current !== null}
+            disabled={run.mode === "live" && !sessionId}
+            send={generate} stop={stop} />}
         </>
       )}
     </section>
