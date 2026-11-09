@@ -34,6 +34,23 @@
 
 **结论**：剩余失败均为 Windows 下 SQLite 连接未关闭导致临时目录删除失败，不是断言失败；以 Linux CI 结果为准。
 
+## 3.1 收尾接线（第三次提交）
+
+| 项 | 实现 |
+| --- | --- |
+| 回合 → 队列同事务 | `adventures.commit()` 在实例推进后调用 `pulse.schedule_on_turn_commit`；脉动关闭时它自身不入队 |
+| 玩家消息面板 | 冒险记录页新增「世界消息」折叠区，**展开才挂载** `WorldKnowledgePanel`（关闭时不发请求） |
+| 北境小镇验收链 | `tests/m3/integration/test_north_town_chain.py`：真实事件种子 → 玩家传播 → `GET world-news` → 检查点 → 分支实例中事件与知识随快照恢复、角色不变 |
+
+## 3.2 最终实跑（Windows 本地）
+
+| 项 | 结果 |
+| --- | --- |
+| 验收链 | **1 passed** |
+| 前端 Vitest | **51 passed** |
+| 生产构建 | 通过（esbuild 在系统临时目录被占用时需把 TEMP 指到项目内，属环境问题） |
+| 后端全量 | 除 Li 7 条 / Ma 2 条 Windows 临时目录清理失败外全部通过；组合分支 Linux CI 为 success |
+
 ## 4. 未完成
 
 - 组合分支的 Linux CI 尚未跑完（推送后触发）
