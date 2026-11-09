@@ -29,7 +29,7 @@ export function resolveSwipe(page: Page, direction: SwipeDirection, now: number,
   return { target: index >= 0 && next >= 0 && next < WORLD_PAGES.length ? WORLD_PAGES[next] : undefined, armed: null };
 }
 
-export function appendSuggestion(draft: string, suggestion: string): string | null {
+export function appendSuggestion(draft: string, suggestion: string, limit = ACTION_LIMIT): string | null {
   const value = draft ? `${draft}${draft.endsWith('\n') ? '' : '\n'}${suggestion}` : suggestion;
-  return value.length <= ACTION_LIMIT ? value : null;
+  return value.length <= limit ? value : null;
 }

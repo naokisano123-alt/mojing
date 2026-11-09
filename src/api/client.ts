@@ -530,6 +530,14 @@ export function createModelSession(
   return request('POST', '/model-sessions', { body: payload, signal });
 }
 
+export function restoreModelProfile(signal?: AbortSignal): Promise<{ session: ModelSessionCreated | null }> {
+  return request('POST', '/model-profile/restore', { signal });
+}
+
+export function deleteModelProfile(signal?: AbortSignal): Promise<void> {
+  return request('DELETE', '/model-profile', { signal });
+}
+
 export function deleteModelSession(sessionId: string, signal?: AbortSignal): Promise<void> {
   return request<void>('DELETE', '/model-sessions/' + encodeURIComponent(sessionId), { signal });
 }

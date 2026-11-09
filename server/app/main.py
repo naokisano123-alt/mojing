@@ -304,6 +304,7 @@ def create_app(
     *,
     narration_store=None,
     context_builder=None,
+    model_profile=None,
 ) -> FastAPI:
     cfg = settings or load_settings()
     hosted = bool(cfg.public_origin)
@@ -840,8 +841,36 @@ def create_app(
         status = 422 if code in {"ACTION_INVALID", "CONTEXT_INVALID"} else 502
         return ApiError(status, code, str(exc))
 
+    saved_session = None
+
+    if model_profile is not None:
+        @app.post("/api/v1/model-profile/restore")
+        async def restore_model_profile():
+            nonlocal saved_session
+            if saved_session is None:
+                try:
+                    raw = model_profile.load()
+                    if raw is not None:
+                        profile = json.loads(str(raw))
+                        saved_session = {**_store().create(**profile), "remembered": True}
+                except Exception:
+                    raise ApiError(503, "MODEL_PROFILE_UNAVAILABLE", "无法读取本机密钥。请重新配置或删除本机密钥。") from None
+            return {"session": saved_session}
+
+        @app.delete("/api/v1/model-profile", status_code=204)
+        async def delete_model_profile():
+            nonlocal saved_session
+            try:
+                model_profile.clear()
+            except Exception:
+                raise ApiError(503, "MODEL_PROFILE_UNAVAILABLE", "无法删除本机密钥，请重试。") from None
+            _store().clear()
+            saved_session = None
+            return Response(status_code=204)
+
     @app.post("/api/v1/model-sessions", status_code=201)
     async def create_model_session(payload: dict[str, Any]) -> dict[str, Any]:
+        nonlocal saved_session
         store = _store()
         base_url = payload.get("base_url")
         model = payload.get("model")
@@ -860,15 +889,30 @@ def create_app(
                 created = await created
         except Exception as exc:
             raise _gateway_error(exc)
+        if model_profile is not None:
+            try:
+                model_profile.save(json.dumps({
+                    "base_url": base_url, "model": model.strip(), "api_key": api_key.strip(),
+                }, ensure_ascii=False))
+            except Exception:
+                store.delete(created["session_id"])
+                raise ApiError(503, "MODEL_PROFILE_UNAVAILABLE", "无法加密保存本机密钥，请重试。") from None
+            if saved_session is not None:
+                store.delete(saved_session["session_id"])
+            saved_session = {**created, "remembered": True}
+            return saved_session
         return created
 
     @app.delete("/api/v1/model-sessions/{session_id}", status_code=204)
     async def delete_model_session(session_id: str) -> Response:
+        nonlocal saved_session
         store = _store()
         try:
             result = store.delete(session_id)
             if hasattr(result, "__await__"):
                 await result
+            if saved_session is not None and session_id == saved_session["session_id"]:
+                saved_session = None
         except Exception as exc:
             raise _gateway_error(exc)
         return Response(status_code=204)

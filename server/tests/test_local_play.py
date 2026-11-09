@@ -46,3 +46,46 @@ def test_optional_word_parser_does_not_block_play(client, monkeypatch):
                          files={"file": ("设定.docx", b"example")})
     assert result.status_code == 503
     assert result.json()["error"]["code"] == "DOCX_UNAVAILABLE"
+
+
+def test_native_profile_restores_after_restart_and_can_be_deleted(tmp_path):
+    from app.model_gateway import ModelSessionStore
+
+    class MemoryProfile:
+        value = None
+
+        def save(self, value):
+            self.value = value
+
+        def load(self):
+            return self.value
+
+        def clear(self):
+            self.value = None
+
+    profile = MemoryProfile()
+    settings = Settings(db_path=tmp_path / "game.db", https_model_only=True)
+
+    def make_app():
+        return create_app(settings, model_profile=profile, narration_store=ModelSessionStore(ttl_seconds=None))
+
+    with TestClient(make_app()) as client:
+        assert client.post("/api/v1/model-profile/restore").json() == {"session": None}
+        created = client.post("/api/v1/model-sessions", json={
+            "base_url": "https://api.deepseek.com", "model": "deepseek-flash", "api_key": "secret-fixture",
+        })
+        assert created.status_code == 201
+        assert created.json()["remembered"]
+        assert created.json()["expires_at"] is None
+        assert "secret-fixture" not in created.text
+
+    with TestClient(make_app()) as client:
+        restored = client.post("/api/v1/model-profile/restore").json()["session"]
+        assert restored["model"] == "deepseek-flash"
+        assert restored["session_id"] != created.json()["session_id"]
+        assert client.post("/api/v1/model-profile/restore").json()["session"] == restored
+        assert client.delete("/api/v1/model-profile").status_code == 204
+        assert client.post(f"/api/v1/model-sessions/{restored['session_id']}/test").status_code == 409
+
+    with TestClient(make_app()) as client:
+        assert client.post("/api/v1/model-profile/restore").json() == {"session": None}

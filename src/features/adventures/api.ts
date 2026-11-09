@@ -18,6 +18,7 @@ export interface CharacterState {
   location: string;
 }
 export interface JournalResult extends NarrationPreviewResponse {
+  suggestions?: string[];
   state_before?: CharacterState | null;
   state_after?: CharacterState | null;
   projected_state?: CharacterState | null;

@@ -22,6 +22,8 @@ import type {
 import './narration-preview.css';
 
 const ACTION_MAX_LENGTH = 2000;
+const DEFAULT_API = 'https://api.deepseek.com';
+const DEFAULT_MODEL = 'deepseek-flash';
 
 export function NarrationPreview({
   worldId,
@@ -41,8 +43,9 @@ export function NarrationPreview({
     setSessionState(next);
     onSessionChange?.(next);
   };
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
-  const [modelName, setModelName] = useState('gpt-4o-mini');
+  useEffect(() => setSessionState(initialSession), [initialSession]);
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_API);
+  const [modelName, setModelName] = useState(DEFAULT_MODEL);
   const [apiKey, setApiKey] = useState('');
   const [disconnecting, setDisconnecting] = useState(false);
   const [sessionConnecting, setSessionConnecting] = useState(false);
@@ -152,21 +155,22 @@ export function NarrationPreview({
   };
 
   const handleDisconnectSession = async () => {
-    if (!session || operationRef.current || abortControllerRef.current) return;
+    if ((!session && !api.deleteProfile) || operationRef.current || abortControllerRef.current) return;
     const controller = new AbortController();
     const epoch = epochRef.current;
     operationRef.current = controller;
     setDisconnecting(true);
     setSessionError(null);
     try {
-      await api.deleteSession(session.session_id, controller.signal);
+      if (api.deleteProfile) await api.deleteProfile(controller.signal);
+      else if (session) await api.deleteSession(session.session_id, controller.signal);
       if (!currentOperation(controller, epoch)) return;
       setSession(null);
       setTestResult(null);
       setSessionExpiredNotice(null);
     } catch {
       if (currentOperation(controller, epoch))
-        setSessionError('移除会话失败，服务端可能仍保留凭据。请重试，或等待会话过期。');
+        setSessionError(api.deleteProfile ? '无法删除本机密钥，请重试。' : '移除会话失败，请重试。');
     } finally {
       if (currentOperation(controller, epoch)) {
         operationRef.current = null;
@@ -375,11 +379,11 @@ export function NarrationPreview({
                 </span>
                 <span>
                   <strong>有效期：</strong>
-                  闲置 30 分钟，每次使用后延长
+                  {session.remembered ? '本机已保存，重开后自动恢复' : '闲置 30 分钟，每次使用后延长'}
                 </span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                凭据状态：API Key 仅暂存服务端内存会话，浏览器未持久化存储。
+                {session.remembered ? 'API Key 已在手机上加密保存。' : 'API Key 仅暂存于当前会话。'}
               </div>
 
               {testResult && (
@@ -418,7 +422,7 @@ export function NarrationPreview({
                   data-testid="disconnect-session-btn"
                 >
                   <Trash2 size={12} />
-                  {disconnecting ? '正在移除...' : '断开会话'}
+                  {disconnecting ? '正在移除...' : api.deleteProfile ? '删除本机密钥' : '断开会话'}
                 </button>
                 <span style={{ fontSize: 10, color: 'var(--muted)' }}>
                   提示：测试连接会发起极简调用，可能产生微量费用。
@@ -437,7 +441,8 @@ export function NarrationPreview({
                   className="narration-input"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="https://api.openai.com/v1"
+                  placeholder={DEFAULT_API}
+                  list="narration-api-presets"
                   disabled={sessionConnecting}
                 />
               </div>
@@ -452,7 +457,8 @@ export function NarrationPreview({
                   className="narration-input"
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
-                  placeholder="gpt-4o-mini 或 deepseek-chat 等"
+                  placeholder={DEFAULT_MODEL}
+                  list={baseUrl.trim().replace(/\/$/, '') === DEFAULT_API ? "narration-model-presets" : undefined}
                   disabled={sessionConnecting}
                 />
               </div>
@@ -471,6 +477,8 @@ export function NarrationPreview({
                 />
               </div>
 
+              <datalist id="narration-api-presets"><option value={DEFAULT_API} /></datalist>
+              <datalist id="narration-model-presets"><option value={DEFAULT_MODEL} /></datalist>
               {sessionError && (
                 <div className="narration-error-banner" data-testid="session-error-banner">
                   {sessionError}
@@ -479,7 +487,7 @@ export function NarrationPreview({
 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  Key 仅保存在服务端 30 分钟内存会话，不写磁盘或本地存储。
+                  {api.deleteProfile ? 'API Key 会在手机上加密保存。' : 'API Key 仅保存在 30 分钟内存会话。'}
                 </span>
                 <button
                   type="submit"
@@ -491,6 +499,8 @@ export function NarrationPreview({
                   {sessionConnecting ? '正在连接...' : '连接并建立会话'}
                 </button>
               </div>
+              {api.deleteProfile && <button type="button" className="text-button" onClick={handleDisconnectSession}
+                disabled={disconnecting || sessionConnecting}>删除本机密钥</button>}
             </form>
           )}
         </div>

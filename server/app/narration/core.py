@@ -46,6 +46,7 @@ class NarrationRequest:
     history: tuple[HistoryTurn, ...] = ()
     character: CharacterState | None = None
     world_intro: str = ""
+    suggest_actions: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,7 @@ class NarrationDraft:
     narrative: str
     references: tuple[str, ...]
     proposed_changes: dict | None = None
+    suggestions: tuple[str, ...] = ()
 
 
 def validate_request(request: NarrationRequest) -> None:
@@ -93,6 +95,8 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
     allowed = {'narrative', 'references'}
     if request.character is not None:
         allowed.add('proposed_changes')
+    if request.suggest_actions:
+        allowed.add('suggestions')
     if not isinstance(value, Mapping) or not {'narrative','references'} <= set(value) or set(value) - allowed:
         raise DraftError('MODEL_OUTPUT_INVALID', '模型输出必须仅包含叙事与引用。')
     narrative, references = value['narrative'], value['references']
@@ -110,7 +114,19 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
             project(request.character, changes)
         except StateError as exc:
             raise DraftError('MODEL_STATE_INVALID', str(exc)) from None
-    return NarrationDraft(narrative.strip(), tuple(references), changes)
+    suggestions = []
+    raw_suggestions = value.get('suggestions')
+    if request.suggest_actions and isinstance(raw_suggestions, list):
+        for item in raw_suggestions[:3]:
+            if not isinstance(item, str):
+                continue
+            item = item.strip()
+            try:
+                if item and item not in suggestions and _units(item) <= 120:
+                    suggestions.append(item)
+            except DraftError:
+                continue
+    return NarrationDraft(narrative.strip(), tuple(references), changes, tuple(suggestions))
 
 
 class ModelClient(Protocol):
