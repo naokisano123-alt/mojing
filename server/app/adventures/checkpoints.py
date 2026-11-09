@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import Query
 from ..db import db
 from ..errors import ApiError
-from . import service
+from . import memory, service
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS adventure_checkpoints (
@@ -53,8 +53,12 @@ def create_checkpoint(conn, adventure_id, name, request_id, revision):
     if run['revision'] != revision:
         raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后再存档。')
     id = str(uuid4())
-    conn.execute('INSERT INTO adventure_checkpoints VALUES(?,?,?,?,?,?,?,?)',
-                 (id, adventure_id, request_id, name, revision, json.dumps(run['character'], ensure_ascii=False), run['mode'], time.time()))
+    cursor = memory.cursor(conn, adventure_id)
+    conn.execute('''INSERT INTO adventure_checkpoints
+                 (id,adventure_id,request_id,name,revision,character_json,mode,created_at,memory_cursor)
+                 VALUES(?,?,?,?,?,?,?,?,?)''',
+                 (id, adventure_id, request_id, name, revision, json.dumps(run['character'], ensure_ascii=False),
+                  run['mode'], time.time(), cursor))
     return checkpoint_dict(conn.execute('SELECT * FROM adventure_checkpoints WHERE id=?', (id,)).fetchone())
 
 
@@ -79,6 +83,11 @@ def restore(conn, checkpoint_id, name, request_id):
                  (id, source['world_id'], name, checkpoint['mode'], checkpoint['revision'], time.time(), checkpoint['character_json'], checkpoint_id, request_id))
     conn.execute("INSERT INTO adventure_turns SELECT ?,sequence,'inherited:'||sequence,action,result,created_at FROM adventure_turns WHERE adventure_id=? AND sequence<=?",
                  (id, source['id'], checkpoint['revision']))
+    copied = conn.execute("""INSERT INTO adventure_memory_events
+                 SELECT ?,sequence,turn,origin,change_json FROM adventure_memory_events
+                 WHERE adventure_id=? AND sequence<=?""", (id, source['id'], checkpoint['memory_cursor']))
+    if copied.rowcount != checkpoint['memory_cursor']:
+        raise ApiError(409, 'CHECKPOINT_HISTORY_INVALID', '存档日志不完整，不能安全恢复。')
     return service.get_adventure(conn, id)
 
 

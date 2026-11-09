@@ -1,6 +1,7 @@
 import json
 from dataclasses import asdict
 from .state import character, project, StateError
+from . import memory
 import re
 import time
 from uuid import uuid4
@@ -131,14 +132,25 @@ def commit(conn, adventure_id, id, apply_changes=False):
     before = run['character']
     if result.get('state_before') != before:
         raise ApiError(409, 'STATE_CONFLICT', '角色状态已变化，请重新生成。')
-    after = before
+    cursor = memory.cursor(conn, adventure_id)
+    if result.get('memory_cursor', 0) != cursor:
+        raise ApiError(409, 'MEMORY_CONFLICT', '日志在草案生成后已更新，请重新生成。')
+    after, accepted_memory = before, []
     if apply_changes:
-        if before is None or result.get('proposed_changes') is None:
+        accepted_memory = result.get('memory_proposal', [])
+        if result.get('proposed_changes') is None and not accepted_memory:
+            raise ApiError(422, 'STATE_PROPOSAL_MISSING', '本草案没有可采用的状态或日志提议。')
+        if 'memory_cursor' in result:
+            if result['projected_state'] is not None:
+                after = result['projected_state']
+        elif before is not None:
+            try:
+                after = asdict(project(character(before), result['proposed_changes']))
+            except StateError as exc:
+                raise ApiError(422, 'STATE_INVALID', str(exc)) from None
+        else:
             raise ApiError(422, 'STATE_PROPOSAL_MISSING', '本草案没有可采用的状态提议。')
-        try:
-            after = asdict(project(character(before), result['proposed_changes']))
-        except StateError as exc:
-            raise ApiError(422, 'STATE_INVALID', str(exc)) from None
+    result['memory_changes'] = accepted_memory
     result.update(state_before=before, state_after=after, changes_accepted=apply_changes)
     cur = conn.execute('UPDATE adventures SET revision=revision+1,character_json=? WHERE id=? AND revision=?',
                        (json.dumps(after, ensure_ascii=False) if after else None, adventure_id, draft['base_revision']))
@@ -146,6 +158,7 @@ def commit(conn, adventure_id, id, apply_changes=False):
         raise ApiError(409, 'ADVENTURE_CONFLICT', '已有另一回合被确认，请重新生成。')
     conn.execute('INSERT INTO adventure_turns VALUES(?,?,?,?,?,?)',
                  (adventure_id, run['revision'] + 1, id, draft['action'], json.dumps(result, ensure_ascii=False), time.time()))
+    memory.append(conn, adventure_id, run['revision'] + 1, cursor, 'turn', accepted_memory)
     conn.execute("UPDATE adventure_drafts SET status='committed' WHERE adventure_id=? AND id=?", (adventure_id, id))
     return get_adventure(conn, adventure_id)
 

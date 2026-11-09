@@ -1,6 +1,5 @@
 import asyncio
-from dataclasses import asdict
-from .state import character, project
+from .state import StateError, character
 
 from fastapi import Query, Request, Response
 
@@ -10,7 +9,7 @@ from ..model_gateway.errors import GatewayError
 from ..narration.core import DraftError, FakeModelClient, HistoryTurn, NarrationRequest, generate_draft, validate_request
 from ..narration.lifecycle import await_request_work
 from ..narration_context.types import ContextError, safe_u16_truncate
-from . import item_descriptions, service
+from . import item_descriptions, memory, service
 
 
 def register_routes(app, cfg, get_store, get_builder):
@@ -37,7 +36,24 @@ def register_routes(app, cfg, get_store, get_builder):
             latest = conn.execute("SELECT id FROM adventure_drafts WHERE adventure_id=? AND base_revision=? AND status IN ('pending','ready') ORDER BY created_at DESC,id DESC LIMIT 1", (adventure_id, run['revision'])).fetchone()
             return {**run, 'turns': service.turns(conn, adventure_id, before),
                     'item_descriptions': item_descriptions.for_character(conn, run['world_id'], run['character']),
+                    'memory': memory.view(memory.replay(conn, adventure_id)),
                     'latest_draft': service.get_draft(conn, adventure_id, latest['id']) if latest else None}
+
+    @app.patch('/api/v1/adventures/{adventure_id}/memory')
+    def correct_memory(adventure_id: str, payload: dict):
+        with db(cfg.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
+            run = service.get_adventure(conn, adventure_id)
+            snapshot = memory.replay(conn, adventure_id)
+            if (type(payload.get('expected_cursor')) is not int
+                    or payload['expected_cursor'] != snapshot['cursor']):
+                raise ApiError(409, 'MEMORY_CONFLICT', '日志已更新，请刷新记录后再更正。')
+            try:
+                change = memory.correction(snapshot, payload)
+            except StateError as exc:
+                raise ApiError(422, 'MEMORY_INVALID', str(exc)) from None
+            memory.append(conn, adventure_id, run['revision'], snapshot['cursor'], 'correction', [change])
+            return memory.view(memory.replay(conn, adventure_id))
 
     @app.patch('/api/v1/adventures/{adventure_id}/item-description')
     def edit_item_description(adventure_id: str, payload: dict):
@@ -89,8 +105,14 @@ def register_routes(app, cfg, get_store, get_builder):
                 world = conn.execute('SELECT name, description FROM worlds WHERE id=?', (run['world_id'],)).fetchone()
                 bundle = get_builder()(conn, run['world_id'], action)
                 recent = service.turns(conn, adventure_id, limit=6)
+                snapshot = memory.replay(conn, adventure_id)
+                history = tuple(HistoryTurn(safe_u16_truncate(t['action'], 500),
+                                            safe_u16_truncate(t['result']['narrative'], 1400)) for t in recent)
+                facts, excerpts = memory.context(
+                    conn, adventure_id, snapshot, action, (run['character'] or {}).get('location', ''),
+                    [f"{turn.action} {turn.narrative}" for turn in history], recent[0]['sequence'] if recent else 1,
+                )
                 notes = item_descriptions.for_character(conn, run['world_id'], run['character'])
-            history = tuple(HistoryTurn(safe_u16_truncate(t['action'], 500), safe_u16_truncate(t['result']['narrative'], 1400)) for t in recent)
             if run['mode'] == 'live':
                 session_id = payload.get('session_id')
                 if not isinstance(session_id, str) or not session_id:
@@ -101,13 +123,16 @@ def register_routes(app, cfg, get_store, get_builder):
             state = character(run['character']) if run['character'] is not None else None
             intro = safe_u16_truncate(f"{world['name']}\n{world['description']}", 1300)
             request = NarrationRequest(action, tuple(bundle.sources), history, state, world_intro=intro, suggest_actions=True,
-                                       item_descriptions=item_descriptions.for_prompt(notes, action))
+                                       item_descriptions=item_descriptions.for_prompt(notes, action),
+                                       adventure_memory=facts, memory_excerpts=excerpts,
+                                       memory_items=tuple(snapshot["items"].values()))
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
                       'references': list(draft.references), 'sources': list(bundle.metadata),
                       'suggestions': list(draft.suggestions),
                       'state_before': run['character'], 'proposed_changes': draft.proposed_changes,
-                      'projected_state': asdict(project(state, draft.proposed_changes)) if draft.proposed_changes is not None else None}
+                      'projected_state': draft.projected_state, 'memory_cursor': snapshot['cursor'],
+                      'memory_proposal': list(draft.memory_changes)}
             with db(cfg.db_path) as conn:
                 return service.finish(conn, adventure_id, draft_id, result)
         except BaseException as exc:
