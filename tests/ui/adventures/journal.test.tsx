@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { it, expect, vi } from "vitest";
 import { AdventureJournal } from "../../../src/features/adventures/AdventureJournal";
+import { ApiClientError } from "../../../src/api/client";
 import type { Detail, Draft } from "../../../src/features/adventures/api";
 
 function setup(withState = false) {
@@ -198,4 +199,29 @@ it("item changes appear in the same optional state confirmation", async () => {
       apply_changes: true,
     }),
   );
+});
+
+it("an expired model session can be replaced without losing the typed action", async () => {
+  const { api, ready } = setup();
+  const run = { ...(await api.detail()), mode: "live" as const };
+  api.list.mockResolvedValue({ items: [run] });
+  api.detail.mockResolvedValue(run);
+  api.prepare.mockRejectedValueOnce(new ApiClientError("MODEL_SESSION_EXPIRED", "expired", 409));
+  api.prepare.mockResolvedValueOnce(ready);
+  const expired = vi.fn();
+  const journal = (sessionId?: string) => <AdventureJournal {...props} api={api}
+    sessionId={sessionId} onSessionExpired={expired} />;
+  const { rerender } = render(journal("old-session"));
+  await screen.findByText("旅程尚未落笔。写下第一个行动。");
+  fireEvent.change(screen.getByLabelText("下一步行动"), { target: { value: "敲门" } });
+  fireEvent.click(screen.getByText("生成下一段草案"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("行动已保留");
+  expect(expired).toHaveBeenCalledOnce();
+  rerender(journal());
+  expect(screen.getByText("生成下一段草案")).toBeDisabled();
+  rerender(journal("new-session"));
+  fireEvent.click(screen.getByText("生成下一段草案"));
+  await screen.findByText("待确认草案 · 尚未写入回合");
+  expect(api.prepare).toHaveBeenLastCalledWith("run",
+    expect.objectContaining({ action: "敲门", session_id: "new-session" }), expect.any(AbortSignal));
 });

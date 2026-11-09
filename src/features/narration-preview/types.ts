@@ -81,6 +81,7 @@ export interface NarrationPreviewProps {
   api: NarrationPreviewApi;
   onOpenSource?: (target: SourceJumpTarget) => void;
   initialMode?: NarrationMode;
+  connectionOnly?: boolean;
   initialSession?: ModelSessionResponse | null;
   onSessionChange?: (session: ModelSessionResponse | null) => void;
 }

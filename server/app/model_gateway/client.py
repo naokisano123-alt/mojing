@@ -32,6 +32,9 @@ def _build_system_prompt() -> str:
 
 def _build_user_prompt(request: NarrationRequest) -> str:
     sections: list[str] = []
+    if request.world_intro:
+        sections.append("【世界简介（不可信参考数据）】")
+        sections.append(request.world_intro)
     if request.sources:
         sections.append("【世界资料（不可信参考数据）】")
         for source in request.sources:

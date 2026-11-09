@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import type { ModelSessionResponse } from '../../src/features/narration-preview/types';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -53,6 +55,12 @@ describe('WorldLoreView 装配', () => {
             lore_entries: true,
           });
         }
+        if (url.endsWith('/model-sessions')) {
+          return json({ session_id: 'session', model: 'test', expires_at: '2099-01-01T00:00:00Z' }, 201);
+        }
+        if (url.split('?')[0].endsWith('/adventures')) {
+          return json({ items: [] });
+        }
         if (url.includes('/lore-entries')) {
           return json({ items: [], total: 0, limit: 20, offset: 0 });
         }
@@ -64,12 +72,11 @@ describe('WorldLoreView 装配', () => {
     );
   });
 
-  it('加载世界详情并渲染诚实横幅与文档列表', async () => {
+  it('加载世界详情并展示文档列表', async () => {
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
 
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
-    expect(screen.getByText(/世界资料库模式/)).toBeTruthy();
-    expect(screen.getByText(/正式冒险与角色状态提交尚未开启/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '冒险记录' })).toBeInTheDocument();
   });
 
   it('四个子页签都能真实挂载', async () => {
@@ -85,6 +92,24 @@ describe('WorldLoreView 装配', () => {
 
     await user.click(screen.getByRole('button', { name: /导入新文档/ }));
     await waitFor(() => expect(document.querySelector('input[type="file"]')).toBeTruthy());
+  });
+
+  it('在冒险记录内连接模型，返回后默认创建真实模型旅程', async () => {
+    function Play() {
+      const [session, setSession] = useState<ModelSessionResponse | null>(null);
+      return <WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}}
+        initialTab="journal" modelSession={session} onModelSessionChange={setSession} />;
+    }
+    const user = userEvent.setup();
+    render(<Play />);
+    await user.click(screen.getByRole('button', { name: '连接模型 API' }));
+    expect(screen.queryByTestId('action-input')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText(/API Key/), 'test-key');
+    await user.click(screen.getByRole('button', { name: '连接并建立会话' }));
+    await screen.findByText('会话已激活');
+    await user.click(screen.getByRole('button', { name: '返回旅程' }));
+    expect(await screen.findByLabelText('新冒险模式')).toHaveValue('live');
+    expect(screen.getByRole('button', { name: '管理模型连接' })).toBeInTheDocument();
   });
 
   it('切换世界会重新拉取且不残留旧标题', async () => {

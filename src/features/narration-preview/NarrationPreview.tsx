@@ -28,6 +28,7 @@ export function NarrationPreview({
   api,
   onOpenSource,
   initialMode = 'fake',
+  connectionOnly = false,
   initialSession = null,
   onSessionChange,
 }: NarrationPreviewProps) {
@@ -287,6 +288,7 @@ export function NarrationPreview({
 
   return (
     <div className="narration-preview" data-testid="narration-preview">
+      {!connectionOnly && <>
       {/* 草案边界醒目横幅 */}
       <div className="narration-draft-alert">
         <Info size={16} />
@@ -332,8 +334,10 @@ export function NarrationPreview({
         </button>
       </div>
 
+      </>}
+
       {/* Live 模式会话管理区 */}
-      {mode === 'live' && (
+      {(connectionOnly || mode === 'live') && (
         <div className="narration-section-panel" data-testid="live-session-panel">
           <div className="narration-panel-title">
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -427,7 +431,9 @@ export function NarrationPreview({
                 <label htmlFor="narration-base-url">API 地址 (Base URL)</label>
                 <input
                   id="narration-base-url"
-                  type="text"
+                  type="url"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   className="narration-input"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
@@ -441,6 +447,8 @@ export function NarrationPreview({
                 <input
                   id="narration-model-name"
                   type="text"
+                  autoCapitalize="none"
+                  spellCheck={false}
                   className="narration-input"
                   value={modelName}
                   onChange={(e) => setModelName(e.target.value)}
@@ -488,6 +496,7 @@ export function NarrationPreview({
         </div>
       )}
 
+      {!connectionOnly && <>
       {/* 行动输入与操作面板 */}
       <div className="narration-section-panel">
         <div className="narration-panel-title">
@@ -671,6 +680,7 @@ export function NarrationPreview({
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Query, Request, Response, UploadFile
@@ -33,6 +34,7 @@ from .import_policy.warnings import normalize_warning_records
 from .lore_entries import service as lore_service
 from .lore_entries.errors import LoreEntryError
 from .narration.lifecycle import await_request_work
+from .model_gateway.url import validate_and_normalize_base_url
 
 from .narration.core import (
     ContextSource,
@@ -304,6 +306,17 @@ def create_app(
     context_builder=None,
 ) -> FastAPI:
     cfg = settings or load_settings()
+    hosted = bool(cfg.public_origin)
+    allowed_model_urls: set[str] = set()
+    if hosted:
+        origin = urlsplit(validate_and_normalize_base_url(cfg.public_origin))
+        if origin.scheme != "https" or cfg.public_origin != f"https://{origin.netloc}":
+            raise ValueError("MOJING_PUBLIC_ORIGIN must be an HTTPS origin without a path.")
+        allowed_model_urls = {
+            validate_and_normalize_base_url(url) for url in cfg.allowed_model_base_urls
+        }
+        if any(not url.startswith("https://") for url in allowed_model_urls):
+            raise ValueError("Hosted model endpoints must use HTTPS.")
     init_db(cfg.db_path)
 
     @asynccontextmanager
@@ -316,10 +329,24 @@ def create_app(
                 if hasattr(result, '__await__'):
                     await result
 
-    app = FastAPI(title="墨境 API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(
+        title="墨境 API", version="0.2.0", lifespan=lifespan,
+        openapi_url=None if hosted else "/openapi.json",
+    )
     app.state.settings = cfg
 
-    if cfg.cors_origins:
+    if hosted:
+        @app.middleware("http")
+        async def require_same_origin_for_writes(request: Request, call_next):
+            # Browser Basic Auth credentials can accompany cross-site form submissions.
+            if request.method not in {"GET", "HEAD", "OPTIONS"} and request.headers.get("origin") != cfg.public_origin:
+                error = ApiError(403, "ORIGIN_FORBIDDEN", "请从墨境站点内发起操作。")
+                return JSONResponse(status_code=403, content=error.body())
+            response = await call_next(request)
+            response.headers["Cache-Control"] = "no-store"
+            return response
+
+    if not hosted and cfg.cors_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=list(cfg.cors_origins),
@@ -822,6 +849,10 @@ def create_app(
         if not all(isinstance(x, str) and x.strip() for x in (base_url, model, api_key)):
             raise ApiError(422, "VALIDATION_ERROR", "base_url、model、api_key 都必须是非空字符串。")
         try:
+            if hosted:
+                base_url = validate_and_normalize_base_url(base_url)
+                if base_url not in allowed_model_urls:
+                    raise ApiError(422, "MODEL_ENDPOINT_NOT_ALLOWED", "此站点未开放该模型 API 地址，请检查地址或联系部署者。")
             created = store.create(base_url, model, api_key)
             if hasattr(created, "__await__"):
                 created = await created

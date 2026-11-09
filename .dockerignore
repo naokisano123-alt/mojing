@@ -1,0 +1,9 @@
+.git
+.env*
+node_modules
+dist
+*.tsbuildinfo
+server/data
+**/__pycache__
+**/.pytest_cache
+worlds

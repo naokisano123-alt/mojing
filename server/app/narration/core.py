@@ -45,6 +45,7 @@ class NarrationRequest:
     sources: tuple[ContextSource, ...] = ()
     history: tuple[HistoryTurn, ...] = ()
     character: CharacterState | None = None
+    world_intro: str = ""
 
 
 @dataclass(frozen=True)

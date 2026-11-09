@@ -7,6 +7,7 @@ import {
   type Turn,
   type InventoryItem,
 } from "./api";
+import { ApiClientError } from "../../api/client";
 import { InventoryEditor } from "./InventoryEditor";
 import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
@@ -18,6 +19,7 @@ export function AdventureJournal({
   worldId,
   sessionId,
   onConfigure,
+  onSessionExpired,
   onOpenSource,
   api = adventureApi,
   checkpointApi = defaultCheckpointApi,
@@ -25,6 +27,7 @@ export function AdventureJournal({
   worldId: string;
   sessionId?: string;
   onConfigure: () => void;
+  onSessionExpired?: () => void;
   onOpenSource: (source: NarrationSource) => void;
   api?: typeof adventureApi;
   checkpointApi?: typeof defaultCheckpointApi;
@@ -34,19 +37,26 @@ export function AdventureJournal({
   const [initialCoins, setInitialCoins] = useState(0);
   const [initialLocation, setInitialLocation] = useState("起点");
   const [applyChanges, setApplyChanges] = useState(false);
+  const [loadingRuns, setLoadingRuns] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]),
     [run, setRun] = useState<Detail | null>(null);
   const [name, setName] = useState("新的旅程"),
-    [mode, setMode] = useState<"fake" | "live">("fake");
+    [mode, setMode] = useState<"fake" | "live">();
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   useEffect(() => setApplyChanges(false), [draft?.id]);
+  useEffect(() => {
+    if (draft?.status === "ready") draftCard.current?.scrollIntoView?.({ block: "start" });
+  }, [draft?.id, draft?.status]);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const draftCard = useRef<HTMLElement>(null);
   const epoch = useRef(0),
     active = useRef<AbortController | null>(null),
     locked = useRef(false);
+  const nextMode = mode ?? (sessionId ? "live" : "fake");
   const valid = (generation: number) => epoch.current === generation;
   const refresh = async (id: string) => {
     const generation = epoch.current;
@@ -59,6 +69,8 @@ export function AdventureJournal({
   useEffect(() => {
     const generation = ++epoch.current;
     const controller = new AbortController();
+    setLoadingRuns(true);
+    setShowCreate(false);
     setRuns([]);
     setRun(null);
     setDraft(null);
@@ -77,6 +89,10 @@ export function AdventureJournal({
       .catch((e) => {
         if (valid(generation) && !controller.signal.aborted)
           setError(e.message);
+      })
+      .finally(() => {
+        if (valid(generation) && !controller.signal.aborted)
+          setLoadingRuns(false);
       });
     return () => {
       epoch.current++;
@@ -94,8 +110,15 @@ export function AdventureJournal({
     try {
       await work();
     } catch (e) {
-      if (valid(generation))
-        setError(e instanceof Error ? e.message : "操作失败，请重试");
+      if (valid(generation)) {
+        if (e instanceof ApiClientError && e.code === "MODEL_SESSION_EXPIRED") {
+          onSessionExpired?.();
+          setError("模型会话已失效。行动已保留，重新连接后可以继续。");
+        } else {
+          setError(e instanceof ApiClientError ? e.friendlyMessage
+            : e instanceof Error ? e.message : "操作失败，请重试");
+        }
+      }
     } finally {
       if (valid(generation)) {
         setBusy(false);
@@ -210,81 +233,94 @@ export function AdventureJournal({
   );
   return (
     <section className="adventure-journal" aria-label="冒险记录">
-      <p className="muted">
-        模型只提交状态提议，程序校验后由你决定是否采用。确认回合才会一起保存叙事与状态。
-      </p>
-      <div className="journal-create">
-        <input
-          aria-label="冒险名称"
-          value={name}
-          maxLength={80}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          aria-label="角色姓名"
-          value={characterName}
-          maxLength={80}
-          onChange={(e) => setCharacterName(e.target.value)}
-        />
-        <input
-          aria-label="初始位置"
-          value={initialLocation}
-          maxLength={80}
-          onChange={(e) => setInitialLocation(e.target.value)}
-        />
-        <label>
-          初始铜币
-          <input
-            aria-label="初始铜币"
-            type="number"
-            min={0}
-            max={1000000000}
-            step={1}
-            value={initialCoins}
-            onChange={(e) => setInitialCoins(Number(e.target.value))}
-          />
-        </label>
-        <p className="muted">
-          新角色体力100、精神100，累计耗时从0分钟开始。初始化只在创建旅程时生效。
-        </p>
-        <InventoryEditor
-          items={initialInventory}
-          onChange={setInitialInventory}
-        />
-        <select
-          aria-label="新冒险模式"
-          value={mode}
-          onChange={(e) => setMode(e.target.value as "fake" | "live")}
-        >
-          <option value="fake">Fake 测试旅程</option>
-          <option value="live">Live 模型旅程</option>
-        </select>
-        <button
-          className="primary"
-          disabled={busy || !name.trim()}
-          onClick={() =>
-            operate(async () => {
-              const generation = epoch.current,
-                created = await api.create(worldId, name, mode, {
-                  name: characterName,
-                  location: initialLocation,
-                  coins: initialCoins,
-                  inventory: initialInventory,
-                });
-              if (valid(generation)) {
-                setRuns((prev) => [created, ...prev]);
-                await refresh(created.id);
-                if (valid(generation)) setAction("");
-              }
-            })
-          }
-        >
-          新建旅程
-        </button>
-      </div>
-      <button className="text-button" onClick={onConfigure}>
-        配置 / 测试模型连接
+      <button type="button" className="secondary" disabled={busy} onClick={onConfigure}>
+        {sessionId ? "管理模型连接" : "连接模型 API"}
       </button>
+      {loadingRuns && <p role="status" className="muted">正在读取旅程…</p>}
+      {runs.length > 0 && (
+        <button type="button" className="text-button" disabled={busy}
+          aria-expanded={showCreate} onClick={() => setShowCreate(value => !value)}>
+          {showCreate ? "收起新旅程" : "开启另一段旅程"}
+        </button>
+      )}
+      {!loadingRuns && (showCreate || runs.length === 0) && (
+        <div className="journal-create">
+          <label>冒险名称
+          <input
+            aria-label="冒险名称"
+            value={name}
+            maxLength={80}
+            onChange={(e) => setName(e.target.value)}
+          />
+          </label>
+          <label>角色姓名
+          <input
+            aria-label="角色姓名"
+            value={characterName}
+            maxLength={80}
+            onChange={(e) => setCharacterName(e.target.value)}
+          />
+          </label>
+          <label>初始位置
+          <input
+            aria-label="初始位置"
+            value={initialLocation}
+            maxLength={80}
+            onChange={(e) => setInitialLocation(e.target.value)}
+          />
+          </label>
+          <label>
+            初始铜币
+            <input
+              aria-label="初始铜币"
+              type="number"
+              min={0}
+              max={1000000000}
+              step={1}
+              value={initialCoins}
+              onChange={(e) => setInitialCoins(Number(e.target.value))}
+            />
+          </label>
+          <p className="muted">
+            新角色体力100、精神100，累计耗时从0分钟开始。初始化只在创建旅程时生效。
+          </p>
+          <InventoryEditor
+            items={initialInventory}
+            onChange={setInitialInventory}
+          />
+          <select
+            aria-label="新冒险模式"
+            value={nextMode}
+            onChange={(e) => setMode(e.target.value as "fake" | "live")}
+          >
+            <option value="fake">模拟旅程（免 API Key）</option>
+            <option value="live">真实模型旅程</option>
+          </select>
+          <button
+            className="primary"
+            disabled={busy || !name.trim()}
+            onClick={() =>
+              operate(async () => {
+                const generation = epoch.current,
+                  created = await api.create(worldId, name, nextMode, {
+                    name: characterName,
+                    location: initialLocation,
+                    coins: initialCoins,
+                    inventory: initialInventory,
+                  });
+                if (valid(generation)) {
+                  setRuns((prev) => [created, ...prev]);
+                  setShowCreate(false);
+                  await refresh(created.id);
+                  if (valid(generation)) setAction("");
+                }
+              })
+            }
+          >
+            新建旅程
+          </button>
+        </div>
+      )}
       {runs.length > 0 && (
         <select
           aria-label="选择冒险记录"
@@ -392,7 +428,7 @@ export function AdventureJournal({
             </p>
           )}
           {draft?.status === "ready" && draft.result && (
-            <article className="journal-turn journal-draft">
+            <article className="journal-turn journal-draft" ref={draftCard}>
               <strong>待确认草案 · 尚未写入回合</strong>
               <p>{draft.action}</p>
               {renderResult(draft.result)}
@@ -452,7 +488,7 @@ export function AdventureJournal({
             </article>
           )}
           {run.mode === "live" && !sessionId && (
-            <p className="error">请先到“叙事实验”建立模型会话，再返回继续。</p>
+            <p className="error">连接模型 API 后，即可继续这段旅程。</p>
           )}
           <textarea
             aria-label="下一步行动"

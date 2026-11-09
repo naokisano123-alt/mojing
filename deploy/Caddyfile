@@ -1,0 +1,23 @@
+{$MOJING_PUBLIC_ORIGIN} {
+	basic_auth {
+		player {env.MOJING_PASSWORD_HASH}
+	}
+	header {
+		X-Content-Type-Options nosniff
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy no-referrer
+		Cache-Control no-store
+	}
+	handle /api/* {
+		request_body {
+			max_size 9MiB
+		}
+		reverse_proxy api:8000 {
+			header_up -Authorization
+		}
+	}
+	handle {
+		root * /srv/mojing
+		file_server
+	}
+}
