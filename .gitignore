@@ -21,3 +21,10 @@ server/data/
 qa-mobile.html
 # 用户实验资料（本地导入用，不入公开仓库）
 worlds/
+
+# Android build output and local SDK/signing configuration
+android/.gradle/
+android/**/build/
+android/local.properties
+*.jks
+*.keystore

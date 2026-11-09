@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from .docx import parse_docx
-from .extractor import extract_document
+from .extractor import extract_document, parse_docx
 from .pdf import parse_pdf
 from .types import (
     DocumentWarningRecord,

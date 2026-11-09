@@ -47,6 +47,7 @@ class Settings:
     allow_gb18030: bool = True
     allow_big5: bool = False
     public_origin: str = ""
+    https_model_only: bool = False
     allowed_model_base_urls: tuple[str, ...] = ()
     cors_origins: tuple[str, ...] = field(
         default_factory=lambda: (

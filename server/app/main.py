@@ -46,7 +46,7 @@ from .narration.core import (
 )
 from .lore_search.service import search_chunks
 from .lore_search.types import SearchValidationError, SearchWorldNotFoundError
-from .parsers.extractor import extract_document
+from .parsers.extractor import docx_available, extract_document
 from .parsers.types import ParseError, ParseLimits
 
 MODEL_REQUEST_TIMEOUT = 60.0
@@ -849,9 +849,11 @@ def create_app(
         if not all(isinstance(x, str) and x.strip() for x in (base_url, model, api_key)):
             raise ApiError(422, "VALIDATION_ERROR", "base_url、model、api_key 都必须是非空字符串。")
         try:
-            if hosted:
+            if hosted or cfg.https_model_only:
                 base_url = validate_and_normalize_base_url(base_url)
-                if base_url not in allowed_model_urls:
+                if cfg.https_model_only and not base_url.startswith("https://"):
+                    raise ApiError(422, "MODEL_HTTPS_REQUIRED", "安卓应用的模型 API 地址需要使用 HTTPS。")
+                if hosted and base_url not in allowed_model_urls:
                     raise ApiError(422, "MODEL_ENDPOINT_NOT_ALLOWED", "此站点未开放该模型 API 地址，请检查地址或联系部署者。")
             created = store.create(base_url, model, api_key)
             if hasattr(created, "__await__"):
@@ -945,13 +947,12 @@ def create_app(
 
     @app.get("/api/v1/capabilities")
     def capabilities() -> dict[str, Any]:
+        formats = sorted(suffix for suffix in ALLOWED_SUFFIXES if suffix != ".docx" or docx_available())
         return {
-            "formats": sorted(ALLOWED_SUFFIXES),
+            "formats": formats,
             "max_bytes": {
-                ".txt": cfg.max_upload_bytes,
-                ".md": cfg.max_upload_bytes,
-                ".pdf": cfg.max_doc_bytes,
-                ".docx": cfg.max_doc_bytes,
+                suffix: cfg.max_upload_bytes if suffix in TEXT_SUFFIXES else cfg.max_doc_bytes
+                for suffix in formats
             },
             "search": True,
         }

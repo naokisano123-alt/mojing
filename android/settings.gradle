@@ -1,0 +1,21 @@
+pluginManagement {
+    repositories {
+        google {
+            content {
+                includeGroupByRegex 'com[.]android([.].*)?'
+                includeGroupByRegex 'androidx([.].*)?'
+                includeGroupByRegex 'com[.]google[.](android|testing)([.].*)?'
+            }
+        }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "Mojing"
+include(":app")

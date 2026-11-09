@@ -1,0 +1,8 @@
+<resources>
+    <style name="MojingTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#171e1d</item>
+        <item name="android:colorAccent">#a9c5ad</item>
+        <item name="android:statusBarColor">#171e1d</item>
+        <item name="android:navigationBarColor">#171e1d</item>
+    </style>
+</resources>

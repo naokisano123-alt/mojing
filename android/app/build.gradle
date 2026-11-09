@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application' version '8.9.2'
+    id 'com.chaquo.python' version '17.2.0'
+}
+
+android {
+    namespace 'com.mojing.game'
+    compileSdk 35
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    defaultConfig {
+        applicationId 'com.mojing.game'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0-preview'
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/mojingAssets')
+}
+
+chaquopy {
+    defaultConfig {
+        version '3.12'
+        pip {
+            install '-r', rootProject.file('requirements.txt').absolutePath
+        }
+    }
+    sourceSets {
+        getByName('main') {
+            srcDir '../../server'
+            exclude 'data/**', 'tests/**', '**/__pycache__/**', '**/*.pyc',
+                '.pytest_cache/**', '.venv/**', '*.txt', '*.ini', '*.md'
+        }
+    }
+}
+
+def webDist = rootProject.file('../dist')
+def bundleWeb = tasks.register('bundleWeb', Sync) {
+    from webDist
+    into layout.buildDirectory.dir('generated/mojingAssets/web')
+    doFirst {
+        if (!new File(webDist, 'index.html').isFile()) {
+            throw new GradleException('Run npm ci and npm run build at the repository root first.')
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn bundleWeb }
