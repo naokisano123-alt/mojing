@@ -210,6 +210,14 @@ def test_document_limit(make_client):
     assert response.json()["error"]["code"] == "WORLD_DOCUMENT_LIMIT"
 
 
+def test_world_with_existing_material_accepts_twenty_more_documents(client):
+    world_id = create_world(client)["id"]
+    for index in range(21):
+        response = upload(client, world_id, f"设定-{index}.txt", f"世界观资料 {index}".encode())
+        assert response.status_code == 201, response.text
+    assert client.get(f"/api/v1/worlds/{world_id}").json()["document_count"] == 21
+
+
 def test_raw_pagination(client):
     world = create_world(client)
     doc = upload(client, world["id"], "云山纪.md", SAMPLE_MD.encode("utf-8")).json()

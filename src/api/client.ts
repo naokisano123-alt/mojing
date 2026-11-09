@@ -85,7 +85,7 @@ export function formatFriendlyMessage(
     case 'BINARY_CONTENT':
       return '检测到二进制内容，请上传纯文本 .txt 或 .md 文件。';
     case 'WORLD_DOCUMENT_LIMIT': {
-      const limit = details?.limit ?? 20;
+      const limit = details?.limit ?? 100;
       return `当前世界文档数已达上限（最多 ${limit} 个），请先清理不再需要的文档。`;
     }
     case 'EMPTY_DOCUMENT':
@@ -177,8 +177,12 @@ export async function request<T>(
     let bodyPayload: BodyInit | undefined = undefined;
 
     if (options?.body !== undefined) {
-      headers['Content-Type'] = 'application/json';
-      bodyPayload = JSON.stringify(options.body);
+      if (options.body instanceof FormData) {
+        bodyPayload = options.body;
+      } else {
+        headers['Content-Type'] = 'application/json';
+        bodyPayload = JSON.stringify(options.body);
+      }
     }
 
     const res = await fetch(url, {
@@ -232,6 +236,12 @@ export async function request<T>(
 }
 
 /* ================= 契约 §4 接口清单实现 ================= */
+
+export function importWorldFiles(files: File[]): Promise<WorldSummary> {
+  const body = new FormData();
+  for (const file of files) body.append('files', file);
+  return request('POST', '/world-transfers', { body, timeoutMs: 180_000 });
+}
 
 /** 4.1 健康检查 */
 export function checkHealth(signal?: AbortSignal): Promise<HealthResponse> {

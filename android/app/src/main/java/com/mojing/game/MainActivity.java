@@ -2,12 +2,14 @@ package com.mojing.game;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ClipData;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.DocumentsContract;
 import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
@@ -32,7 +34,10 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public final class MainActivity extends Activity {
     private static final int CHOOSE_DOCUMENT = 1;
@@ -145,7 +150,11 @@ public final class MainActivity extends Activity {
                 if (fileSelection != null) fileSelection.onReceiveValue(null);
                 fileSelection = callback;
                 try {
-                    startActivityForResult(params.createIntent(), CHOOSE_DOCUMENT);
+                    Intent intent = params.createIntent();
+                    if (params.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    }
+                    startActivityForResult(intent, CHOOSE_DOCUMENT);
                 } catch (ActivityNotFoundException e) {
                     fileSelection = null;
                     callback.onReceiveValue(null);
@@ -168,20 +177,35 @@ public final class MainActivity extends Activity {
     private static boolean isWorldExport(Uri uri) {
         String path = uri.getEncodedPath();
         String query = uri.getEncodedQuery();
-        return isGameUri(uri) && uri.getFragment() == null && path != null
-            && path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/export")
-            && (query == null || "include_saves=true".equals(query));
+        if (!isGameUri(uri) || uri.getFragment() != null || path == null) return false;
+        if (path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/export")) {
+            return query == null || "include_saves=true".equals(query);
+        }
+        return path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/transfer") && query != null
+            && query.matches("part=(world|saves|zip(?:&destination=folder)?)");
+    }
+
+    private static boolean exportPair(Uri url) {
+        return "folder".equals(url.getQueryParameter("destination"));
     }
 
     private void chooseExportDestination(Uri url) {
         if (pendingWorldExport != null) return;
         pendingWorldExport = url.toString();
-        String id = url.getPathSegments().get(3).substring(0, 8);
-        String suffix = url.getEncodedQuery() == null ? "-settings.json" : "-with-saves.json";
-        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
-            .addCategory(Intent.CATEGORY_OPENABLE)
-            .setType("application/json")
-            .putExtra(Intent.EXTRA_TITLE, "mojing-world-" + id + suffix);
+        Intent intent;
+        if (exportPair(url)) {
+            intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+        } else {
+            String id = url.getPathSegments().get(3).substring(0, 8);
+            String part = url.getQueryParameter("part");
+            boolean zip = "zip".equals(part);
+            String suffix = zip ? "-世界迁移.zip" : "saves".equals(part) ? "-存档.json" : "-世界观.json";
+            if (part == null && url.getEncodedQuery() != null) suffix = "-含存档.json";
+            intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                .addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(zip ? "application/zip" : "application/json")
+                .putExtra(Intent.EXTRA_TITLE, "墨境-" + id + suffix);
+        }
         try {
             startActivityForResult(intent, SAVE_WORLD_EXPORT);
         } catch (ActivityNotFoundException e) {
@@ -206,12 +230,12 @@ public final class MainActivity extends Activity {
                 if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
                     throw new IOException("Export request failed");
                 }
-                try (InputStream input = connection.getInputStream();
-                     OutputStream output = app.getContentResolver().openOutputStream(destination, "w")) {
-                    if (output == null) throw new IOException("No export output stream");
-                    byte[] buffer = new byte[16384];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                try (InputStream input = connection.getInputStream()) {
+                    if (exportPair(Uri.parse(url))) {
+                        saveWorldPair(app, destination, connection.getHeaderField("Content-Disposition"), input);
+                    } else {
+                        copyExport(app, destination, input);
+                    }
                 }
             } catch (IOException e) {
                 throw new IllegalStateException("World export failed", e);
@@ -220,7 +244,53 @@ public final class MainActivity extends Activity {
             }
         })
             .whenComplete((ignored, failure) -> runOnUiThread(() -> Toast.makeText(app,
-                failure == null ? "世界文件已导出。" : "世界文件未能完整保存，请重试。", Toast.LENGTH_LONG).show()));
+                failure == null ? (exportPair(Uri.parse(url)) ? "世界观和存档已分别保存。" : "世界文件已导出。")
+                    : "世界文件未能完整保存，请重试。", Toast.LENGTH_LONG).show()));
+    }
+
+    private static void copyExport(MojingApplication app, Uri destination, InputStream input) throws IOException {
+        try (OutputStream output = app.getContentResolver().openOutputStream(destination, "w")) {
+            if (output == null) throw new IOException("No export output stream");
+            byte[] buffer = new byte[16384];
+            int count;
+            while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+        }
+    }
+
+    private static void saveWorldPair(MojingApplication app, Uri tree, String disposition, InputStream input)
+            throws IOException {
+        Uri directory = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+        String stem = "墨境";
+        String marker = "filename*=UTF-8''";
+        int offset = disposition == null ? -1 : disposition.indexOf(marker);
+        if (offset >= 0) {
+            String name = Uri.decode(disposition.substring(offset + marker.length()));
+            if (name.endsWith("-世界迁移.zip")) stem = name.substring(0, name.length() - "-世界迁移.zip".length());
+        }
+        ArrayList<Uri> created = new ArrayList<>();
+        try (ZipInputStream archive = new ZipInputStream(input)) {
+            for (String member : new String[] { "world.json", "saves.json" }) {
+                ZipEntry entry = archive.getNextEntry();
+                if (entry == null || !member.equals(entry.getName())) throw new IOException("Incomplete export pair");
+                String suffix = member.equals("world.json") ? "-世界观.json" : "-存档.json";
+                Uri file = DocumentsContract.createDocument(app.getContentResolver(), directory,
+                    "application/json", stem + suffix);
+                if (file == null) throw new IOException("No destination file");
+                created.add(file);
+                copyExport(app, file, archive);
+                archive.closeEntry();
+            }
+            if (archive.getNextEntry() != null) throw new IOException("Unexpected export entry");
+        } catch (IOException | RuntimeException failure) {
+            for (Uri file : created) {
+                try {
+                    DocumentsContract.deleteDocument(app.getContentResolver(), file);
+                } catch (IOException | RuntimeException ignored) {
+                    // Some document providers do not permit deleting an incomplete file.
+                }
+            }
+            throw failure;
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle outState) {
@@ -239,7 +309,17 @@ public final class MainActivity extends Activity {
         } else if (requestCode == CHOOSE_DOCUMENT && fileSelection != null) {
             ValueCallback<Uri[]> callback = fileSelection;
             fileSelection = null;
-            callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            ClipData selection = resultCode == RESULT_OK && data != null ? data.getClipData() : null;
+            if (selection == null) {
+                callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
+            } else {
+                ArrayList<Uri> files = new ArrayList<>();
+                for (int index = 0; index < selection.getItemCount(); index++) {
+                    Uri uri = selection.getItemAt(index).getUri();
+                    if (uri != null && "content".equals(uri.getScheme())) files.add(uri);
+                }
+                callback.onReceiveValue(files.isEmpty() ? null : files.toArray(new Uri[0]));
+            }
         }
     }
 

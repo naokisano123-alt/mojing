@@ -15,7 +15,7 @@ import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -160,6 +160,13 @@ def _world_dict(row: sqlite3.Row, document_count: int) -> dict[str, Any]:
         "updated_at": row["updated_at"],
         "deleted_at": row["deleted_at"],
     }
+
+
+_DOCUMENT_METADATA_COLUMNS = (
+    "id, world_id, filename, media_type, byte_size, encoding, content_sha256, "
+    "text_length, line_count, chunk_count, source_kind, encoding_semantics, warnings, "
+    "status, created_at, updated_at, deleted_at"
+)
 
 
 def _document_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -449,7 +456,7 @@ def create_app(
         with db(cfg.db_path) as conn:
             row = _get_world(conn, world_id)
             docs = conn.execute(
-                "SELECT * FROM documents WHERE world_id = ? AND deleted_at IS NULL ORDER BY created_at ASC",
+                f"SELECT {_DOCUMENT_METADATA_COLUMNS} FROM documents WHERE world_id = ? AND deleted_at IS NULL ORDER BY created_at ASC",
                 (world_id,),
             ).fetchall()
         payload = _world_dict(row, len(docs))
@@ -463,6 +470,22 @@ def create_app(
         with db(cfg.db_path) as conn:
             conn.execute("BEGIN")
             return export_world(conn, _get_world(conn, world_id), include_saves, Path(cfg.db_path).parent)
+
+    @app.get("/api/v1/worlds/{world_id}/transfer")
+    def download_world_transfer(world_id: str, part: Literal["world", "saves", "zip"]) -> Response:
+        from .world_transfer import transfer_export
+
+        with db(cfg.db_path) as conn:
+            conn.execute("BEGIN")
+            return transfer_export(conn, _get_world(conn, world_id), part, Path(cfg.db_path).parent)
+
+    @app.post("/api/v1/world-transfers", status_code=201)
+    def restore_world_transfer(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+        from .world_transfer import import_transfer
+
+        with db(cfg.db_path) as conn:
+            world_id = import_transfer(conn, files, cfg.max_documents_per_world)
+            return _world_dict(_get_world(conn, world_id), _count_documents(conn, world_id))
 
     @app.patch("/api/v1/worlds/{world_id}")
     def update_world(world_id: str, payload: WorldPatch) -> dict[str, Any]:
@@ -584,6 +607,7 @@ def create_app(
         document_id = _new_id()
         now = _now()
         with db(cfg.db_path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
             _get_world(conn, world_id)
             if not allow_duplicate:
                 existing = conn.execute(
@@ -665,7 +689,7 @@ def create_app(
             where = "world_id = ?" if include_deleted else "world_id = ? AND deleted_at IS NULL"
             total = int(conn.execute(f"SELECT COUNT(*) AS n FROM documents WHERE {where}", (world_id,)).fetchone()["n"])
             rows = conn.execute(
-                f"SELECT * FROM documents WHERE {where} ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?",
+                f"SELECT {_DOCUMENT_METADATA_COLUMNS} FROM documents WHERE {where} ORDER BY created_at ASC, rowid ASC LIMIT ? OFFSET ?",
                 (world_id, limit, offset),
             ).fetchall()
         return {

@@ -508,5 +508,3 @@
 
 .world-export { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .world-export a { text-decoration: none; }
-.world-export label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-.world-export input { accent-color: var(--green); }

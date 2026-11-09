@@ -72,16 +72,16 @@ describe('WorldLoreView 装配', () => {
     );
   });
 
-  it('加载世界详情并可选是否导出存档', async () => {
-    const user = userEvent.setup();
-    render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
+  it('加载世界详情并提供世界观、存档和 ZIP 三种文件入口', async () => {
+    render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} modelProfileEnabled />);
 
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
     expect(screen.getByRole('button', { name: '冒险记录' })).toBeInTheDocument();
-    const download = screen.getByRole('link', { name: '导出世界设定' });
-    expect(download).toHaveAttribute('href', '/api/v1/worlds/w1/export');
-    await user.click(screen.getByRole('checkbox', { name: '一并导出存档' }));
-    expect(download).toHaveAttribute('href', '/api/v1/worlds/w1/export?include_saves=true');
+    expect(screen.getByRole('link', { name: '导出两份文件' }))
+      .toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip&destination=folder');
+    for (const [label, part] of [['世界观 JSON', 'world'], ['存档 JSON', 'saves'], ['打包为 ZIP', 'zip']]) {
+      expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/api/v1/worlds/w1/transfer?part=${part}`);
+    }
   });
 
   it('四个子页签都能真实挂载', async () => {
