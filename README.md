@@ -17,7 +17,9 @@ React + TypeScript + Vite + Tailwind CSS，配合 FastAPI + SQLite 本地资料�
 
 ## 启动
 
-[安卓应用](android/README.md)可打包为 APK，世界资料和存档保存在手机。也可以通过 [Termux 本地试玩](docs/ANDROID_LOCAL.md)。
+[安卓应用](android/README.md)可打包为 APK，每部手机的世界和存档都保存在各自的应用目录，不会自动同步。不同玩家使用同一个模型 API Key 也不会合并存档。也可以通过 [Termux 本地试玩](docs/ANDROID_LOCAL.md)。
+
+网页私有部署使用一份服务器数据库，供一人使用。同一站点的登录凭据不能为不同玩家隔离数据。
 
 ### 电脑开发环境
 

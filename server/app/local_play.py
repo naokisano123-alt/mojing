@@ -92,16 +92,16 @@ def create_local_app(
     if not (dist_dir / "index.html").is_file():
         raise ValueError("缺少前端构建产物，请先执行安装命令。")
     data_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    os.environ["MOJING_DB_PATH"] = str(data_dir / "mojing.db")
-    os.environ.pop("MOJING_PUBLIC_ORIGIN", None)
-
     from .config import load_settings
     from .main import create_app
-
     from .model_gateway import ModelSessionStore
 
+    settings = replace(
+        load_settings(data_dir / "mojing.db"), public_origin="", cors_origins=(),
+        https_model_only=https_model_only,
+    )
     app = create_app(
-        replace(load_settings(), cors_origins=(), https_model_only=https_model_only),
+        settings,
         narration_store=ModelSessionStore(ttl_seconds=None) if model_profile is not None else None,
         model_profile=model_profile,
     )
