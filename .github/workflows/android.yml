@@ -45,7 +45,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Install Android SDK 35
+        run: |
+          sdk="$RUNNER_TEMP/android-sdk"
+          cli="$RUNNER_TEMP/android-cli"
+          mkdir -p "$sdk" "$cli"
+          curl -fLsS --retry 3 -o "$cli/tools.zip" https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q "$cli/tools.zip" -d "$cli"
+          manager="$cli/cmdline-tools/bin/sdkmanager"
+          (set +o pipefail; yes | "$manager" --sdk_root="$sdk" --licenses) >/dev/null
+          "$manager" --sdk_root="$sdk" 'platforms;android-35' 'build-tools;35.0.0'
+          printf 'ANDROID_HOME=%s\nANDROID_SDK_ROOT=%s\n' "$sdk" "$sdk" >> "$GITHUB_ENV"
       - run: npm ci
       - run: npm run build
       - run: gradle -p android :app:assembleDebug --no-daemon
