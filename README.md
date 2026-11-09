@@ -13,6 +13,10 @@ React + TypeScript + Vite + Tailwind CSS，配合 FastAPI + SQLite 本地资料�
 
 ## 启动
 
+在安卓手机上使用 Termux 可直接运行网页与冒险引擎，存档保存在手机。见[安卓本地试玩说明](docs/ANDROID_LOCAL.md)。
+
+### 电脑开发环境
+
 从仓库根目录执行，建议Node.js22.18+，Python3.11+。
 
 ~~~bash
