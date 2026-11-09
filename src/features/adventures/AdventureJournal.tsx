@@ -12,6 +12,7 @@ import { ApiClientError } from "../../api/client";
 import { InventoryEditor } from "./InventoryEditor";
 import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
+import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -37,7 +38,7 @@ export function AdventureJournal({
   const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
   const [initialCoins, setInitialCoins] = useState(0);
   const [initialLocation, setInitialLocation] = useState("起点");
-  const [acceptedDraft, setAcceptedDraft] = useState<string | null>(null);
+  const [acceptedDraft, setAcceptedDraft] = useState<{ key: string | null; value: boolean }>();
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
@@ -49,7 +50,9 @@ export function AdventureJournal({
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
-  const applyChanges = draftKey !== null && acceptedDraft === draftKey;
+  const hasMemoryProposal = Boolean(draft?.result?.memory_proposal?.length);
+  const applyChanges = draftKey !== null && (acceptedDraft?.key === draftKey ? acceptedDraft.value : hasMemoryProposal);
+  const staleMemory = draft?.result?.memory_cursor !== undefined && draft.result.memory_cursor !== run?.memory?.cursor;
   useEffect(() => {
     if (draft?.status === "ready") draftCard.current?.scrollIntoView?.({ block: "start" });
   }, [draft?.id, draft?.status]);
@@ -425,6 +428,12 @@ export function AdventureJournal({
               旧旅程未初始化角色，继续仅记录叙事。新建旅程可使用角色状态。
             </p>
           )}
+          {run.memory && <MemoryPanel key={run.id} memory={run.memory} disabled={busy}
+            onCorrect={async correction => {
+              const generation = epoch.current;
+              const memory = await api.correctMemory(run.id, correction);
+              if (valid(generation)) setRun(current => current && { ...current, memory });
+            }} />}
           {run.turns[0]?.sequence > 1 && (
             <button className="text-button" disabled={busy} onClick={older}>
               更早的回合
@@ -435,6 +444,7 @@ export function AdventureJournal({
               <span className="muted">第 {turn.sequence} 回合</span>
               <p className="journal-action">{turn.action}</p>
               {renderResult(turn.result)}
+              <MemoryChanges changes={turn.result.memory_changes} title="本回合日志" />
             </article>
           ))}
           {run.turns.length === 0 && (
@@ -467,24 +477,17 @@ export function AdventureJournal({
                   </ul>
                 </div>
               )}
-              {draft.result.projected_state && (
-                <>
-                  <CharacterCard
-                    state={draft.result.projected_state}
-                    title="模型状态提议 · 尚未生效"
-                  />
-                  <label className="journal-apply">
-                    <input
-                      type="checkbox"
-                      checked={applyChanges}
-                      disabled={busy}
-                      onChange={(e) => setAcceptedDraft(e.target.checked ? draftKey : null)}
-                    />
-                    采用这份状态提议（默认只保存叙事）
-                  </label>
-                </>
-              )}
-              <button className="primary" disabled={busy} onClick={accept}>
+              {draft.result.projected_state && <CharacterCard
+                state={draft.result.projected_state} title="模型状态提议 · 尚未生效"
+              />}
+              <MemoryChanges changes={draft.result.memory_proposal} title="待确认日志提议" />
+              {(draft.result.projected_state || hasMemoryProposal) && <label className="journal-apply">
+                <input type="checkbox" checked={applyChanges} disabled={busy || staleMemory}
+                  onChange={event => setAcceptedDraft({ key: draftKey, value: event.target.checked })} />
+                {hasMemoryProposal ? "一并采用日志与结算提议" : "采用这份状态提议（默认只保存叙事）"}
+              </label>}
+              {staleMemory && <p className="muted text-sm">日志已更正，请重新生成这段草案。</p>}
+              <button className="primary" disabled={busy || staleMemory} onClick={accept}>
                 确认并写入回合
               </button>
               <button

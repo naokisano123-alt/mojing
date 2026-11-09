@@ -17,6 +17,33 @@ export interface CharacterState {
   elapsed_minutes: number;
   location: string;
 }
+export type MemoryKind = "deposit" | "commitment" | "secret";
+export type MemoryStatus = "active" | "refund" | "forfeit" | "done";
+export interface MemoryFields {
+  kind: MemoryKind;
+  title: string;
+  detail: string;
+  status: MemoryStatus;
+  person?: string;
+  amount?: number;
+  knowers?: string[];
+}
+export interface MemoryChange {
+  id: string;
+  item: (MemoryFields & { id: string }) | null;
+  reason: string;
+}
+export interface MemoryView {
+  cursor: number;
+  items: (MemoryFields & { id: string; turn: number })[];
+  events: (MemoryChange & { sequence: number; turn: number; origin: "turn" | "correction" })[];
+}
+export interface MemoryCorrection {
+  expected_cursor: number;
+  id?: string;
+  item: MemoryFields | null;
+  reason: string;
+}
 export interface JournalResult extends NarrationPreviewResponse {
   suggestions?: string[];
   state_before?: CharacterState | null;
@@ -24,6 +51,9 @@ export interface JournalResult extends NarrationPreviewResponse {
   projected_state?: CharacterState | null;
   proposed_changes?: Record<string, number | string | ItemDelta[]> | null;
   changes_accepted?: boolean;
+  memory_cursor?: number;
+  memory_proposal?: MemoryChange[];
+  memory_changes?: MemoryChange[];
 }
 export interface Run {
   origin_checkpoint_id?: string | null;
@@ -49,6 +79,7 @@ export interface Detail extends Run {
   turns: Turn[];
   latest_draft: Draft | null;
   item_descriptions?: Record<string, string>;
+  memory?: MemoryView;
 }
 const path = (id: string) => "/adventures/" + encodeURIComponent(id);
 export const adventureApi = {
@@ -71,6 +102,8 @@ export const adventureApi = {
     ),
   detail: (id: string, signal?: AbortSignal, before?: number) =>
     request<Detail>("GET", path(id), { signal, queryParams: { before } }),
+  correctMemory: (id: string, body: MemoryCorrection) =>
+    request<MemoryView>("PATCH", path(id) + "/memory", { body }),
   saveItemDescription: (id: string, name: string, description: string) =>
     request<{ name: string; description: string }>("PATCH", path(id) + "/item-description", {
       body: { name, description },

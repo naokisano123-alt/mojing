@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, asdict
 from typing import Literal, Protocol
+from ..adventures import memory
 from ..adventures.state import CharacterState, StateError, project, character as validate_character
 
 MAX_ACTION_UNITS = 2000
@@ -48,6 +49,9 @@ class NarrationRequest:
     world_intro: str = ""
     suggest_actions: bool = False
     item_descriptions: tuple[tuple[str, str], ...] = ()
+    adventure_memory: tuple[dict, ...] | None = None
+    memory_items: tuple[dict, ...] = ()
+    memory_excerpts: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,8 @@ class NarrationDraft:
     references: tuple[str, ...]
     proposed_changes: dict | None = None
     suggestions: tuple[str, ...] = ()
+    memory_changes: tuple[dict, ...] = ()
+    projected_state: dict | None = None
 
 
 def validate_request(request: NarrationRequest) -> None:
@@ -98,6 +104,8 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
         allowed.add('proposed_changes')
     if request.suggest_actions:
         allowed.add('suggestions')
+    if request.adventure_memory is not None:
+        allowed.add('memory_updates')
     if not isinstance(value, Mapping) or not {'narrative','references'} <= set(value) or set(value) - allowed:
         raise DraftError('MODEL_OUTPUT_INVALID', '模型输出必须仅包含叙事与引用。')
     narrative, references = value['narrative'], value['references']
@@ -110,11 +118,21 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
     if len(references) != len(set(references)) or any(x not in allowed for x in references):
         raise DraftError('MODEL_REFERENCE_INVALID', '模型引用了未提供或重复的资料。')
     changes = value.get('proposed_changes')
-    if changes is not None or 'proposed_changes' in value:
-        try:
-            project(request.character, changes)
-        except StateError as exc:
-            raise DraftError('MODEL_STATE_INVALID', str(exc)) from None
+    memory_changes, projected = (), None
+    try:
+        if 'proposed_changes' in value and changes is None:
+            raise StateError('状态提议须为对象。')
+        if request.adventure_memory is not None:
+            if changes is not None and not isinstance(changes, dict):
+                raise StateError('状态提议须为对象。')
+            memory_changes, projected = memory.plan(
+                request.memory_items, value.get('memory_updates', []), request.character, changes,
+                {item['id'] for item in request.adventure_memory},
+            )
+        elif changes is not None:
+            projected = asdict(project(request.character, changes))
+    except (StateError, TypeError, ValueError) as exc:
+        raise DraftError('MODEL_STATE_INVALID', str(exc)) from None
     suggestions = []
     raw_suggestions = value.get('suggestions')
     if request.suggest_actions and isinstance(raw_suggestions, list):
@@ -127,7 +145,8 @@ def validate_draft(value: object, request: NarrationRequest) -> NarrationDraft:
                     suggestions.append(item)
             except DraftError:
                 continue
-    return NarrationDraft(narrative.strip(), tuple(references), changes, tuple(suggestions))
+    return NarrationDraft(narrative.strip(), tuple(references), changes, tuple(suggestions),
+                          tuple(memory_changes), projected)
 
 
 class ModelClient(Protocol):

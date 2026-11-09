@@ -14,11 +14,13 @@ import zlib
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
+from .adventures.memory import validate_event
 from .adventures.state import character
 from .errors import ApiError
 from .world_export import _write_json
 
 VERSION = 1
+SAVES_VERSION = 2
 SETTINGS_FORMAT = "mojing-world-settings"
 SAVES_FORMAT = "mojing-world-saves"
 LIMIT = 128 * 1024 * 1024
@@ -34,7 +36,8 @@ WORLD_TABLES = {
 SAVE_TABLES = {
     "adventures": "id name mode revision created_at character_json origin_checkpoint_id",
     "adventure_turns": "adventure_id sequence draft_id action result created_at",
-    "adventure_checkpoints": "id adventure_id name revision character_json mode created_at",
+    "adventure_checkpoints": "id adventure_id name revision character_json mode created_at memory_cursor",
+    "adventure_memory_events": "adventure_id sequence turn origin change_json",
 }
 WORLD_COLUMNS = "id name description created_at updated_at"
 ID_FIELDS = {
@@ -42,7 +45,7 @@ ID_FIELDS = {
     "adventure_id": "adventures", "origin_checkpoint_id": "adventure_checkpoints",
 }
 INTEGER_FIELDS = {"byte_size", "text_length", "line_count", "chunk_count", "chunk_index",
-                  "start_char", "end_char", "revision", "sequence"}
+                  "start_char", "end_char", "revision", "sequence", "turn", "memory_cursor"}
 
 
 def _rows(conn, table, columns, world_id):
@@ -57,7 +60,7 @@ def _rows(conn, table, columns, world_id):
     if table == "lore_entry_sources":
         joins += " JOIN lore_entries e ON e.id=t.entry_id AND e.world_id=t.world_id"
         where += " AND e.deleted_at IS NULL"
-    if table in {"adventure_turns", "adventure_checkpoints"}:
+    if table in {"adventure_turns", "adventure_checkpoints", "adventure_memory_events"}:
         joins += " JOIN adventures a ON a.id=t.adventure_id"
         where = "a.world_id = ?"
     return (dict(row) for row in conn.execute(
@@ -97,7 +100,7 @@ def transfer_export(conn, world, part, scratch_dir):
         if part != "world":
             saves = stack.enter_context(TemporaryFile(dir=scratch_dir))
             _write_json(saves, {
-                "format": SAVES_FORMAT, "version": VERSION,
+                "format": SAVES_FORMAT, "version": SAVES_VERSION,
                 "world_id": world["id"], "settings_sha256": _digest(settings),
                 **{table: _rows(conn, table, columns, world["id"]) for table, columns in SAVE_TABLES.items()},
             })
@@ -142,8 +145,10 @@ def _read_part(file, parts, remaining):
     if not isinstance(payload, dict):
         raise _invalid()
     kind = payload.get("format")
+    version = payload.get("version")
+    versions = (VERSION, SAVES_VERSION) if kind == SAVES_FORMAT else (VERSION,)
     if (kind not in (SETTINGS_FORMAT, SAVES_FORMAT) or kind in parts
-            or type(payload.get("version")) is not int or payload["version"] != VERSION):
+            or type(version) is not int or version not in versions):
         raise _invalid()
     parts[kind] = (payload, hashlib.sha256(raw).hexdigest())
     return len(raw)
@@ -284,12 +289,24 @@ def _copy_saves(conn, world_id, records, ids):
         sequence = sorted(histories[run_id])
         if len(sequence) != run["revision"] or any(n != i for i, n in enumerate(sequence, 1)):
             raise _invalid()
+    memory = {run_id: [] for run_id in runs}
+    for event in records["adventure_memory_events"]:
+        memory[event["adventure_id"]].append(event)
+    for run_id, events in memory.items():
+        last_turn = 0
+        for sequence, event in enumerate(sorted(events, key=lambda event: event["sequence"]), 1):
+            if (event["sequence"] != sequence or not last_turn <= event["turn"] <= runs[run_id]["revision"]
+                    or event["origin"] not in ("turn", "correction") or (event["origin"] == "turn" and event["turn"] == 0)):
+                raise _invalid()
+            validate_event(json.loads(event["change_json"]))
+            last_turn = event["turn"]
+        events.sort(key=lambda event: event["sequence"])
     for table, rows in records.items():
         for original in rows:
             row = _remap(original, table, ids)
             if table == "adventures":
                 row["world_id"] = world_id
-            if table != "adventure_turns":
+            if table in ("adventures", "adventure_checkpoints"):
                 state = json.loads(row["character_json"] or "null")
                 if state is not None:
                     character(state)
@@ -298,7 +315,10 @@ def _copy_saves(conn, world_id, records, ids):
             if table == "adventure_turns":
                 row["result"] = _remap_result(row["result"], ids)
             if table == "adventure_checkpoints":
-                if row["revision"] > runs[original["adventure_id"]]["revision"]:
+                run_id = original["adventure_id"]
+                cursor = row["memory_cursor"]
+                if (row["revision"] > runs[run_id]["revision"] or cursor > len(memory[run_id])
+                        or (cursor and memory[run_id][cursor - 1]["turn"] > row["revision"])):
                     raise _invalid()
                 row["request_id"] = row["id"]
             _insert(conn, table, row)
@@ -352,6 +372,10 @@ def import_transfer(conn, uploads, max_documents):
         world_records = _records(settings, WORLD_TABLES)
         if len(world_records["documents"]) > max_documents:
             raise ApiError(422, "WORLD_DOCUMENT_LIMIT", "这份世界观的文档数超出当前部署上限。", {"limit": max_documents})
+        if saves is not None and saves["version"] == VERSION:
+            saves["adventure_memory_events"] = []
+            for checkpoint in saves["adventure_checkpoints"]:
+                checkpoint["memory_cursor"] = 0
         save_records = _records(saves, SAVE_TABLES) if saves is not None else {}
         ids = {
             table: {row["id"]: str(uuid4()) for row in rows if "id" in row}
