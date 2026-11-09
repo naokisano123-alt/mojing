@@ -326,6 +326,10 @@ def create_app(
         if any(not url.startswith("https://") for url in allowed_model_urls):
             raise ValueError("Hosted model endpoints must use HTTPS.")
     init_db(cfg.db_path)
+    from .m3.core import pulse_preview
+    from .m3.pulse.worker import pulse_worker_lifespan
+
+    pulse_worker = pulse_preview.create_worker(cfg.db_path)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -333,7 +337,8 @@ def create_app(
 
         _m3_adapters.load_builtin_adapters()
         try:
-            yield
+            async with pulse_worker_lifespan(pulse_worker, auto_start_loop=False):
+                yield
         finally:
             if narration_store is not None and hasattr(narration_store, 'clear'):
                 result = narration_store.clear()
@@ -1076,7 +1081,8 @@ def create_app(
         }
 
     from .adventures.routes import register_routes
-    register_routes(app, cfg, _store, _context_builder)
+    register_routes(app, cfg, _store, _context_builder, pulse_worker)
+    pulse_preview.register_routes(app, cfg.db_path, pulse_worker)
 
     from .adventures.service import get_adventure
     from .m3.core import adapters as m3_adapters

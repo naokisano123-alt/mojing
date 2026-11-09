@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from ..errors import ApiError
 from ..m3.core import service as instance_service
+from ..m3.pulse.worker import schedule_on_turn_commit
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS adventures (
@@ -69,7 +70,7 @@ def create_adventure(conn, world_id, name, mode, initial_character=None, opening
     conn.execute('''INSERT INTO adventures(id,world_id,name,mode,created_at,character_json,opening_json)
                  VALUES(?,?,?,?,?,?,?)''', (id, world_id, name.strip(), mode, time.time(),
                   json.dumps(state, ensure_ascii=False), json.dumps(opening, ensure_ascii=False) if opening else None))
-    instance_service.create_instance(conn, world_id, adventure_id=id)
+    instance_service.create_instance(conn, world_id, adventure_id=id, world_minute=state['elapsed_minutes'])
     return get_adventure(conn, id)
 
 
@@ -172,6 +173,7 @@ def commit(conn, adventure_id, id, apply_changes=False):
             raise ApiError(422, 'STATE_PROPOSAL_MISSING', '本草案没有可采用的状态提议。')
     result['memory_changes'] = accepted_memory
     result.update(state_before=before, state_after=after, changes_accepted=apply_changes)
+    instance = instance_service.ensure_for_adventure(conn, adventure_id)
     cur = conn.execute('UPDATE adventures SET revision=revision+1,character_json=? WHERE id=? AND revision=?',
                        (json.dumps(after, ensure_ascii=False) if after else None, adventure_id, draft['base_revision']))
     if cur.rowcount != 1:
@@ -180,29 +182,15 @@ def commit(conn, adventure_id, id, apply_changes=False):
                  (adventure_id, run['revision'] + 1, id, draft['action'], json.dumps(result, ensure_ascii=False), time.time()))
     memory.append(conn, adventure_id, run['revision'] + 1, cursor, 'turn', accepted_memory)
     conn.execute("UPDATE adventure_drafts SET status='committed' WHERE adventure_id=? AND id=?", (adventure_id, id))
-    # M3：实例版本与游戏分钟必须与回合确认同事务推进
-    instance = instance_service.ensure_for_adventure(conn, adventure_id)
-    minutes = draft['advance_minutes'] if draft['advance_minutes'] is not None else 0
+    minutes = instance_service.confirmed_minute(after) - instance_service.confirmed_minute(before)
     updated = instance_service.advance(
-        conn,
-        instance['id'],
-        expected_revision=instance['world_revision'],
-        minutes=int(minutes),
+        conn, instance['id'], expected_revision=instance['world_revision'], minutes=minutes,
     )
-    # M3：队列登记必须与前台确认同事务；脉动关闭时 schedule 自身不产生任务
-    try:
-        from ..m3.pulse.worker import schedule_on_turn_commit
-    except ImportError:
-        schedule_on_turn_commit = None
-    if schedule_on_turn_commit is not None:
-        schedule_on_turn_commit(
-            conn,
-            instance_id=updated['id'],
-            adventure_id=adventure_id,
-            adventure_revision=run['revision'] + 1,
-            world_revision=updated['world_revision'],
-            world_minute=updated['world_minute'],
-        )
+    schedule_on_turn_commit(
+        conn, instance_id=updated['id'], adventure_id=adventure_id,
+        adventure_revision=run['revision'] + 1, world_revision=updated['world_revision'],
+        world_minute=updated['world_minute'],
+    )
     return get_adventure(conn, adventure_id)
 
 

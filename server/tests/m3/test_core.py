@@ -75,15 +75,16 @@ def test_commit_advances_instance_minute_and_revision(db_path):
         result = {
             "state_before": run["character"],
             "memory_cursor": 0,
-            "changes_accepted": False,
+            "proposed_changes": {"advance_minutes": 15},
+            "projected_state": {**run["character"], "elapsed_minutes": 15},
         }
         conn.execute(
             "INSERT INTO adventure_drafts(id,adventure_id,action,base_revision,status,created_at,result,advance_minutes) "
-            "VALUES('d1',?, '等待', 0, 'ready', ?, ?, 15)",
+            "VALUES('d1',?, '等待', 0, 'ready', ?, ?, 45)",
             (run["id"], time.time(), json.dumps(result)),
         )
         conn.commit()
-        adventures.commit(conn, run["id"], "d1", False)
+        adventures.commit(conn, run["id"], "d1", True)
         instance = core.for_adventure(conn, run["id"])
         assert instance["world_minute"] == 15
         assert instance["world_revision"] == 1

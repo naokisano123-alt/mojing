@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -30,7 +31,7 @@ class TestPulseQueue(unittest.TestCase):
     def setUp(self) -> None:
         self._tmpdir = tempfile.TemporaryDirectory()
         self.db_path = Path(self._tmpdir.name) / "test_pulse_queue.db"
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             ensure_pulse_schema(conn, ensure_instance_table=True)
             conn.execute(
                 "INSERT INTO world_instances (id, world_id, adventure_id, world_minute, revision) VALUES (?, ?, ?, ?, ?)",
@@ -49,7 +50,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_enqueue_idempotency_and_completed_never_reruns(self) -> None:
         """验收：相同任务只完成一次，已完成任务再次登记不重复执行。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             job1 = enqueue(
                 conn,
                 {
@@ -111,7 +112,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_consecutive_turns_coalesce_pending_advance_jobs(self) -> None:
         """验收：连续回合可合并待办为更新的已确认时钟目标与基准版本，且旧/新幂等键均不重复执行。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             j1 = enqueue(
                 conn,
                 {
@@ -173,7 +174,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_multi_connection_contention_atomic_claim(self) -> None:
         """验收：多连接争抢同一条待办任务时，只有一个连接能成功领取。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             enqueue(
                 conn,
                 {
@@ -207,7 +208,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_lease_expiration_recovery_and_stale_worker_commit_rejected(self) -> None:
         """验收：租约过期后被新 Worker 回收接管，旧 Worker 即使拿到模型响应也绝不能提交。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             job = enqueue(
                 conn,
                 {
@@ -248,7 +249,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_retry_exponential_backoff_and_max_attempts_failure(self) -> None:
         """验收：失败重试退避与达到最大重试次数后归档为 failed。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             job = enqueue(
                 conn,
                 {
@@ -303,7 +304,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_wait_for_model_reclaim_and_cancel_transitions(self) -> None:
         """验收：等待模型、唤醒恢复、过期显式回收与取消语义。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             job = enqueue(
                 conn,
                 {
@@ -354,7 +355,7 @@ class TestPulseQueue(unittest.TestCase):
 
     def test_queue_rejects_credential_storage_and_redacts_errors(self) -> None:
         """验收：队列严禁写入 API Key、会话 ID 或密钥请求头，错误信息自动脱敏。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn, conn:
             with self.assertRaises(PulseError) as ctx1:
                 enqueue(
                     conn,

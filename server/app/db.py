@@ -6,9 +6,8 @@
 
 from __future__ import annotations
 
-import importlib
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Iterator
 
@@ -73,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id, chunk_inde
 def init_db(path: Path | str) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(path) as conn:
+    with closing(sqlite3.connect(path)) as conn:
         conn.executescript(SCHEMA)
         _ensure_columns(conn)
         from .lore_entries.schema import ensure_lore_entries_schema
@@ -105,17 +104,13 @@ def init_db(path: Path | str) -> None:
         from .m3.core.schema import ensure_schema as ensure_m3_schema
 
         ensure_m3_schema(conn)
-        # 三个 M3 模块的表由各自 ensure 函数创建；未合并时 ImportError 直接跳过
-        for module_name, func_name in (
-            ('.m3.events.schema', 'ensure_events_schema'),
-            ('.m3.knowledge.schema', 'ensure_knowledge_schema'),
-            ('.m3.pulse.schema', 'ensure_pulse_schema'),
-        ):
-            try:
-                module = importlib.import_module(module_name, __package__)
-                getattr(module, func_name)(conn)
-            except ImportError:
-                continue
+        from .m3.events.schema import ensure_events_schema
+        from .m3.knowledge.schema import ensure_knowledge_schema
+        from .m3.pulse.schema import ensure_pulse_schema
+
+        ensure_events_schema(conn)
+        ensure_knowledge_schema(conn)
+        ensure_pulse_schema(conn, ensure_instance_table=False)
         conn.commit()
 
 

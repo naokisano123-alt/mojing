@@ -12,7 +12,9 @@ from ..narration_context.types import ContextError, safe_u16_truncate
 from . import item_descriptions, memory, scenario, service
 
 
-def register_routes(app, cfg, get_store, get_builder):
+def register_routes(app, cfg, get_store, get_builder, pulse_worker):
+    from ..m3.core import pulse_preview, service as instances
+    from ..m3.pulse.queue import resume_waiting_jobs
     from .checkpoints import register_checkpoint_routes
     register_checkpoint_routes(app, cfg)
 
@@ -111,9 +113,21 @@ def register_routes(app, cfg, get_store, get_builder):
         return Response(status_code=204)
 
     @app.post('/api/v1/adventures/{adventure_id}/drafts/{draft_id}/commit')
-    def commit_draft(adventure_id: str, draft_id: str, payload: dict | None = None):
+    async def commit_draft(adventure_id: str, draft_id: str, payload: dict | None = None):
+        active_instance = None
         with db(cfg.db_path) as conn:
-            return service.commit(conn, adventure_id, draft_id, (payload or {}).get('apply_changes', False))
+            run = service.commit(conn, adventure_id, draft_id, (payload or {}).get('apply_changes', False))
+            if run['mode'] == 'fake':
+                instance = instances.for_adventure(conn, adventure_id)
+                config = conn.execute(
+                    'SELECT enabled,paused FROM pulse_instance_configs WHERE instance_id=?', (instance['id'],)
+                ).fetchone()
+                if config and config['enabled'] and not config['paused']:
+                    active_instance = instance['id']
+                    resume_waiting_jobs(conn, active_instance)
+        if active_instance:
+            pulse_preview.activate(pulse_worker, active_instance)
+        return run
 
     @app.post('/api/v1/adventures/{adventure_id}/drafts')
     async def prepare(adventure_id: str, payload: dict, http_request: Request):

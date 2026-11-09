@@ -37,31 +37,26 @@ CREATE TABLE IF NOT EXISTS m3_model_usage (
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    from .service import create_instance
-
     """幂等建表 + 旧旅程补实例。重复调用不产生重复行。"""
-    conn.executescript(SCHEMA)
+    from .service import ensure_for_adventure
+
+    for statement in SCHEMA.split(";"):
+        if statement.strip():
+            conn.execute(statement)
     columns = {row[1] for row in conn.execute('PRAGMA table_info(world_instances)')}
     if 'revision' not in columns and 'world_revision' in columns:
-        # 旧版 DSH 分支用 world_revision 命名，按契约统一改成 revision
-        conn.execute("ALTER TABLE world_instances ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
-        conn.execute("UPDATE world_instances SET revision = world_revision")
+        conn.execute("ALTER TABLE world_instances RENAME COLUMN world_revision TO revision")
     conn.execute(
         "INSERT OR REPLACE INTO m3_schema_meta(key, value) VALUES('version', ?)",
         (SCHEMA_VERSION,),
     )
     missing = conn.execute(
         """
-        SELECT a.id AS adventure_id, a.world_id AS world_id, a.revision AS revision
+        SELECT a.id
         FROM adventures a
         LEFT JOIN world_instances i ON i.adventure_id = a.id
         WHERE i.id IS NULL
         """
     ).fetchall()
     for row in missing:
-        create_instance(
-            conn,
-            row["world_id"] if hasattr(row, "keys") else row[1],
-            adventure_id=row["adventure_id"] if hasattr(row, "keys") else row[0],
-            world_revision=int(row["revision"] if hasattr(row, "keys") else row[2]),
-        )
+        ensure_for_adventure(conn, row[0])

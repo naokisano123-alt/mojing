@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import json
 import sqlite3
 import tempfile
@@ -668,7 +669,7 @@ class KnowledgeServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "coexist.db"
             init_db(db_path)
-            with sqlite3.connect(db_path) as disk_conn:
+            with closing(sqlite3.connect(db_path)) as disk_conn, disk_conn:
                 disk_conn.row_factory = sqlite3.Row
                 ensure_knowledge_schema(disk_conn)
                 disk_conn.execute(
@@ -692,31 +693,11 @@ class KnowledgeServiceTests(unittest.TestCase):
                 }
                 m2_memory.append(disk_conn, "adv_co", 1, 0, "turn", [m2_secret_change])
 
-                # 模拟外部事件模块建立的 world_events 表
-                disk_conn.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS world_events (
-                        event_id TEXT PRIMARY KEY,
-                        instance_id TEXT NOT NULL,
-                        title TEXT NOT NULL,
-                        created_minute INTEGER NOT NULL,
-                        status TEXT NOT NULL
-                    )
-                    """
-                )
                 create_instance_fixture(disk_conn, "inst_co", world_id="w_co", adventure_id="adv_co", world_minute=45)
-                # 集成修正：真实事件模块的 world_events 有更多 NOT NULL 列
-                columns = {row[1] for row in disk_conn.execute("PRAGMA table_info(world_events)")}
-                if "kind" in columns:
-                    disk_conn.execute(
-                        "INSERT INTO world_events(instance_id,event_id,kind,title,description,location,scope,stage,status,created_minute,updated_minute) "
-                        "VALUES('inst_co','ext_evt_1','thread','外部事件表主线','外部模块写入','北境','local','active','active',12,12)"
-                    )
-                else:
-                    disk_conn.execute(
-                        "INSERT INTO world_events(event_id, instance_id, title, created_minute, status) "
-                        "VALUES ('ext_evt_1', 'inst_co', '外部事件表主线', 12, 'active')"
-                    )
+                disk_conn.execute(
+                    "INSERT INTO world_events(instance_id,event_id,kind,title,description,location,scope,stage,status,created_minute,updated_minute) "
+                    "VALUES('inst_co','ext_evt_1','thread','外部事件表主线','外部模块写入','北境','local','active','active',12,12)"
+                )
 
                 # M3 知识模块直接识别 world_events 中的 ext_evt_1
                 record_transmission(
@@ -796,7 +777,7 @@ class KnowledgeServiceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "test.db"
             init_db(db_path)
-            with sqlite3.connect(db_path) as disk_conn:
+            with closing(sqlite3.connect(db_path)) as disk_conn, disk_conn:
                 disk_conn.row_factory = sqlite3.Row
                 ensure_knowledge_schema(disk_conn)
                 disk_conn.execute(

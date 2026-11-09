@@ -327,7 +327,6 @@ class PulseBudgetManager:
             FROM pulse_usage_ledger
             WHERE instance_id = ?
               AND game_day = ?
-              AND potentially_billed = 1
             """,
             (instance_id, game_day),
         ).fetchone()
@@ -473,7 +472,7 @@ class PulseBudgetManager:
         comp_toks = max(0, int(evidence.completion_tokens))
         total_toks = max(prompt_toks + comp_toks, int(evidence.total_tokens)) if calls_count > 0 else 0
         source = "actual" if evidence.usage_source == "actual" else "estimated"
-        billed_flag = 1 if (evidence.potentially_billed or evidence.outcome == "succeeded") else 0
+        billed_flag = int(evidence.potentially_billed)
 
         conn.execute(
             """
@@ -503,7 +502,7 @@ class PulseBudgetManager:
             ),
         )
 
-        if billed_flag:
+        if calls_count:
             conn.execute(
                 """
                 UPDATE pulse_instance_configs

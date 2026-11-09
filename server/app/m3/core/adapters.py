@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import importlib
 from typing import Any, Protocol, runtime_checkable
 
 from ...errors import ApiError
@@ -76,33 +75,15 @@ def restore_all(
     new_instance_id: str,
     world_id: str,
 ) -> None:
-    for name, payload in (domain_snapshots or {}).items():
+    for name, payload in sorted(domain_snapshots.items()):
         adapter = _REGISTRY.get(name)
         if adapter is None:
-            continue
+            raise ApiError(422, "SNAPSHOT_DOMAIN_UNSUPPORTED", "此版本无法恢复该存档的世界状态。")
         adapter.restore(conn, payload, new_instance_id=new_instance_id, world_id=world_id)
 
 
 def load_builtin_adapters() -> None:
-    """尝试加载真实模块；不存在则保持空注册表（不报错）。"""
-    try:
-        from . import integration
+    from .integration import builtin_adapters
 
-        for adapter in integration.builtin_adapters():
-            register_adapter(adapter)
-    except Exception:
-        pass
-    try:
-        module = importlib.import_module("app.m3.events")
-        factory = getattr(module, "adapter", None)
-        if factory is not None:
-            register_adapter(factory())
-    except Exception:
-        pass
-    try:
-        module = importlib.import_module("app.m3.knowledge")
-        factory = getattr(module, "adapter", None)
-        if factory is not None:
-            register_adapter(factory())
-    except Exception:
-        pass
+    for adapter in builtin_adapters():
+        register_adapter(adapter)

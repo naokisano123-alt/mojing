@@ -16,6 +16,7 @@ import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
+import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -595,7 +596,10 @@ export function AdventureJournal({
             onToggle={event => setNewsOpen(event.currentTarget.open)}
           >
             <summary>世界消息 · 只显示你有渠道得知的消息</summary>
-            {newsOpen && <WorldKnowledgePanel adventureId={run.id} />}
+            {newsOpen && <>
+              {run.mode === "fake" && <PulsePreview key={run.id} adventureId={run.id} />}
+              <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at} />
+            </>}
           </details>
         </>
       )}

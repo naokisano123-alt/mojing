@@ -124,4 +124,4 @@ M0使用浏览器localStorage键mojing-m0-v1；M1使用SQLite，二者隔离。�
 
 ## 当前进度
 
-M3 已进入架构审查与协作交接。见 [当前状态](docs/PROJECT_STATUS.md)、[M3 总纲](docs/M3_DESIGN_DRAFT.md)、[技术审查](docs/reports/codex-m3-architecture-review.md) 和 [本轮任务](docs/collaboration/M3_WAVE1.md)。M2 历史交付见 [M2 验收](docs/M2_ACCEPTANCE.md)。
+M3 首轮已接入世界实例、事件账本、玩家消息与可选的无费用脉动演示。见 [当前状态](docs/PROJECT_STATUS.md)、[M3 总纲](docs/M3_DESIGN_DRAFT.md)、[集成验收](docs/reports/codex-m3-wave1-integration.md) 和 [本轮任务](docs/collaboration/M3_WAVE1.md)。M2 历史交付见 [M2 验收](docs/M2_ACCEPTANCE.md)。

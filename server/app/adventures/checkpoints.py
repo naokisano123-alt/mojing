@@ -39,6 +39,7 @@ def checkpoint_dict(row):
     result = dict(row)
     result['character'] = json.loads(result.pop('character_json') or 'null')
     result.pop('request_id', None)
+    result.pop('instance_snapshot', None)
     return result
 
 
@@ -105,7 +106,7 @@ def restore(conn, checkpoint_id, name, request_id):
             world_id=source['world_id'],
         )
     else:
-        instance_service.create_instance(conn, source['world_id'], adventure_id=id)
+        instance_service.ensure_for_adventure(conn, id)
     conn.execute("INSERT INTO adventure_turns SELECT ?,sequence,'inherited:'||sequence,action,result,created_at FROM adventure_turns WHERE adventure_id=? AND sequence<=?",
                  (id, source['id'], checkpoint['revision']))
     copied = conn.execute("""INSERT INTO adventure_memory_events
@@ -121,7 +122,7 @@ def register_checkpoint_routes(app, cfg):
     def list_checkpoints(adventure_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
         with db(cfg.db_path) as conn:
             service.get_adventure(conn, adventure_id)
-            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT * FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
+            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT id,adventure_id,name,revision,character_json,mode,created_at,memory_cursor FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
 
     @app.post('/api/v1/adventures/{adventure_id}/checkpoints', status_code=201)
     def save(adventure_id: str, payload: dict):

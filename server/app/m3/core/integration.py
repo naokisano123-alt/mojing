@@ -8,35 +8,27 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import events, knowledge
+
 
 class EventsAdapter:
     name = "events"
 
-    def __init__(self) -> None:
-        from ...m3 import events
-
-        self._events = events
-
     def snapshot(self, conn: Any, instance_id: str) -> dict[str, Any]:
-        return self._events.snapshot(conn, instance_id)
+        return events.snapshot(conn, instance_id)
 
     def restore(self, conn: Any, snapshot: Any, *, new_instance_id: str, world_id: str) -> None:
-        self._events.restore(conn, new_instance_id, snapshot)
+        events.restore(conn, new_instance_id, snapshot)
 
 
 class KnowledgeAdapter:
     name = "knowledge"
 
-    def __init__(self) -> None:
-        from ...m3 import knowledge
-
-        self._knowledge = knowledge
-
     def snapshot(self, conn: Any, instance_id: str) -> dict[str, Any]:
-        return self._knowledge.snapshot(conn, instance_id)
+        return knowledge.snapshot(conn, instance_id)
 
     def restore(self, conn: Any, snapshot: Any, *, new_instance_id: str, world_id: str) -> None:
-        self._knowledge.restore(conn, new_instance_id, snapshot)
+        knowledge.restore(conn, new_instance_id, snapshot)
 
     def list_known(
         self,
@@ -47,20 +39,11 @@ class KnowledgeAdapter:
         before: str | int | None = None,
         limit: int = 30,
     ) -> dict[str, Any]:
-        page = self._knowledge.list_known(
+        page = knowledge.list_known(
             conn, instance_id, holder_id, before=before, limit=limit
         )
         return {"items": list(page.get("items", [])), "next_before": page.get("next_before")}
 
 
 def builtin_adapters() -> list[Any]:
-    adapters: list[Any] = []
-    try:
-        adapters.append(EventsAdapter())
-    except Exception:
-        pass
-    try:
-        adapters.append(KnowledgeAdapter())
-    except Exception:
-        pass
-    return adapters
+    return [EventsAdapter(), KnowledgeAdapter()]

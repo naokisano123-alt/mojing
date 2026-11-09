@@ -1628,7 +1628,9 @@ def restore(
 
         for eid, expected_max_rev in event_revisions_expected.items():
             actual_revs = sorted(revisions_by_event.get(eid, ()))
-            if actual_revs != list(range(1, expected_max_rev + 1)):
+            if len(actual_revs) != expected_max_rev or any(
+                revision != expected for expected, revision in enumerate(actual_revs, 1)
+            ):
                 raise SnapshotRestoreError(
                     "SNAPSHOT_REVISION_GAP",
                     f"事件 {eid} 的修订历史不连续或与当前版本 ({expected_max_rev}) 不一致: {actual_revs}。",

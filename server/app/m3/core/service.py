@@ -45,6 +45,12 @@ def _dict(row: Any) -> dict[str, Any]:
     }
 
 
+def confirmed_minute(character_state: str | dict[str, Any] | None) -> int:
+    if isinstance(character_state, str):
+        character_state = json.loads(character_state)
+    return (character_state or {}).get("elapsed_minutes", 0)
+
+
 def create_instance(
     conn: sqlite3.Connection,
     world_id: str,
@@ -95,14 +101,14 @@ def for_adventure(conn: sqlite3.Connection, adventure_id: str) -> dict[str, Any]
 
 
 def ensure_for_adventure(conn: sqlite3.Connection, adventure_id: str) -> dict[str, Any]:
-    """旧旅程兼容接入：缺失时按当前冒险 revision 补一个实例（分钟从 0 起）。"""
+    """缺失时从旅程已确认的版本与时间补建实例。"""
     row = conn.execute(
         "SELECT * FROM world_instances WHERE adventure_id = ?", (adventure_id,)
     ).fetchone()
     if row is not None:
         return _dict(row)
     adventure = conn.execute(
-        "SELECT id, world_id, revision FROM adventures WHERE id = ?", (adventure_id,)
+        "SELECT id, world_id, revision, character_json FROM adventures WHERE id = ?", (adventure_id,)
     ).fetchone()
     if adventure is None:
         raise ApiError(404, "ADVENTURE_NOT_FOUND", "冒险记录不存在。")
@@ -110,7 +116,8 @@ def ensure_for_adventure(conn: sqlite3.Connection, adventure_id: str) -> dict[st
         conn,
         _value(adventure, "world_id", 1),
         adventure_id=adventure_id,
-        revision=int(_value(adventure, "revision", 2) or 0),
+        world_revision=int(_value(adventure, "revision", 2) or 0),
+        world_minute=confirmed_minute(_value(adventure, "character_json", 3)),
     )
 
 
