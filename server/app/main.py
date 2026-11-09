@@ -46,7 +46,7 @@ from .narration.core import (
 )
 from .lore_search.service import search_chunks
 from .lore_search.types import SearchValidationError, SearchWorldNotFoundError
-from .parsers.extractor import extract_document
+from .parsers.extractor import docx_available, extract_document
 from .parsers.types import ParseError, ParseLimits
 
 MODEL_REQUEST_TIMEOUT = 60.0
@@ -947,13 +947,12 @@ def create_app(
 
     @app.get("/api/v1/capabilities")
     def capabilities() -> dict[str, Any]:
+        formats = sorted(suffix for suffix in ALLOWED_SUFFIXES if suffix != ".docx" or docx_available())
         return {
-            "formats": sorted(ALLOWED_SUFFIXES),
+            "formats": formats,
             "max_bytes": {
-                ".txt": cfg.max_upload_bytes,
-                ".md": cfg.max_upload_bytes,
-                ".pdf": cfg.max_doc_bytes,
-                ".docx": cfg.max_doc_bytes,
+                suffix: cfg.max_upload_bytes if suffix in TEXT_SUFFIXES else cfg.max_doc_bytes
+                for suffix in formats
             },
             "search": True,
         }

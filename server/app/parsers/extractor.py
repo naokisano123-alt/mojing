@@ -8,9 +8,9 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
-from .docx import parse_docx
 from .pdf import parse_pdf
 from .types import (
     ExtractionLimitError,
@@ -26,6 +26,26 @@ _SUPPORTED_EXTENSIONS = {
     ".txt": "text/plain",
     ".md": "text/markdown",
 }
+
+
+@lru_cache(maxsize=1)
+def _load_docx_parser():
+    try:
+        from .docx import parse_docx as parser
+    except (ImportError, OSError):
+        return None
+    return parser
+
+
+def docx_available() -> bool:
+    return _load_docx_parser() is not None
+
+
+def parse_docx(data: bytes, filename: str, limits: ParseLimits) -> ParsedDocument:
+    parser = _load_docx_parser()
+    if parser is None:
+        raise ParseError(503, "DOCX_UNAVAILABLE", "当前设备无法加载 Word 解析组件。请另存为 TXT 或 Markdown 后导入。")
+    return parser(data, filename, limits)
 
 
 def extract_document(

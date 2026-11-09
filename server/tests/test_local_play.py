@@ -34,3 +34,15 @@ def test_loopback_play_protects_both_game_and_api(tmp_path):
         assert denied.json()["error"]["code"] == "MODEL_HTTPS_REQUIRED"
         config["base_url"] = "https://model.example/v1"
         assert browser.post("/api/v1/model-sessions", headers={"Origin": LOCAL_ORIGIN}, json=config).status_code == 201
+
+
+def test_optional_word_parser_does_not_block_play(client, monkeypatch):
+    monkeypatch.setattr("app.parsers.extractor._load_docx_parser", lambda: None)
+    capabilities = client.get("/api/v1/capabilities").json()
+    assert ".docx" not in capabilities["formats"]
+    assert ".pdf" in capabilities["formats"]
+    world = client.post("/api/v1/worlds", json={"name": "旅程"}).json()
+    result = client.post(f"/api/v1/worlds/{world['id']}/documents",
+                         files={"file": ("设定.docx", b"example")})
+    assert result.status_code == 503
+    assert result.json()["error"]["code"] == "DOCX_UNAVAILABLE"
