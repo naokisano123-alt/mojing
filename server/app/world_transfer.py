@@ -18,6 +18,7 @@ from .adventures import scenario
 from .adventures.memory import validate_event
 from .adventures.state import character
 from .errors import ApiError
+from .m3.core import service as instance_service
 from .world_export import _write_json
 
 VERSION = 1
@@ -437,6 +438,14 @@ def import_transfer(conn, uploads, max_documents):
         })
         if saves is not None:
             _copy_saves(conn, world_id, save_records, {**ids, **source_ids})
+            # M3：每个导入的旅程都要有独立世界实例（版本按存档回填，分钟从 0 起）
+            for run in save_records.get("adventures", []):
+                instance_service.create_instance(
+                    conn,
+                    world_id,
+                    adventure_id=ids["adventures"][run["id"]],
+                    world_revision=int(run.get("revision") or 0),
+                )
         return world_id
     except (BadZipFile, zlib.error, ValueError, sqlite3.IntegrityError,
             RuntimeError, TypeError, KeyError, AttributeError, OverflowError) as exc:

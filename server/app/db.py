@@ -99,6 +99,11 @@ def init_db(path: Path | str) -> None:
         conn.executescript(MEMORY_SCHEMA)
         from .adventures.item_descriptions import SCHEMA as ITEM_DESCRIPTION_SCHEMA
         conn.executescript(ITEM_DESCRIPTION_SCHEMA)
+        if 'instance_snapshot' not in {row[1] for row in conn.execute('PRAGMA table_info(adventure_checkpoints)')}:
+            conn.execute('ALTER TABLE adventure_checkpoints ADD COLUMN instance_snapshot TEXT')
+        from .m3.core.schema import ensure_schema as ensure_m3_schema
+
+        ensure_m3_schema(conn)
         conn.commit()
 
 
