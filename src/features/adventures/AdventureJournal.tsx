@@ -104,7 +104,7 @@ export function AdventureJournal({
     setOpeningId("");
     setAdvanceHours(undefined);
     void api.listOpenings?.(worldId, controller.signal).then(data => {
-      if (valid(generation)) setOpenings(data.items);
+      if (valid(generation) && Array.isArray(data.items)) setOpenings(data.items);
     }).catch(() => { /* Older endpoints still allow freeform creation. */ });
     setShowCreate(false);
     setRuns([]);

@@ -58,7 +58,7 @@ describe('WorldLoreView 装配', () => {
         if (url.endsWith('/model-sessions')) {
           return json({ session_id: 'session', model: 'test', expires_at: '2099-01-01T00:00:00Z' }, 201);
         }
-        if (url.split('?')[0].endsWith('/adventures')) {
+        if (['/adventures', '/openings'].some(path => url.split('?')[0].endsWith(path))) {
           return json({ items: [] });
         }
         if (url.includes('/lore-entries')) {

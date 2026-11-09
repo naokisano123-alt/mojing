@@ -38,6 +38,7 @@ export function OpeningEditor({ worldId }: { worldId: string }) {
   useEffect(() => {
     const controller = new AbortController();
     void openingApi.settings(worldId, controller.signal).then(data => {
+      if (!Array.isArray(data.items)) throw new Error("开局列表格式无效。");
       if (!controller.signal.aborted) { setItems(data.items); setLoaded(true); }
     }).catch(failure => {
       if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "开局读取失败。");
