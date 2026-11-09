@@ -41,7 +41,7 @@ def test_migration_is_idempotent(db_path):
         count = conn.execute("SELECT COUNT(*) FROM world_instances").fetchone()[0]
         row = conn.execute("SELECT * FROM world_instances WHERE adventure_id='a1'").fetchone()
     assert count == 1
-    assert row["world_revision"] == 3
+    assert row["revision"] == 3
     assert row["world_minute"] == 0
 
 

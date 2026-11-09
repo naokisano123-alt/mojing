@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -104,6 +105,17 @@ def init_db(path: Path | str) -> None:
         from .m3.core.schema import ensure_schema as ensure_m3_schema
 
         ensure_m3_schema(conn)
+        # 三个 M3 模块的表由各自 ensure 函数创建；未合并时 ImportError 直接跳过
+        for module_name, func_name in (
+            ('.m3.events.schema', 'ensure_events_schema'),
+            ('.m3.knowledge.schema', 'ensure_knowledge_schema'),
+            ('.m3.pulse.schema', 'ensure_pulse_schema'),
+        ):
+            try:
+                module = importlib.import_module(module_name, __package__)
+                getattr(module, func_name)(conn)
+            except ImportError:
+                continue
         conn.commit()
 
 

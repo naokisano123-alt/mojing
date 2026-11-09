@@ -18,10 +18,10 @@ CREATE TABLE IF NOT EXISTS world_instances (
     world_id      TEXT NOT NULL REFERENCES worlds(id),
     adventure_id  TEXT UNIQUE REFERENCES adventures(id),
     world_minute  INTEGER NOT NULL DEFAULT 0,
-    world_revision INTEGER NOT NULL DEFAULT 0,
+    revision      INTEGER NOT NULL DEFAULT 0,
     canon_version TEXT,
-    created_at    REAL NOT NULL,
-    updated_at    REAL NOT NULL
+    created_at    REAL NOT NULL DEFAULT 0,
+    updated_at    REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_world_instances_world ON world_instances(world_id);
 CREATE TABLE IF NOT EXISTS m3_schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -41,6 +41,11 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
 
     """幂等建表 + 旧旅程补实例。重复调用不产生重复行。"""
     conn.executescript(SCHEMA)
+    columns = {row[1] for row in conn.execute('PRAGMA table_info(world_instances)')}
+    if 'revision' not in columns and 'world_revision' in columns:
+        # 旧版 DSH 分支用 world_revision 命名，按契约统一改成 revision
+        conn.execute("ALTER TABLE world_instances ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE world_instances SET revision = world_revision")
     conn.execute(
         "INSERT OR REPLACE INTO m3_schema_meta(key, value) VALUES('version', ?)",
         (SCHEMA_VERSION,),

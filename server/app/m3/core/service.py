@@ -29,7 +29,10 @@ def _dict(row: Any) -> dict[str, Any]:
     if row is None:
         return {}
     if hasattr(row, "keys"):
-        return {key: row[key] for key in row.keys()}
+        data = {key: row[key] for key in row.keys()}
+        # 数据库列名按契约是 revision，对外统一暴露 world_revision
+        data["world_revision"] = data.pop("revision", 0)
+        return data
     return {
         "id": row[0],
         "world_id": row[1],
@@ -67,7 +70,7 @@ def create_instance(
     conn.execute(
         """
         INSERT INTO world_instances
-            (id, world_id, adventure_id, world_minute, world_revision, canon_version, created_at, updated_at)
+            (id, world_id, adventure_id, world_minute, revision, canon_version, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (instance_id, world_id, adventure_id, world_minute, int(world_revision), canon_version, now, now),
@@ -107,7 +110,7 @@ def ensure_for_adventure(conn: sqlite3.Connection, adventure_id: str) -> dict[st
         conn,
         _value(adventure, "world_id", 1),
         adventure_id=adventure_id,
-        world_revision=int(_value(adventure, "revision", 2) or 0),
+        revision=int(_value(adventure, "revision", 2) or 0),
     )
 
 
@@ -131,15 +134,15 @@ def advance(
     now = time.time()
     if expected_revision is None:
         cur = conn.execute(
-            "UPDATE world_instances SET world_revision = world_revision + 1, "
+            "UPDATE world_instances SET revision = revision + 1, "
             "world_minute = world_minute + ?, updated_at = ? WHERE id = ?",
             (minutes, now, instance_id),
         )
     else:
         cur = conn.execute(
-            "UPDATE world_instances SET world_revision = world_revision + 1, "
+            "UPDATE world_instances SET revision = revision + 1, "
             "world_minute = world_minute + ?, updated_at = ? "
-            "WHERE id = ? AND world_revision = ?",
+            "WHERE id = ? AND revision = ?",
             (minutes, now, instance_id, int(expected_revision)),
         )
     if cur.rowcount != 1:
@@ -188,7 +191,7 @@ def restore(
     if existing is not None:
         instance_id = existing["id"] if hasattr(existing, "keys") else existing[0]
         conn.execute(
-            "UPDATE world_instances SET world_minute = ?, world_revision = ?, canon_version = ?, "
+            "UPDATE world_instances SET world_minute = ?, revision = ?, canon_version = ?, "
             "world_id = ?, updated_at = ? WHERE id = ?",
             (minutes, revision_value, data.get("canon_version"), world_id, time.time(), instance_id),
         )

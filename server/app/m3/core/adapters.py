@@ -86,6 +86,13 @@ def restore_all(
 def load_builtin_adapters() -> None:
     """尝试加载真实模块；不存在则保持空注册表（不报错）。"""
     try:
+        from . import integration
+
+        for adapter in integration.builtin_adapters():
+            register_adapter(adapter)
+    except Exception:
+        pass
+    try:
         module = importlib.import_module("app.m3.events")
         factory = getattr(module, "adapter", None)
         if factory is not None:

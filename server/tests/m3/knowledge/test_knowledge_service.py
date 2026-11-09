@@ -695,7 +695,7 @@ class KnowledgeServiceTests(unittest.TestCase):
                 # 模拟外部事件模块建立的 world_events 表
                 disk_conn.execute(
                     """
-                    CREATE TABLE world_events (
+                    CREATE TABLE IF NOT EXISTS world_events (
                         event_id TEXT PRIMARY KEY,
                         instance_id TEXT NOT NULL,
                         title TEXT NOT NULL,
@@ -705,9 +705,18 @@ class KnowledgeServiceTests(unittest.TestCase):
                     """
                 )
                 create_instance_fixture(disk_conn, "inst_co", world_id="w_co", adventure_id="adv_co", world_minute=45)
-                disk_conn.execute(
-                    "INSERT INTO world_events(event_id, instance_id, title, created_minute, status) VALUES ('ext_evt_1', 'inst_co', '外部事件表主线', 12, 'active')"
-                )
+                # 集成修正：真实事件模块的 world_events 有更多 NOT NULL 列
+                columns = {row[1] for row in disk_conn.execute("PRAGMA table_info(world_events)")}
+                if "kind" in columns:
+                    disk_conn.execute(
+                        "INSERT INTO world_events(instance_id,event_id,kind,title,description,location,scope,stage,status,created_minute,updated_minute) "
+                        "VALUES('inst_co','ext_evt_1','thread','外部事件表主线','外部模块写入','北境','local','active','active',12,12)"
+                    )
+                else:
+                    disk_conn.execute(
+                        "INSERT INTO world_events(event_id, instance_id, title, created_minute, status) "
+                        "VALUES ('ext_evt_1', 'inst_co', '外部事件表主线', 12, 'active')"
+                    )
 
                 # M3 知识模块直接识别 world_events 中的 ext_evt_1
                 record_transmission(
