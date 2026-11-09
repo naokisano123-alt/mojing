@@ -48,6 +48,7 @@ export interface Draft {
 export interface Detail extends Run {
   turns: Turn[];
   latest_draft: Draft | null;
+  item_descriptions?: Record<string, string>;
 }
 const path = (id: string) => "/adventures/" + encodeURIComponent(id);
 export const adventureApi = {
@@ -70,6 +71,10 @@ export const adventureApi = {
     ),
   detail: (id: string, signal?: AbortSignal, before?: number) =>
     request<Detail>("GET", path(id), { signal, queryParams: { before } }),
+  saveItemDescription: (id: string, name: string, description: string) =>
+    request<{ name: string; description: string }>("PATCH", path(id) + "/item-description", {
+      body: { name, description },
+    }),
   prepare: (
     id: string,
     body: {

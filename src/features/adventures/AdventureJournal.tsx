@@ -37,7 +37,7 @@ export function AdventureJournal({
   const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
   const [initialCoins, setInitialCoins] = useState(0);
   const [initialLocation, setInitialLocation] = useState("起点");
-  const [applyChanges, setApplyChanges] = useState(false);
+  const [acceptedDraft, setAcceptedDraft] = useState<string | null>(null);
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
@@ -48,7 +48,8 @@ export function AdventureJournal({
   const [expanded, setExpanded] = useState(false);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
-  useEffect(() => setApplyChanges(false), [draft?.id]);
+  const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
+  const applyChanges = draftKey !== null && acceptedDraft === draftKey;
   useEffect(() => {
     if (draft?.status === "ready") draftCard.current?.scrollIntoView?.({ block: "start" });
   }, [draft?.id, draft?.status]);
@@ -407,7 +408,18 @@ export function AdventureJournal({
             }}
           />
           {run.character ? (
-            <CharacterCard state={run.character} title="当前角色状态" />
+            <CharacterCard key={run.id} state={run.character} title="当前角色状态"
+              descriptions={run.item_descriptions} disabled={busy}
+              onSaveDescription={async (name, description) => {
+                const generation = epoch.current;
+                const saved = await api.saveItemDescription(run.id, name, description);
+                if (valid(generation)) {
+                  setRun(current => current && {
+                    ...current,
+                    item_descriptions: { ...current.item_descriptions, [saved.name]: saved.description },
+                  });
+                }
+              }} />
           ) : (
             <p className="muted">
               旧旅程未初始化角色，继续仅记录叙事。新建旅程可使用角色状态。
@@ -466,7 +478,7 @@ export function AdventureJournal({
                       type="checkbox"
                       checked={applyChanges}
                       disabled={busy}
-                      onChange={(e) => setApplyChanges(e.target.checked)}
+                      onChange={(e) => setAcceptedDraft(e.target.checked ? draftKey : null)}
                     />
                     采用这份状态提议（默认只保存叙事）
                   </label>

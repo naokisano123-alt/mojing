@@ -8,6 +8,7 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Base64;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
@@ -22,19 +23,31 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.Proxy;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 
 public final class MainActivity extends Activity {
     private static final int CHOOSE_DOCUMENT = 1;
+    private static final int SAVE_WORLD_EXPORT = 2;
+    private static final String PENDING_EXPORT = "pendingWorldExport";
     private static final int BACKGROUND = Color.rgb(23, 30, 29);
     private WebView web;
     private TextView status;
     private boolean pageFailed;
     private ValueCallback<Uri[]> fileSelection;
+    private String pendingWorldExport;
 
     @Override public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) pendingWorldExport = savedInstanceState.getString(PENDING_EXPORT);
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(BACKGROUND);
         if (Build.VERSION.SDK_INT >= 30) {
@@ -91,6 +104,10 @@ public final class MainActivity extends Activity {
             }
 
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (request.isForMainFrame() && "GET".equals(request.getMethod()) && isWorldExport(request.getUrl())) {
+                    chooseExportDestination(request.getUrl());
+                    return true;
+                }
                 return !isGameUri(request.getUrl());
             }
 
@@ -136,6 +153,10 @@ public final class MainActivity extends Activity {
                 return true;
             }
         });
+        web.setDownloadListener((url, userAgent, disposition, mimeType, length) -> {
+            Uri uri = Uri.parse(url);
+            if (isWorldExport(uri)) chooseExportDestination(uri);
+        });
         web.loadUrl(MojingApplication.URL);
     }
 
@@ -144,9 +165,78 @@ public final class MainActivity extends Activity {
             && uri.getPort() == MojingApplication.PORT && uri.getUserInfo() == null;
     }
 
+    private static boolean isWorldExport(Uri uri) {
+        String path = uri.getEncodedPath();
+        String query = uri.getEncodedQuery();
+        return isGameUri(uri) && uri.getFragment() == null && path != null
+            && path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/export")
+            && (query == null || "include_saves=true".equals(query));
+    }
+
+    private void chooseExportDestination(Uri url) {
+        if (pendingWorldExport != null) return;
+        pendingWorldExport = url.toString();
+        String id = url.getPathSegments().get(3).substring(0, 8);
+        String suffix = url.getEncodedQuery() == null ? "-settings.json" : "-with-saves.json";
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType("application/json")
+            .putExtra(Intent.EXTRA_TITLE, "mojing-world-" + id + suffix);
+        try {
+            startActivityForResult(intent, SAVE_WORLD_EXPORT);
+        } catch (ActivityNotFoundException e) {
+            pendingWorldExport = null;
+            Toast.makeText(this, "无法打开系统文件保存界面。", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void saveWorldExport(String url, Uri destination) {
+        if (!isWorldExport(Uri.parse(url)) || !"content".equals(destination.getScheme())) return;
+        MojingApplication app = (MojingApplication) getApplication();
+        app.engine().thenAcceptAsync(password -> {
+            HttpURLConnection connection = null;
+            try {
+                connection = (HttpURLConnection) new URL(url).openConnection(Proxy.NO_PROXY);
+                connection.setConnectTimeout(10000);
+                connection.setReadTimeout(30000);
+                connection.setInstanceFollowRedirects(false);
+                String credentials = Base64.encodeToString(("player:" + password)
+                    .getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+                connection.setRequestProperty("Authorization", "Basic " + credentials);
+                if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+                    throw new IOException("Export request failed");
+                }
+                try (InputStream input = connection.getInputStream();
+                     OutputStream output = app.getContentResolver().openOutputStream(destination, "w")) {
+                    if (output == null) throw new IOException("No export output stream");
+                    byte[] buffer = new byte[16384];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                }
+            } catch (IOException e) {
+                throw new IllegalStateException("World export failed", e);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
+        })
+            .whenComplete((ignored, failure) -> runOnUiThread(() -> Toast.makeText(app,
+                failure == null ? "世界文件已导出。" : "世界文件未能完整保存，请重试。", Toast.LENGTH_LONG).show()));
+    }
+
+    @Override protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putString(PENDING_EXPORT, pendingWorldExport);
+    }
+
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == CHOOSE_DOCUMENT && fileSelection != null) {
+        if (requestCode == SAVE_WORLD_EXPORT) {
+            String url = pendingWorldExport;
+            pendingWorldExport = null;
+            if (resultCode == RESULT_OK && url != null && data != null && data.getData() != null) {
+                saveWorldExport(url, data.getData());
+            }
+        } else if (requestCode == CHOOSE_DOCUMENT && fileSelection != null) {
             ValueCallback<Uri[]> callback = fileSelection;
             fileSelection = null;
             callback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));

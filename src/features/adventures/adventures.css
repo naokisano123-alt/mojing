@@ -164,3 +164,11 @@
 .journal-sources summary { cursor: pointer; min-height: 32px; padding: 5px 0; }
 .journal-sources > div { display: grid; justify-items: start; gap: 4px; }
 .journal-sources button { text-align: left; overflow-wrap: anywhere; }
+
+.item-details { width: 100%; min-width: 0; }
+.item-details summary { cursor: pointer; padding: 6px 0; }
+.item-description { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; }
+.item-details form { display: grid; gap: 8px; }
+.item-details textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; color: var(--text); background: var(--paper); font: inherit; }
+.item-description-actions { display: flex; gap: 10px; flex-wrap: wrap; }

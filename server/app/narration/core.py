@@ -47,6 +47,7 @@ class NarrationRequest:
     character: CharacterState | None = None
     world_intro: str = ""
     suggest_actions: bool = False
+    item_descriptions: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)

@@ -72,11 +72,16 @@ describe('WorldLoreView 装配', () => {
     );
   });
 
-  it('加载世界详情并展示文档列表', async () => {
+  it('加载世界详情并可选是否导出存档', async () => {
+    const user = userEvent.setup();
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
 
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
     expect(screen.getByRole('button', { name: '冒险记录' })).toBeInTheDocument();
+    const download = screen.getByRole('link', { name: '导出世界设定' });
+    expect(download).toHaveAttribute('href', '/api/v1/worlds/w1/export');
+    await user.click(screen.getByRole('checkbox', { name: '一并导出存档' }));
+    expect(download).toHaveAttribute('href', '/api/v1/worlds/w1/export?include_saves=true');
   });
 
   it('四个子页签都能真实挂载', async () => {
