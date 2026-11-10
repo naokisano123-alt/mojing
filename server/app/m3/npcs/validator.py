@@ -1,12 +1,14 @@
-"""M3.4 NPC 自主行动、动态模拟深度评估与结构化提议纯函数校验器（M3 Wave 3）。
+"""M3.4 NPC 自主行动、动态模拟深度评估与结构化提议纯函数校验器（M3 Wave 4）。
 
 核心职责：
 1. `evaluate_npc_depths`：按相关性动态判定近景（`foreground`）、关联（`associated`）、背景（`background`）三档模拟深度，
    输出可测量的数量/字符预算与明确的升降档理由（`promoted` / `demoted` / `unchanged` + `reason_codes` + 中文说明）。
 2. `validate_proposal`：在 SQLite 事务外运行的纯函数校验器（零数据库 I/O、零网络调用），
-   严格校验四种动作类型（`travel`、`conversation_plan`、`shift_change`、`task_progress`）、
+   严格校验八种动作类型（出行 `travel`、留在原处 `stay`、等待 `wait`、无变化 `no_change`、改变计划 `plan_change`、
+   交谈安排 `conversation_plan`、换班 `shift_change`、任务进度 `task_progress`）、
    已确认世界时间约束、实例内已存在因果引用、版本一致性、重复任务拦截，
    并严禁直接修改玩家金钱、背包、属性和玩家知情事实。
+3. `normalize_initial_npc_seed_proposal`：支持从 AI 初始化分析草案接收人物状态、动作安排、关系与推演标记。
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from .types import (
     MAX_NAME_UNITS,
     MAX_NPC_ID_UNITS,
     MAX_OPERATIONS_PER_PROPOSAL,
+    MAX_PLAN_UNITS,
     MAX_ROLE_UNITS,
     MAX_SHIFT_UNITS,
     MAX_TASK_ID_UNITS,
@@ -47,17 +50,21 @@ from .types import (
     MAX_TOPIC_UNITS,
     MIN_ACTION_INTERVAL_BY_TIER,
     MIN_DURATION_BY_ACTION_KIND,
+    NPC_ACTION_KIND_ALIASES,
     NPC_ACTION_KINDS,
     NPC_AVAILABILITY_STATES,
     NPC_DEPTH_TIER_ALIASES,
     NPC_DEPTH_TIER_LABELS_ZH,
+    NPC_GROUNDING_ALIASES,
     NPC_STATUSES,
     PROPOSAL_MODES,
     PROTECTED_PLAYER_KNOWLEDGE_KEYS,
     PROTECTED_PLAYER_LEDGER_KEYS,
     TASK_STATUSES,
+    NpcActionKind,
     NpcDepthEvaluation,
     NpcDepthTier,
+    NpcGroundingKind,
     NpcValidationContext,
     ValidatedNpcActionOp,
     ValidatedNpcProposal,
@@ -67,6 +74,9 @@ _ALLOWED_ROOT_KEYS = frozenset(
     {
         "operations",
         "npc_actions",
+        "npcs",
+        "initial_npcs",
+        "transmissions",
         "mode",
         "kind",
         "summary",
@@ -94,23 +104,35 @@ _ALLOWED_OP_KEYS = frozenset(
         "name",
         "role",
         "identity",
+        "occupation",
         "faction",
         "home_location",
         "location",
+        "current_location",
+        "start_location",
         "from_location",
         "to_location",
         "destination_location",
         "current_activity",
         "activity",
+        "initial_activity",
         "action_kind",
         "current_action_kind",
+        "initial_action_kind",
+        "arrangement",
+        "decision",
         "motivation",
+        "motive",
         "goal",
+        "previous_plan",
+        "new_plan",
+        "plan_summary",
         "depth_tier",
         "depth_reason",
         "status",
         "availability",
         "duration_minutes",
+        "due_in_minutes",
         "next_due_minute",
         "next_update_minute",
         "target_npc_id",
@@ -132,6 +154,12 @@ _ALLOWED_OP_KEYS = frozenset(
         "cause_fact_ids",
         "source_ids",
         "reason",
+        "grounding",
+        "origin",
+        "is_inferred",
+        "relationships",
+        "relations",
+        "known_relations",
         "instance_id",
     }
 )
@@ -256,7 +284,99 @@ def normalize_depth_tier(raw_tier: Any, field_name: str = "depth_tier") -> NpcDe
     return resolved
 
 
-def _check_security_recursive(obj: Any, *, instance_id: str, path: str = "proposal") -> None:
+def normalize_action_kind(raw_kind: Any, field_name: str = "action_kind") -> NpcActionKind:
+    if not isinstance(raw_kind, str) or not raw_kind.strip():
+        raise NpcValidationError(
+            "VALIDATION_ERROR",
+            f"字段 {field_name} 必须为非空字符串。",
+            {"field": field_name},
+        )
+    cleaned = raw_kind.strip()
+    resolved = NPC_ACTION_KIND_ALIASES.get(cleaned.lower()) or NPC_ACTION_KIND_ALIASES.get(cleaned)
+    if resolved is None or resolved not in NPC_ACTION_KINDS:
+        raise NpcValidationError(
+            "INVALID_ACTION_KIND",
+            f"{field_name} ({cleaned!r}) 不受支持，仅支持 {sorted(NPC_ACTION_KINDS)}。",
+            {"action_kind": cleaned},
+        )
+    return resolved
+
+
+def _normalize_grounding(raw_op: Mapping[str, Any], field_prefix: str) -> NpcGroundingKind:
+    if raw_op.get("is_inferred") is True:
+        return "inferred"
+    raw_val = raw_op.get("grounding") if raw_op.get("grounding") is not None else raw_op.get("origin")
+    if raw_val is None:
+        return "canon"
+    if not isinstance(raw_val, str) or not raw_val.strip():
+        raise NpcValidationError(
+            "VALIDATION_ERROR",
+            f"{field_prefix}.grounding 必须为非空字符串。",
+            {"field": f"{field_prefix}.grounding"},
+        )
+    cleaned = raw_val.strip()
+    resolved = NPC_GROUNDING_ALIASES.get(cleaned.lower()) or NPC_GROUNDING_ALIASES.get(cleaned)
+    if resolved is None:
+        raise NpcValidationError(
+            "INVALID_GROUNDING",
+            f"{field_prefix}.grounding ({cleaned!r}) 无效，仅支持 'canon' 或 'inferred'。",
+            {"grounding": cleaned},
+        )
+    return resolved
+
+
+def _normalize_relationships(raw_rels: Any, field_name: str) -> tuple[dict[str, Any], ...]:
+    if raw_rels is None:
+        return ()
+    items: list[dict[str, Any]] = []
+    if isinstance(raw_rels, Mapping):
+        for target_id, rel_desc in raw_rels.items():
+            tid = _require_non_empty_str(str(target_id), f"{field_name}.target_npc_id", MAX_NPC_ID_UNITS)
+            if tid.lower() == "player":
+                raise PlayerKnowledgeProtectedError(field_name, "NPC 初始关系表不得直接修改受保护的 player 个人账本。")
+            if isinstance(rel_desc, Mapping):
+                rel_text = _require_non_empty_str(
+                    rel_desc.get("relation") or rel_desc.get("summary") or rel_desc.get("attitude") or "关联",
+                    f"{field_name}[{tid}].relation",
+                    160,
+                )
+                items.append({"target_npc_id": tid, "relation": rel_text})
+            else:
+                rel_text = _require_non_empty_str(str(rel_desc), f"{field_name}[{tid}]", 160)
+                items.append({"target_npc_id": tid, "relation": rel_text})
+        return tuple(items)
+
+    if not isinstance(raw_rels, (list, tuple)):
+        raise NpcValidationError("VALIDATION_ERROR", f"{field_name} 必须为数组或对象。", {"field": field_name})
+    if len(raw_rels) > 20:
+        raise NpcValidationError("VALIDATION_ERROR", f"{field_name} 数量不能超过 20 条。", {"field": field_name})
+
+    for idx, r in enumerate(raw_rels):
+        if not isinstance(r, Mapping):
+            raise NpcValidationError("VALIDATION_ERROR", f"{field_name}[{idx}] 必须为对象。")
+        tid = _require_non_empty_str(
+            r.get("target_npc_id") or r.get("npc_id") or r.get("target_id") or r.get("person_id"),
+            f"{field_name}[{idx}].target_npc_id",
+            MAX_NPC_ID_UNITS,
+        )
+        if tid.lower() == "player":
+            raise PlayerKnowledgeProtectedError(field_name, "NPC 初始关系表不得将 player 作为后台写库目标。")
+        rel_text = _require_non_empty_str(
+            r.get("relation") or r.get("relationship") or r.get("summary") or r.get("attitude"),
+            f"{field_name}[{idx}].relation",
+            160,
+        )
+        items.append({"target_npc_id": tid, "relation": rel_text})
+    return tuple(items)
+
+
+def _check_security_recursive(
+    obj: Any,
+    *,
+    instance_id: str,
+    allow_transmissions: bool = False,
+    path: str = "proposal",
+) -> None:
     """递归拦截玩家个人账本、直接写入玩家知情事实、任意 JSON 路径写入与跨实例标识。"""
     if isinstance(obj, Mapping):
         for k, v in obj.items():
@@ -279,10 +399,12 @@ def _check_security_recursive(obj: Any, *, instance_id: str, path: str = "propos
             ):
                 raise ArbitraryPathForbiddenError(k)
             if lowered == "transmissions":
-                raise PlayerKnowledgeProtectedError(
-                    "transmissions",
-                    "NPC 状态提议不得直接内嵌知识传播写入，请通过知识传播边界独立校验。",
-                )
+                if not allow_transmissions and v not in (None, [], ()):
+                    raise PlayerKnowledgeProtectedError(
+                        "transmissions",
+                        "NPC 状态提议不得直接内嵌知识传播写入，请通过知识传播边界独立校验。",
+                    )
+                continue
             if lowered in ("holder_id", "target_npc_id", "counterpart_npc_id") and isinstance(v, str):
                 if v.strip().lower() == "player":
                     raise PlayerKnowledgeProtectedError(
@@ -294,10 +416,20 @@ def _check_security_recursive(obj: Any, *, instance_id: str, path: str = "propos
                     raise NpcValidationError("VALIDATION_ERROR", f"{path}.{k} 必须为非空字符串。")
                 if instance_id and v.strip() != instance_id:
                     raise CrossInstanceReferenceError(instance_id, v.strip(), v.strip())
-            _check_security_recursive(v, instance_id=instance_id, path=f"{path}.{k}")
+            _check_security_recursive(
+                v,
+                instance_id=instance_id,
+                allow_transmissions=allow_transmissions,
+                path=f"{path}.{k}",
+            )
     elif isinstance(obj, (list, tuple)):
         for idx, item in enumerate(obj):
-            _check_security_recursive(item, instance_id=instance_id, path=f"{path}[{idx}]")
+            _check_security_recursive(
+                item,
+                instance_id=instance_id,
+                allow_transmissions=allow_transmissions,
+                path=f"{path}[{idx}]",
+            )
 
 
 def _participant_matches_npc(participant: str, npc: Mapping[str, Any]) -> bool:
@@ -683,6 +815,210 @@ def _normalize_id_list(
     return tuple(cleaned)
 
 
+def _infer_action_kind_from_fields(raw_op: Mapping[str, Any], default_kind: str = "stay") -> str:
+    raw_kind = (
+        raw_op.get("action_kind")
+        or raw_op.get("current_action_kind")
+        or raw_op.get("initial_action_kind")
+        or raw_op.get("arrangement")
+        or raw_op.get("decision")
+    )
+    if isinstance(raw_kind, str) and raw_kind.strip():
+        return raw_kind.strip()
+    loc = str(raw_op.get("location") or raw_op.get("current_location") or raw_op.get("start_location") or "").strip()
+    to_loc = str(raw_op.get("to_location") or raw_op.get("destination_location") or "").strip()
+    if to_loc and to_loc != loc:
+        return "travel"
+    if raw_op.get("target_npc_id") or raw_op.get("counterpart_npc_id") or raw_op.get("conversation_topic") or raw_op.get("topic"):
+        return "conversation_plan"
+    if raw_op.get("new_plan") or raw_op.get("plan_summary") or raw_op.get("previous_plan"):
+        return "plan_change"
+    if raw_op.get("task_id") or raw_op.get("task_stage") or raw_op.get("stage"):
+        return "task_progress"
+    if raw_op.get("to_shift") or raw_op.get("shift_name"):
+        return "shift_change"
+    return default_kind
+
+
+def normalize_initial_npc_seed_proposal(
+    init_input: Any,
+    *,
+    instance_id: str,
+    world_minute: int = 0,
+    base_world_revision: int | None = None,
+    default_source_ids: list[str] | tuple[str, ...] = (),
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """将世界初始化分析（world_analysis / 开局确认草案）的人物状态载荷标准化为 NPC seed 提议结构。
+
+    支持：
+    - 直接传入 NPC 字典数组 `[{...}, ...]`，或包含 `npcs` / `initial_npcs` / `operations` 的草案对象；
+    - 首版覆盖 `travel`（出行）、`stay`（留在原处）、`wait`（等待）、`no_change`（无变化）、
+      `plan_change`（改变计划）、`conversation_plan`（交谈安排）、`shift_change`（换班）、`task_progress`（任务进度）；
+    - 自动归一化 `grounding`（`canon` 原文依据 vs `inferred` 旅程内补写）、`relationships` 已知关系与默认到期时间。
+    """
+    inst_id = _require_non_empty_str(instance_id, "instance_id", 120)
+    w_min = _require_strict_int(world_minute, "world_minute", min_value=0)
+
+    raw_items: Any
+    summary = "从初始化设定草案建立人物初始地点、动机、关系与到期安排。"
+    idem = idempotency_key
+    if isinstance(init_input, (list, tuple)):
+        raw_items = init_input
+    elif isinstance(init_input, Mapping):
+        if init_input.get("instance_id") and str(init_input["instance_id"]).strip() != inst_id:
+            raise CrossInstanceReferenceError(inst_id, str(init_input["instance_id"]).strip(), str(init_input["instance_id"]).strip())
+        if isinstance(init_input.get("summary"), str) and init_input["summary"].strip():
+            summary = init_input["summary"].strip()
+        if not idem and isinstance(init_input.get("idempotency_key") or init_input.get("job_id"), str):
+            idem = str(init_input.get("idempotency_key") or init_input.get("job_id") or "").strip()
+        if "operations" in init_input:
+            raw_items = init_input["operations"]
+        elif "npcs" in init_input:
+            raw_items = init_input["npcs"]
+        elif "initial_npcs" in init_input:
+            raw_items = init_input["initial_npcs"]
+        elif "npc_actions" in init_input:
+            raw_items = init_input["npc_actions"]
+        else:
+            raise NpcValidationError("VALIDATION_ERROR", "初始化输入缺少 npcs / initial_npcs / operations 列表。")
+    else:
+        raise NpcValidationError("VALIDATION_ERROR", "初始化输入必须为 NPC 列表或包含 npcs 的对象。")
+
+    if not isinstance(raw_items, (list, tuple)) or len(raw_items) == 0:
+        raise NpcValidationError("EMPTY_SEED_PROPOSAL", "Seed 模式下 NPC 初始化列表不能为空。")
+
+    ops: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_items):
+        if not isinstance(item, Mapping):
+            raise NpcValidationError("VALIDATION_ERROR", f"initial_npcs[{idx}] 必须为对象。")
+        npc_id = str(
+            item.get("npc_id")
+            or item.get("id")
+            or item.get("person_id")
+            or item.get("character_id")
+            or ""
+        ).strip()
+        name = str(item.get("name") or item.get("display_name") or item.get("title") or npc_id).strip()
+        role = str(item.get("role") or item.get("identity") or item.get("occupation") or "居民").strip()
+        loc = str(item.get("location") or item.get("current_location") or item.get("start_location") or "").strip()
+        raw_kind = _infer_action_kind_from_fields(item, default_kind="stay")
+        norm_kind = normalize_action_kind(raw_kind, f"initial_npcs[{idx}].action_kind")
+
+        tier_raw = item.get("depth_tier") or "foreground"
+        tier = normalize_depth_tier(tier_raw, f"initial_npcs[{idx}].depth_tier")
+        default_dur = 60 if tier == "foreground" else (90 if tier == "associated" else 180)
+
+        dur = item.get("duration_minutes") if item.get("duration_minutes") is not None else item.get("due_in_minutes")
+        next_due = item.get("next_due_minute") if item.get("next_due_minute") is not None else item.get("next_update_minute")
+        if dur is None and next_due is None:
+            dur = default_dur
+            next_due = w_min + default_dur
+
+        activity = str(
+            item.get("current_activity")
+            or item.get("activity")
+            or item.get("initial_activity")
+            or item.get("new_plan")
+            or item.get("plan_summary")
+            or item.get("goal")
+            or (f"在{loc}原地驻留观察局势" if loc else "驻留待命")
+        ).strip()
+        motivation = str(
+            item.get("motivation")
+            or item.get("motive")
+            or item.get("goal")
+            or item.get("reason")
+            or "依据开局局势执行当前安排"
+        ).strip()
+
+        src_ids = list(item.get("source_ids") or default_source_ids or ())
+        cause_evs = list(item.get("cause_event_ids") or ())
+        cause_facts = list(item.get("cause_fact_ids") or ())
+        grounding = _normalize_grounding(item, f"initial_npcs[{idx}]")
+        if not (src_ids or cause_evs or cause_facts) and item.get("is_inferred") is None and item.get("grounding") is None and item.get("origin") is None:
+            # 若初始化未显式传 source_ids 且提供了 default_source_ids 则已填充；否则保持原值交由 validate_proposal 核验
+            pass
+
+        op_dict: dict[str, Any] = {
+            "op": "seed_npc",
+            "npc_id": npc_id,
+            "name": name,
+            "role": role,
+            "faction": str(item.get("faction") or item.get("organization") or "").strip(),
+            "home_location": str(item.get("home_location") or loc).strip(),
+            "location": loc,
+            "action_kind": norm_kind,
+            "current_activity": activity,
+            "motivation": motivation,
+            "goal": str(item.get("goal") or item.get("new_plan") or "").strip(),
+            "depth_tier": tier,
+            "depth_reason": str(item.get("depth_reason") or "开局初始化分级").strip(),
+            "status": str(item.get("status") or "active").strip(),
+            "grounding": grounding,
+            "source_ids": src_ids,
+            "cause_event_ids": cause_evs,
+            "cause_fact_ids": cause_facts,
+        }
+        if item.get("availability") is not None:
+            op_dict["availability"] = item["availability"]
+        if dur is not None:
+            op_dict["duration_minutes"] = dur
+        if next_due is not None:
+            op_dict["next_due_minute"] = next_due
+        if item.get("from_location"):
+            op_dict["from_location"] = item["from_location"]
+        if item.get("to_location") or item.get("destination_location"):
+            op_dict["to_location"] = item.get("to_location") or item.get("destination_location")
+        if item.get("target_npc_id") or item.get("counterpart_npc_id"):
+            op_dict["target_npc_id"] = item.get("target_npc_id") or item.get("counterpart_npc_id")
+        if item.get("meeting_location"):
+            op_dict["meeting_location"] = item["meeting_location"]
+        if item.get("conversation_topic") or item.get("topic"):
+            op_dict["conversation_topic"] = item.get("conversation_topic") or item.get("topic")
+        if item.get("from_shift"):
+            op_dict["from_shift"] = item["from_shift"]
+        if item.get("to_shift"):
+            op_dict["to_shift"] = item["to_shift"]
+        if item.get("shift_name"):
+            op_dict["shift_name"] = item["shift_name"]
+        if item.get("previous_plan"):
+            op_dict["previous_plan"] = item["previous_plan"]
+        if item.get("new_plan") or item.get("plan_summary"):
+            op_dict["new_plan"] = item.get("new_plan") or item.get("plan_summary")
+        if item.get("task_id"):
+            op_dict["task_id"] = item["task_id"]
+        if item.get("task_title"):
+            op_dict["task_title"] = item["task_title"]
+        if item.get("task_stage") or item.get("stage"):
+            op_dict["task_stage"] = item.get("task_stage") or item.get("stage")
+        if item.get("task_progress_percent") is not None or item.get("progress_percent") is not None:
+            op_dict["task_progress_percent"] = (
+                item["task_progress_percent"]
+                if item.get("task_progress_percent") is not None
+                else item.get("progress_percent")
+            )
+        if item.get("task_status"):
+            op_dict["task_status"] = item["task_status"]
+        rels = item.get("relationships") or item.get("relations") or item.get("known_relations")
+        if rels is not None:
+            op_dict["relationships"] = rels
+        ops.append(op_dict)
+
+    out: dict[str, Any] = {
+        "instance_id": inst_id,
+        "mode": "seed",
+        "world_minute": w_min,
+        "summary": summary,
+        "operations": ops,
+    }
+    if base_world_revision is not None:
+        out["base_world_revision"] = base_world_revision
+    if idem:
+        out["idempotency_key"] = idem
+    return out
+
+
 def _normalize_context(context: NpcValidationContext | Mapping[str, Any]) -> NpcValidationContext:
     if isinstance(context, NpcValidationContext):
         return context
@@ -844,6 +1180,9 @@ def validate_proposal(
     context: NpcValidationContext | Mapping[str, Any],
 ) -> ValidatedNpcProposal:
     """在 SQLite 事务外纯函数校验 NPC 提议（结构、时间、因果、重复任务与账本/知情隔离）。"""
+    allow_transmissions = bool(
+        isinstance(context, Mapping) and context.get("allow_transmissions_envelope")
+    )
     ctx = _normalize_context(context)
     if isinstance(proposal, ValidatedNpcProposal):
         if proposal.instance_id != ctx.instance_id:
@@ -860,7 +1199,12 @@ def validate_proposal(
     if not isinstance(proposal, Mapping):
         raise NpcValidationError("PROPOSAL_INVALID", "NPC 提议顶层必须为 JSON 对象。")
 
-    _check_security_recursive(proposal, instance_id=ctx.instance_id, path="proposal")
+    _check_security_recursive(
+        proposal,
+        instance_id=ctx.instance_id,
+        allow_transmissions=allow_transmissions,
+        path="proposal",
+    )
 
     unknown_root = set(proposal.keys()) - _ALLOWED_ROOT_KEYS
     if unknown_root:
@@ -904,7 +1248,17 @@ def validate_proposal(
         if ctx.base_world_revision is not None and rev_vals[0] != ctx.base_world_revision:
             raise WorldRevisionConflictError(ctx.instance_id, rev_vals[0], ctx.base_world_revision)
 
-    raw_ops = proposal.get("operations") if "operations" in proposal else proposal.get("npc_actions", [])
+    if "operations" in proposal:
+        raw_ops = proposal.get("operations")
+    elif "npc_actions" in proposal:
+        raw_ops = proposal.get("npc_actions")
+    elif "npcs" in proposal:
+        raw_ops = proposal.get("npcs")
+    elif "initial_npcs" in proposal:
+        raw_ops = proposal.get("initial_npcs")
+    else:
+        raw_ops = []
+
     if not isinstance(raw_ops, (list, tuple)):
         raise NpcValidationError("VALIDATION_ERROR", "operations / npc_actions 必须为数组。")
     if len(raw_ops) > MAX_OPERATIONS_PER_PROPOSAL:
@@ -979,22 +1333,39 @@ def validate_proposal(
         if ctx.mode == "advance" and op_type != "act":
             raise NpcValidationError("MODE_OP_MISMATCH", "Advance 模式下操作类型必须为 act。")
 
-        raw_action_kind = raw_op.get("action_kind") or raw_op.get("current_action_kind")
-        action_kind = _require_non_empty_str(raw_action_kind, f"{op_prefix}.action_kind", 40)
-        if action_kind not in NPC_ACTION_KINDS:
-            raise NpcValidationError(
-                "INVALID_ACTION_KIND",
-                f"{op_prefix}.action_kind ({action_kind!r}) 不受支持，仅支持 {sorted(NPC_ACTION_KINDS)}。",
-                {"action_kind": action_kind},
-            )
+        raw_action_kind = (
+            raw_op.get("action_kind")
+            or raw_op.get("current_action_kind")
+            or raw_op.get("initial_action_kind")
+            or raw_op.get("arrangement")
+            or raw_op.get("decision")
+        )
+        action_kind = normalize_action_kind(raw_action_kind, f"{op_prefix}.action_kind")
+
+        existing_npc: Mapping[str, Any] = ctx.existing_npcs.get(npc_id, {}) if op_type == "act" else {}
+
+        raw_activity = (
+            raw_op.get("current_activity")
+            or raw_op.get("activity")
+            or raw_op.get("initial_activity")
+        )
+        if raw_activity is None and op_type == "act" and action_kind in ("wait", "no_change", "stay"):
+            fallback_loc = str(existing_npc.get("location") or "")
+            raw_activity = str(existing_npc.get("current_activity") or f"在{fallback_loc}原地等待观察局势")
+        elif raw_activity is None and action_kind == "plan_change" and (raw_op.get("new_plan") or raw_op.get("plan_summary")):
+            raw_activity = str(raw_op.get("new_plan") or raw_op.get("plan_summary"))
 
         current_activity = _require_non_empty_str(
-            raw_op.get("current_activity") or raw_op.get("activity"),
+            raw_activity,
             f"{op_prefix}.current_activity",
             MAX_ACTIVITY_UNITS,
         )
+
+        raw_motivation = raw_op.get("motivation") or raw_op.get("motive")
+        if raw_motivation is None and op_type == "act" and action_kind in ("wait", "no_change", "stay"):
+            raw_motivation = str(existing_npc.get("motivation") or "暂留原处观望局势变化")
         motivation = _require_non_empty_str(
-            raw_op.get("motivation"),
+            raw_motivation,
             f"{op_prefix}.motivation",
             MAX_MOTIVATION_UNITS,
         )
@@ -1004,7 +1375,11 @@ def validate_proposal(
             if "next_due_minute" in raw_op
             else raw_op.get("next_update_minute")
         )
-        raw_duration = raw_op.get("duration_minutes")
+        raw_duration = (
+            raw_op.get("duration_minutes")
+            if raw_op.get("duration_minutes") is not None
+            else raw_op.get("due_in_minutes")
+        )
 
         next_due_minute: int | None = None
         if raw_next_due is not None:
@@ -1048,6 +1423,11 @@ def validate_proposal(
         cause_event_ids = _normalize_id_list(raw_op.get("cause_event_ids"), f"{op_prefix}.cause_event_ids")
         cause_fact_ids = _normalize_id_list(raw_op.get("cause_fact_ids"), f"{op_prefix}.cause_fact_ids")
         source_ids = _normalize_id_list(raw_op.get("source_ids"), f"{op_prefix}.source_ids")
+        grounding = _normalize_grounding(raw_op, op_prefix)
+        relationships = _normalize_relationships(
+            raw_op.get("relationships") or raw_op.get("relations") or raw_op.get("known_relations"),
+            f"{op_prefix}.relationships",
+        )
 
         for sid in source_ids:
             if not (sid.startswith("chunk:") or sid.startswith("entry:")):
@@ -1096,19 +1476,23 @@ def validate_proposal(
                 )
 
         if op_type == "seed_npc":
-            if not (cause_event_ids or cause_fact_ids or source_ids):
+            if grounding == "canon" and not (cause_event_ids or cause_fact_ids or source_ids):
                 raise InvalidCausalReferenceError(
                     npc_id,
                     code="CAUSAL_MOTIVATION_UNGROUNDED",
-                    message=f"{op_prefix} 初始化 NPC 动机必须至少绑定一项授权 Canon 来源或初始事件引用。",
+                    message=f"{op_prefix} 初始化 NPC 动机必须至少绑定一项授权 Canon 来源、初始事件引用，或显式标记为旅程推演 (grounding='inferred')。",
                 )
             name = _require_non_empty_str(raw_op.get("name"), f"{op_prefix}.name", MAX_NAME_UNITS)
             role = _require_non_empty_str(
-                raw_op.get("role") or raw_op.get("identity"),
+                raw_op.get("role") or raw_op.get("identity") or raw_op.get("occupation"),
                 f"{op_prefix}.role",
                 MAX_ROLE_UNITS,
             )
-            location = _require_non_empty_str(raw_op.get("location"), f"{op_prefix}.location", MAX_LOCATION_UNITS)
+            location = _require_non_empty_str(
+                raw_op.get("location") or raw_op.get("current_location") or raw_op.get("start_location"),
+                f"{op_prefix}.location",
+                MAX_LOCATION_UNITS,
+            )
             home_location = _optional_str(
                 raw_op.get("home_location"), f"{op_prefix}.home_location", MAX_LOCATION_UNITS, default=location
             )
@@ -1123,7 +1507,6 @@ def validate_proposal(
                 raw_op.get("depth_reason"), f"{op_prefix}.depth_reason", 240, default="初始化默认分级"
             )
             expected_rev = None
-            existing_npc: Mapping[str, Any] = {}
         else:
             if npc_id not in ctx.existing_npcs:
                 raise NpcNotFoundError(ctx.instance_id, npc_id)
@@ -1156,15 +1539,41 @@ def validate_proposal(
                 )
 
             if not (cause_event_ids or cause_fact_ids or source_ids):
-                raise InvalidCausalReferenceError(
-                    npc_id,
-                    code="CAUSAL_MOTIVATION_UNGROUNDED",
-                    message=f"{op_prefix} 的 NPC 自主行动必须引用至少一项当前实例内已存在的事件、自身已知事实或 Canon 来源。",
-                )
+                if action_kind in ("wait", "no_change", "stay"):
+                    # 等待与无变化/留在原处允许沿用人物既有因果或来源凭据
+                    inherited_ev = tuple(
+                        str(e).strip()
+                        for e in (existing_npc.get("cause_event_ids") or ())
+                        if str(e).strip() and str(e).strip() in ctx.allowed_event_ids
+                    )
+                    inherited_facts = tuple(
+                        str(f).strip()
+                        for f in (existing_npc.get("cause_fact_ids") or ())
+                        if str(f).strip()
+                        and (
+                            (npc_allowed_facts is not None and str(f).strip() in npc_allowed_facts)
+                            or (npc_allowed_facts is None and str(f).strip() in ctx.allowed_fact_ids)
+                        )
+                    )
+                    inherited_srcs = tuple(
+                        str(s).strip()
+                        for s in (existing_npc.get("source_ids") or ())
+                        if str(s).strip() and (not ctx.allowed_source_ids or str(s).strip() in ctx.allowed_source_ids)
+                    )
+                    cause_event_ids = inherited_ev
+                    cause_fact_ids = inherited_facts
+                    source_ids = inherited_srcs
+
+                if not (cause_event_ids or cause_fact_ids or source_ids) and action_kind not in ("wait", "no_change"):
+                    raise InvalidCausalReferenceError(
+                        npc_id,
+                        code="CAUSAL_MOTIVATION_UNGROUNDED",
+                        message=f"{op_prefix} 的 NPC 自主行动必须引用至少一项当前实例内已存在的事件、自身已知事实或 Canon 来源。",
+                    )
 
             name = _optional_str(raw_op.get("name"), f"{op_prefix}.name", MAX_NAME_UNITS, default=str(existing_npc.get("name") or npc_id))
             role = _optional_str(
-                raw_op.get("role") or raw_op.get("identity"),
+                raw_op.get("role") or raw_op.get("identity") or raw_op.get("occupation"),
                 f"{op_prefix}.role",
                 MAX_ROLE_UNITS,
                 default=str(existing_npc.get("role") or ""),
@@ -1199,7 +1608,7 @@ def validate_proposal(
                 default=str(existing_npc.get("depth_reason") or ""),
             )
             location = _optional_str(
-                raw_op.get("location"),
+                raw_op.get("location") or raw_op.get("current_location"),
                 f"{op_prefix}.location",
                 MAX_LOCATION_UNITS,
                 default=str(existing_npc.get("location") or ""),
@@ -1266,6 +1675,18 @@ def validate_proposal(
             f"{op_prefix}.shift_name",
             MAX_SHIFT_UNITS,
             default=str(existing_npc.get("shift_name") or ""),
+        )
+        previous_plan = _optional_str(
+            raw_op.get("previous_plan"),
+            f"{op_prefix}.previous_plan",
+            MAX_PLAN_UNITS,
+            default=str(existing_npc.get("goal") or existing_npc.get("current_activity") or ""),
+        )
+        new_plan = _optional_str(
+            raw_op.get("new_plan") or raw_op.get("plan_summary"),
+            f"{op_prefix}.new_plan",
+            MAX_PLAN_UNITS,
+            default="",
         )
         task_id = _optional_str(raw_op.get("task_id"), f"{op_prefix}.task_id", MAX_TASK_ID_UNITS, default="")
         task_title = _optional_str(raw_op.get("task_title"), f"{op_prefix}.task_title", MAX_TASK_TITLE_UNITS, default="")
@@ -1343,6 +1764,57 @@ def validate_proposal(
             location = to_location
             if raw_availability is None:
                 availability = "in_transit"
+
+        elif action_kind in ("stay", "wait", "no_change"):
+            if op_type == "act":
+                curr_loc = str(existing_npc.get("location") or "")
+                if (to_location and to_location != curr_loc) or (location and location != curr_loc):
+                    raise NpcValidationError(
+                        "STAY_LOCATION_MISMATCH",
+                        f"{op_prefix} 动作 {action_kind} 表示留在原处或等待，不能将地点从 {curr_loc!r} 更改为 {to_location or location!r}。",
+                        {"npc_id": npc_id, "current_location": curr_loc, "requested_location": to_location or location},
+                    )
+                location = curr_loc
+                from_location = curr_loc
+                to_location = curr_loc
+            else:
+                from_location = location
+                to_location = location
+
+        elif action_kind == "plan_change":
+            if op_type == "act":
+                curr_loc = str(existing_npc.get("location") or "")
+                if (to_location and to_location != curr_loc) or (location and location != curr_loc):
+                    raise NpcValidationError(
+                        "PLAN_CHANGE_LOCATION_MISMATCH",
+                        f"{op_prefix} 改变计划 (plan_change) 不直接跨地点移动，若立即动身请使用 travel。",
+                        {"npc_id": npc_id, "current_location": curr_loc, "requested_location": to_location or location},
+                    )
+                location = curr_loc
+            effective_new_plan = new_plan or (
+                str(raw_op.get("goal") or "").strip() if raw_op.get("goal") is not None else current_activity
+            )
+            if not effective_new_plan:
+                raise NpcValidationError(
+                    "PLAN_SUMMARY_REQUIRED",
+                    f"{op_prefix} 改变计划 (plan_change) 必须提供非空的 new_plan、goal 或 current_activity。",
+                )
+            if (
+                op_type == "act"
+                and effective_new_plan == str(existing_npc.get("goal") or "")
+                and current_activity == str(existing_npc.get("current_activity") or "")
+                and not to_shift
+                and not task_id
+                and not target_npc_id
+            ):
+                raise DuplicateNpcTaskError(
+                    npc_id,
+                    code="DUPLICATE_PLAN_CHANGE",
+                    message=f"{op_prefix} 改变计划动作未产生任何目标、活动或安排变化。",
+                )
+            new_plan = effective_new_plan
+            if not raw_op.get("goal"):
+                goal = effective_new_plan
 
         elif action_kind == "conversation_plan":
             if not target_npc_id:
@@ -1462,7 +1934,7 @@ def validate_proposal(
             ValidatedNpcActionOp(
                 op=op_type,  # type: ignore[arg-type]
                 npc_id=npc_id,
-                action_kind=action_kind,  # type: ignore[arg-type]
+                action_kind=action_kind,
                 current_activity=current_activity,
                 motivation=motivation,
                 location=location,
@@ -1486,6 +1958,8 @@ def validate_proposal(
                 from_shift=from_shift,
                 to_shift=to_shift,
                 shift_name=shift_name,
+                previous_plan=previous_plan,
+                new_plan=new_plan,
                 task_id=task_id,
                 task_title=task_title,
                 task_stage=task_stage,
@@ -1495,6 +1969,8 @@ def validate_proposal(
                 cause_fact_ids=cause_fact_ids,
                 source_ids=source_ids,
                 reason=reason,
+                grounding=grounding,
+                relationships=relationships,
             )
         )
 

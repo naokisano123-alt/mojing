@@ -1,4 +1,4 @@
-"""M3.4 NPC 自主行动、行程与动态模拟深度领域类型、常量与预算结构（M3 Wave 3）。"""
+"""M3.4 NPC 自主行动、行程与动态模拟深度领域类型、常量与预算结构（M3 Wave 4）。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,22 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 NpcDepthTier = Literal["foreground", "associated", "background"]
-NpcActionKind = Literal["travel", "conversation_plan", "shift_change", "task_progress"]
+NpcActionKind = Literal[
+    "travel",
+    "stay",
+    "wait",
+    "no_change",
+    "plan_change",
+    "conversation_plan",
+    "shift_change",
+    "task_progress",
+]
 NpcOperationType = Literal["seed_npc", "act"]
 NpcStatus = Literal["active", "paused", "inactive"]
 NpcAvailability = Literal["available", "in_transit", "busy", "off_duty"]
 TaskStatus = Literal["active", "completed", "blocked"]
 ProposalMode = Literal["seed", "advance"]
+NpcGroundingKind = Literal["canon", "inferred"]
 
 NPC_DEPTH_TIERS: frozenset[str] = frozenset({"foreground", "associated", "background"})
 NPC_DEPTH_TIER_LABELS_ZH: dict[str, str] = {
@@ -39,8 +49,93 @@ NPC_DEPTH_TIER_ALIASES: dict[str, NpcDepthTier] = {
 }
 
 NPC_ACTION_KINDS: frozenset[str] = frozenset(
-    {"travel", "conversation_plan", "shift_change", "task_progress"}
+    {
+        "travel",
+        "stay",
+        "wait",
+        "no_change",
+        "plan_change",
+        "conversation_plan",
+        "shift_change",
+        "task_progress",
+    }
 )
+
+NPC_ACTION_KIND_LABELS_ZH: dict[str, str] = {
+    "travel": "出行",
+    "stay": "留在原处",
+    "wait": "等待",
+    "no_change": "无变化",
+    "plan_change": "改变计划",
+    "conversation_plan": "交谈安排",
+    "shift_change": "换班",
+    "task_progress": "任务进度",
+}
+
+NPC_ACTION_KIND_ALIASES: dict[str, NpcActionKind] = {
+    "travel": "travel",
+    "move": "travel",
+    "depart": "travel",
+    "journey": "travel",
+    "出行": "travel",
+    "离开": "travel",
+    "前往": "travel",
+    "stay": "stay",
+    "stay_in_place": "stay",
+    "remain": "stay",
+    "stay_put": "stay",
+    "留在原处": "stay",
+    "留守": "stay",
+    "wait": "wait",
+    "hold": "wait",
+    "idle": "wait",
+    "observe": "wait",
+    "等待": "wait",
+    "观望": "wait",
+    "no_change": "no_change",
+    "unchanged": "no_change",
+    "keep": "no_change",
+    "noop": "no_change",
+    "none": "no_change",
+    "无变化": "no_change",
+    "维持现状": "no_change",
+    "plan_change": "plan_change",
+    "change_plan": "plan_change",
+    "reschedule": "plan_change",
+    "adjust_plan": "plan_change",
+    "改变计划": "plan_change",
+    "调整计划": "plan_change",
+    "conversation_plan": "conversation_plan",
+    "conversation": "conversation_plan",
+    "talk": "conversation_plan",
+    "meet": "conversation_plan",
+    "arrange_talk": "conversation_plan",
+    "交谈安排": "conversation_plan",
+    "交谈": "conversation_plan",
+    "会面": "conversation_plan",
+    "shift_change": "shift_change",
+    "change_shift": "shift_change",
+    "换班": "shift_change",
+    "task_progress": "task_progress",
+    "advance_task": "task_progress",
+    "任务进度": "task_progress",
+}
+
+NPC_GROUNDING_ALIASES: dict[str, NpcGroundingKind] = {
+    "canon": "canon",
+    "source": "canon",
+    "documented": "canon",
+    "原文": "canon",
+    "设定": "canon",
+    "inferred": "inferred",
+    "ai_inferred": "inferred",
+    "supplemented": "inferred",
+    "deduced": "inferred",
+    "extrapolated": "inferred",
+    "推演": "inferred",
+    "补写": "inferred",
+}
+
 NPC_STATUSES: frozenset[str] = frozenset({"active", "paused", "inactive"})
 NPC_AVAILABILITY_STATES: frozenset[str] = frozenset(
     {"available", "in_transit", "busy", "off_duty"}
@@ -72,6 +167,10 @@ MIN_ACTION_INTERVAL_BY_TIER: dict[str, int] = {
 # 各动作类型的最小持续分钟数约束
 MIN_DURATION_BY_ACTION_KIND: dict[str, int] = {
     "travel": 15,
+    "stay": 10,
+    "wait": 10,
+    "no_change": 10,
+    "plan_change": 10,
     "conversation_plan": 10,
     "shift_change": 15,
     "task_progress": 15,
@@ -85,6 +184,7 @@ MAX_LOCATION_UNITS = 100
 MAX_ACTIVITY_UNITS = 300
 MAX_MOTIVATION_UNITS = 360
 MAX_GOAL_UNITS = 240
+MAX_PLAN_UNITS = 240
 MAX_SHIFT_UNITS = 100
 MAX_TOPIC_UNITS = 240
 MAX_TASK_ID_UNITS = 100
@@ -281,6 +381,8 @@ class ValidatedNpcActionOp:
     from_shift: str = ""
     to_shift: str = ""
     shift_name: str = ""
+    previous_plan: str = ""
+    new_plan: str = ""
     task_id: str = ""
     task_title: str = ""
     task_stage: str = ""
@@ -290,6 +392,8 @@ class ValidatedNpcActionOp:
     cause_fact_ids: tuple[str, ...] = ()
     source_ids: tuple[str, ...] = ()
     reason: str = ""
+    grounding: NpcGroundingKind = "canon"
+    relationships: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
