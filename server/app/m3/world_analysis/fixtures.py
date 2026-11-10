@@ -126,7 +126,7 @@ def _insert_document_with_chunks(
                 id, document_id, world_id, chunk_index, heading_path, start_char, end_char, text
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (cid, doc_id, world_id, idx, heading, start_c, end_c, ctext),
+            (cid, doc_id, world_id, idx, json.dumps([heading], ensure_ascii=False), start_c, end_c, ctext),
         )
         chunk_sids.append(f"chunk:{cid}")
     return chunk_sids
@@ -151,7 +151,7 @@ def seed_maritime_salt_world(
     conn.execute(
         """
         INSERT OR REPLACE INTO world_instances (id, world_id, adventure_id, world_minute, revision)
-        VALUES (?, ?, 'adv_yunze_001', 0, 0)
+        VALUES (?, ?, NULL, 0, 0)
         """,
         (instance_id, world_id),
     )
@@ -259,7 +259,7 @@ def seed_skyforge_academy_world(
     conn.execute(
         """
         INSERT OR REPLACE INTO world_instances (id, world_id, adventure_id, world_minute, revision)
-        VALUES (?, ?, 'adv_skyforge_001', 0, 0)
+        VALUES (?, ?, NULL, 0, 0)
         """,
         (instance_id, world_id),
     )

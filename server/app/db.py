@@ -118,6 +118,9 @@ def init_db(path: Path | str) -> None:
         ensure_npcs_schema(conn)
         ensure_encounters_schema(conn)
         ensure_portability_schema(conn)
+        from .m3.world_analysis.schema import ensure_world_analysis_schema
+
+        ensure_world_analysis_schema(conn)
         conn.commit()
 
 

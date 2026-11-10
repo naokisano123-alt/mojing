@@ -5,7 +5,7 @@ from uuid import uuid4
 from ...adventures import service as adventures
 from ...db import db
 from ...errors import ApiError
-from .. import events, knowledge
+from .. import events, knowledge, npcs
 from ..pulse.budget import configure_instance_pulse
 from ..pulse.client import FakePulseModelClient
 from ..pulse.queue import cancel_instance_jobs, resume_waiting_jobs
@@ -117,7 +117,7 @@ def create_worker(path, **session_options):
         snapshot["use_event_prompts"] = True
         return snapshot
 
-    combined_read, combined_validate, combined_apply = build_combined_pulse_callbacks(
+    callbacks = dict(
         events_snapshot_reader=events_read,
         events_validator=events_validate,
         events_applier=events_apply,
@@ -125,22 +125,56 @@ def create_worker(path, **session_options):
         knowledge_applier=knowledge_apply,
     )
 
+    combined_read, combined_validate, combined_apply = build_combined_pulse_callbacks(**callbacks)
+    npc_read, npc_validate, npc_apply = npcs.build_npc_pulse_callbacks(
+        **callbacks, budget=npcs.DepthBudget(max_total_npcs=3),
+    )
+
     def read_dispatch(conn, instance_id, job):
         instance = instances.get(conn, instance_id)
         adventures.world_active(conn, instance["world_id"])
         if _adventure_mode(conn, instance_id) == "fake":
             return {**_read_snapshot(conn, instance_id, job), "journey_mode": "fake"}
+        if job["kind"] == "advance":
+            snapshot = npc_read(conn, instance_id, job)
+            if snapshot.get("due_npcs"):
+                facts = {}
+                for npc in snapshot["due_npcs"]:
+                    npc_id = npc["npc_id"]
+                    facts[npc_id] = [dict(row) for row in conn.execute("""
+                        SELECT fact_id, knowledge_type, source_event_id, substr(content, 1, 110) AS content
+                        FROM m3_knowledge_facts
+                        WHERE instance_id=? AND holder_id=? AND status='active' AND learned_minute<=?
+                        ORDER BY holder_seq DESC LIMIT 3
+                    """, (instance_id, npc_id, snapshot["world_minute"]))]
+                known_events = {
+                    npc["npc_id"]: sorted(set(npc["cause_event_ids"]) | {
+                        fact["source_event_id"] for fact in facts[npc["npc_id"]]
+                    })
+                    for npc in snapshot["due_npcs"]
+                }
+                return {
+                    **snapshot, "use_npc_prompts": True, "known_facts_by_npc": facts,
+                    "allowed_fact_ids_by_npc": {
+                        npc_id: [row["fact_id"] for row in rows] for npc_id, rows in facts.items()
+                    },
+                    "known_event_ids_by_npc": known_events,
+                }
         return combined_read(conn, instance_id, job)
 
     def validate_dispatch(proposal, context):
         if context["snapshot"].get("journey_mode") == "fake":
             return proposal
+        if context["snapshot"].get("use_npc_prompts"):
+            return {**npc_validate(proposal, context), "npc_cycle": True}
         return combined_validate(proposal, context)
 
     def apply_dispatch(conn, instance_id, proposal, job):
         adventures.world_active(conn, instances.get(conn, instance_id)["world_id"])
         if _adventure_mode(conn, instance_id) == "fake":
             return _apply(conn, instance_id, proposal, job)
+        if proposal.get("npc_cycle"):
+            return npc_apply(conn, instance_id, proposal, job)
         return combined_apply(conn, instance_id, proposal, job)
 
     return PulseWorker(

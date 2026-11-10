@@ -393,9 +393,9 @@ def build_player_opening_summary(
 
     known_situations: list[dict[str, Any]] = []
     for ev in events:
-        if ev.player_known_at_start and ev.visibility in PLAYER_SUMMARY_ALLOWED_VISIBILITY:
+        if ev.player_known_at_start and ev.visibility in PLAYER_SUMMARY_ALLOWED_VISIBILITY and ev.player_rumor_content:
             rumor_title = ev.player_rumor_title or f"{ev.location}传闻"
-            rumor_body = ev.player_rumor_content or f"你在{sp.location}听闻：{safe_u16_truncate(ev.description, 100)}"
+            rumor_body = ev.player_rumor_content
             known_situations.append(
                 {
                     "title": rumor_title,
@@ -817,7 +817,7 @@ def validate_analysis_draft(
         )
         if player_known:
             if not rumor_content or (rumor_title == title and rumor_content == description):
-                rumor_content = f"在{ctx.starting_point.location}可留意到的动向：{safe_u16_truncate(description, 120)}"
+                rumor_content = ""
             if "【隐藏" in rumor_title or "【绝密" in rumor_title or "【隐藏" in rumor_content or "【绝密" in rumor_content:
                 raise UnpublicInfoLeakError(
                     f"{prefix}.player_rumor_content",

@@ -500,7 +500,7 @@ def extract_and_batch_world_sources(
         for r in rows:
             raw_id = str(r[0] or "").strip()
             sid = f"entry:{raw_id}"
-            if has_explicit_filter and explicit_filter_ids and sid not in explicit_filter_ids:
+            if has_explicit_filter and sid not in explicit_filter_ids:
                 continue
             etype = str(r[1] or "other").strip()
             etitle = str(r[2] or "").strip()
@@ -561,11 +561,8 @@ def extract_and_batch_world_sources(
             cid = str(r[0] or "").strip()
             sid = f"chunk:{cid}"
             doc_id = str(r[1] or "").strip()
-            if has_explicit_filter:
-                if explicit_filter_ids and sid not in explicit_filter_ids and doc_id not in explicit_doc_filter:
-                    continue
-                if explicit_doc_filter and doc_id not in explicit_doc_filter and sid not in explicit_filter_ids:
-                    continue
+            if has_explicit_filter and sid not in explicit_filter_ids and doc_id not in explicit_doc_filter:
+                continue
             c_idx = int(r[2] or 0)
             heading = str(r[3] or "").strip()
             start_c = int(r[4] or 0)

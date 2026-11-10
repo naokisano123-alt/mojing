@@ -1000,6 +1000,7 @@ def build_adventure_narration_npc_context(
     player_location: str | None = None,
     world_minute: int | None = None,
     max_chars: int = 600,
+    action: str = "",
 ) -> dict[str, Any]:
     """构建供下一回合自由行动叙事与查证共享的同地 NPC 状态摘要上下文。"""
     ensure_npcs_schema(conn)
@@ -1040,11 +1041,10 @@ def build_adventure_narration_npc_context(
     for p in present:
         kind_zh = NPC_ACTION_KIND_LABELS_ZH.get(p["current_action_kind"], p["current_action_kind"])
         shift_part = f"（{p['shift_name']}）" if p.get("shift_name") else ""
-        goal_part = f"｜当前计划：{p['goal']}" if p.get("goal") else ""
-        lines.append(f"- 在场：{p['name']}（{p['role']}）{shift_part}正在{p['current_activity']} [{kind_zh}]{goal_part}")
+        lines.append(f"- 在场：{p['name']}（{p['role']}）{shift_part}正在{p['current_activity']} [{kind_zh}]")
 
     for u in unavailable:
-        if u["reason_code"] in ("NPC_DEPARTED_IN_TRANSIT", "NPC_AT_DIFFERENT_LOCATION"):
+        if u["reason_code"] in ("NPC_DEPARTED_IN_TRANSIT", "NPC_AT_DIFFERENT_LOCATION") and u["name"] in action:
             lines.append(f"- 不在场：{u['name']}（{u['role']}）当前不在{loc}。")
         elif u["reason_code"] == "NPC_OFF_DUTY":
             lines.append(f"- 歇业中：{u['name']}（{u['role']}）当前{u.get('shift_name') or '休息中'}，暂不待客。")
@@ -2231,6 +2231,15 @@ def build_npc_pulse_callbacks(
             npc_ctx = dict(context)
             npc_ctx["allow_transmissions_envelope"] = True
             validated_npcs = validate_proposal(npc_payload, npc_ctx)
+            known_events = context.get("snapshot", {}).get("known_event_ids_by_npc")
+            if known_events is not None:
+                for op in validated_npcs.operations:
+                    unknown_events = set(op.cause_event_ids) - set(known_events.get(op.npc_id, ()))
+                    if unknown_events:
+                        raise InvalidCausalReferenceError(
+                            op.npc_id, sorted(unknown_events)[0], code="CAUSAL_EVENT_NOT_KNOWN",
+                            message="人物行动引用了该人物尚未获知的事件。",
+                        )
 
         validated_transmissions: Any = transmissions
         if transmissions and knowledge_validator is not None:

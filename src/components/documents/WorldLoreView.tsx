@@ -417,6 +417,7 @@ export function WorldLoreView({
       )}
       {tab === 'journal' && <div hidden={configuring}><AdventureJournal worldId={worldId} sessionId={modelSession?.session_id}
         onConfigure={() => setConfiguring(true)}
+        onImportMaterials={() => setTab('upload')}
         onSessionExpired={() => onModelSessionChange?.(null)}
         onOpenSource={source => {
           if (source.kind === 'entry') { setTargetEntryId(source.entry_id); setTab('entries'); }

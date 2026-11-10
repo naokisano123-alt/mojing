@@ -19,8 +19,7 @@ from typing import Any, Protocol
 
 import httpx
 
-from app.model_gateway.errors import GatewayError
-from app.model_gateway.url import validate_and_normalize_base_url
+from ...model_gateway.client import OpenAIModelClient
 
 from .errors import AnalysisSourceRequiredError, AnalysisValidationError
 from .extractor import (
@@ -261,7 +260,9 @@ def build_world_analysis_prompts(
         "4. 处理重名与身份复用：同一人物的不同称谓记入 `aliases`；若存在同名不同人，必须使用不同的 `npc_id` 并填写 `homonym_disambiguator`（如所属地点+职责）。\n"
         "5. 初始人物动作安排必须使用实例内稳定身份（`npc_id`、`target_npc_id`）和基于 `world_minute` 的到期时间（`duration_minutes`、`next_due_minute`）。\n"
         "6. 严格限制未公开信息：远方阴谋、角色未获知的设定或 NPC 私密动机（`visibility='secret'` 或 `'faction_internal'`）不得标记为 `player_known_at_start=true`。\n"
-        "请只输出符合 MojingWorldAnalysisDraft Schema 的 JSON 对象。"
+        "7. 公开消息要单独填写玩家能听见或看见的 player_rumor_content，避免复述后台事件全文。\n"
+        "请只输出符合以下结构的 JSON 对象。\n"
+        + json.dumps(WORLD_ANALYSIS_OUTPUT_SCHEMA, ensure_ascii=False, separators=(",", ":"))
     )
 
     source_blocks: list[str] = []
@@ -826,21 +827,19 @@ class OpenAIWorldAnalysisModelClient:
     def __init__(
         self,
         *,
-        base_url: str,
-        api_key: str,
-        model: str,
+        base_url: str = "",
+        api_key: str = "",
+        model: str = "",
         timeout_seconds: float = 30.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        session_client: OpenAIModelClient | None = None,
     ) -> None:
-        if not isinstance(api_key, str) or not api_key.strip():
-            raise AnalysisValidationError("API_KEY_REQUIRED", "Live 模式必须提供非空 api_key。")
-        if not isinstance(model, str) or not model.strip():
-            raise AnalysisValidationError("MODEL_REQUIRED", "Live 模式必须提供非空 model 名称。")
-        self.base_url = validate_and_normalize_base_url(base_url)
-        self._api_key = api_key.strip()
-        self.model = model.strip()
-        self.timeout_seconds = float(timeout_seconds)
-        self._transport = transport
+        self._client = session_client or OpenAIModelClient(
+            base_url=base_url, api_key=api_key, model=model,
+            transport=transport, timeout_seconds=timeout_seconds,
+        )
+        self.base_url = self._client.base_url
+        self.model = self._client.model
         self.last_usage: dict[str, Any] | None = None
         self.call_history: list[dict[str, Any]] = []
 
@@ -864,15 +863,10 @@ class OpenAIWorldAnalysisModelClient:
             base_world_revision=base_world_revision,
             detected_conflicts=detected_conflicts,
         )
-        endpoint = f"{self.base_url.rstrip('/')}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "model": self.model,
             "temperature": 0.2,
-            "response_format": {"type": "json_object"},
+            "max_tokens": 8192,
             "messages": [
                 {"role": "system", "content": prompts["system_prompt"]},
                 {"role": "user", "content": prompts["user_prompt"]},
@@ -886,38 +880,9 @@ class OpenAIWorldAnalysisModelClient:
                 "allowed_source_ids": prompts["allowed_source_ids"],
             }
         )
+        body = await self._client._post(payload, self._client.timeout_seconds)
         try:
-            async with httpx.AsyncClient(
-                timeout=self.timeout_seconds,
-                transport=self._transport,
-            ) as client:
-                resp = await client.post(endpoint, headers=headers, json=payload)
-        except httpx.TimeoutException as exc:
-            raise GatewayError(
-                status=504,
-                code="MODEL_TIMEOUT",
-                message="AI 初始局势分析请求超时，请稍后重试。",
-                retryable=True,
-            ) from exc
-        except httpx.RequestError as exc:
-            raise GatewayError(
-                status=502,
-                code="MODEL_NETWORK_ERROR",
-                message="无法连接到模型服务商，请检查网络或接口地址后重试。",
-                retryable=True,
-            ) from exc
-
-        if resp.status_code >= 400:
-            raise GatewayError(
-                status=502 if resp.status_code >= 500 else 400,
-                code="MODEL_UPSTREAM_ERROR",
-                message=f"模型服务返回错误状态码 ({resp.status_code})，已中止分析且未泄露密钥。",
-                retryable=(resp.status_code >= 500 or resp.status_code == 429),
-            )
-
-        try:
-            body = resp.json()
-            content = body["choices"][0]["message"]["content"]
+            content = self._client._content(body)
             self.last_usage = body.get("usage")
             parsed = json.loads(_strip_markdown_fences(content))
         except Exception as exc:

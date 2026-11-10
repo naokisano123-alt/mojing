@@ -153,7 +153,17 @@ export function WorldStartPanel({
         setAppliedResult(clean.applied_result);
         setPhase('applied');
       } else if (clean.latest_draft) {
-        setDraft(clean.latest_draft);
+        const saved = clean.latest_draft;
+        setDraft(saved);
+        setSelectedSourceIds(saved.selected_source_ids);
+        setSelectedStartId(saved.start_point.start_id || '');
+        setLocation(saved.start_point.location);
+        setStartsAt(saved.start_point.starts_at);
+        setCharacterName(saved.start_point.character_name);
+        setCharacterRole(saved.start_point.character_role || '');
+        setAdventureName(saved.start_point.adventure_name);
+        setMode(saved.mode);
+        setRunKind(saved.run_kind);
         setPhase('ready_to_confirm');
       } else if (defaultSelected.length === 0) {
         setPhase('insufficient_materials');
@@ -795,21 +805,6 @@ export function WorldStartPanel({
                 >
                   <option value="fake">模拟模式（免 API Key）</option>
                   <option value="live">真实模型模式（复用已连接会话）</option>
-                </select>
-              </label>
-              <label className="world-start-field">
-                <span>开局类型</span>
-                <select
-                  aria-label="开局类型"
-                  value={runKind}
-                  disabled={disabled || submitting}
-                  onChange={e => setRunKind(e.target.value as WorldStartRunKind)}
-                  data-testid="world-start-run-kind-select"
-                >
-                  <option value="initial">首次建立开局 (initial)</option>
-                  <option value="retry">重试分析开局 (retry)</option>
-                  <option value="reopen">重新开局 (reopen)</option>
-                  <option value="branch">分支开局 (branch)</option>
                 </select>
               </label>
             </div>

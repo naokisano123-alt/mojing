@@ -59,6 +59,7 @@ def create_instance(
     world_minute: int = 0,
     world_revision: int = 0,
     canon_version: str | None = None,
+    instance_id: str | None = None,
 ) -> dict[str, Any]:
     if not isinstance(world_id, str) or not world_id:
         raise ApiError(422, "VALIDATION_ERROR", "world_id 无效。")
@@ -72,7 +73,7 @@ def create_instance(
     if existing is not None:
         return _dict(existing)
     now = time.time()
-    instance_id = str(uuid4())
+    instance_id = instance_id or str(uuid4())
     conn.execute(
         """
         INSERT INTO world_instances

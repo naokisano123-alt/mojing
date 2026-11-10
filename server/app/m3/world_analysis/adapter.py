@@ -270,15 +270,12 @@ def adapt_draft_to_domain_proposals(
             )
 
     for p_idx, ev in enumerate(validated.events):
-        if not ev.player_known_at_start:
+        if not ev.player_known_at_start or not ev.player_rumor_content:
             continue
         p_channel = ev.player_channel if ev.player_channel in ("observed", "notice", "rumor") else "rumor"
         p_ktype = ev.player_knowledge_type if ev.player_knowledge_type in ("confirmed", "suspected", "rumor") else "rumor"
         p_title = ev.player_rumor_title or f"{ev.location}坊间风声"
-        p_content = ev.player_rumor_content or f"你在{validated.starting_point.location}留意到：{safe_u16_truncate(ev.description, 120)}"
-        if p_title.strip() == ev.title.strip() and p_content.strip() == ev.description.strip():
-            p_title = f"【{ev.location}见闻】{ev.title}"
-            p_content = f"初抵{validated.starting_point.location}时的公开消息：{ev.description}"
+        p_content = ev.player_rumor_content
         knowledge_transmissions.append(
             {
                 "op": "record",
@@ -607,6 +604,7 @@ def apply_draft_to_instance_in_savepoint(
             bundle["npc_seed_proposal"],
             player_location=draft.starting_point.location,
             allowed_source_ids=draft.allowed_source_ids,
+            advance_world_revision=False,
         )
 
         for holder in bundle["knowledge_holders"]:

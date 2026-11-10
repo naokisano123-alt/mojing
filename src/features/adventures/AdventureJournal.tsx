@@ -17,6 +17,8 @@ import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
 import { WorldPulsePanel } from "../world-pulse";
+import { WorldStartPanel } from "../world-start";
+import type { WorldStartCommitResultDto } from "../world-start";
 import { WorldEncounterPanel } from "../world-encounters";
 import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
@@ -44,6 +46,7 @@ export function AdventureJournal({
   worldId,
   sessionId,
   onConfigure,
+  onImportMaterials,
   onSessionExpired,
   onOpenSource,
   api = adventureApi,
@@ -52,6 +55,7 @@ export function AdventureJournal({
   worldId: string;
   sessionId?: string;
   onConfigure: () => void;
+  onImportMaterials?: () => void;
   onSessionExpired?: () => void;
   onOpenSource: (source: NarrationSource) => void;
   api?: typeof adventureApi;
@@ -68,6 +72,7 @@ export function AdventureJournal({
   const [acceptedDraft, setAcceptedDraft] = useState<{ key: string | null; value: boolean }>();
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [analyzeStart, setAnalyzeStart] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]),
     [run, setRun] = useState<Detail | null>(null);
@@ -113,6 +118,7 @@ export function AdventureJournal({
       if (valid(generation) && Array.isArray(data.items)) setOpenings(data.items);
     }).catch(() => { /* Older endpoints still allow freeform creation. */ });
     setShowCreate(false);
+    setAnalyzeStart(false);
     setRuns([]);
     setRun(null);
     setDraft(null);
@@ -283,6 +289,20 @@ export function AdventureJournal({
       {renderSources(result)}
     </>
   );
+  const openStartedJourney = (result: WorldStartCommitResultDto) => void operate(async () => {
+    const generation = epoch.current;
+    const detail = await api.detail(result.adventure_id);
+    if (!valid(generation)) return;
+    setRuns(items => [detail, ...items.filter(item => item.id !== detail.id)]);
+    setRun(detail);
+    setDraft(detail.latest_draft);
+    setShowCreate(false);
+    setAnalyzeStart(false);
+    setAdvanceHours(undefined);
+    setAction("");
+    setExpanded(false);
+  });
+
   return (
     <section className="adventure-journal" aria-label="冒险记录">
       <button type="button" className="secondary" disabled={busy} onClick={onConfigure}>
@@ -296,6 +316,26 @@ export function AdventureJournal({
         </button>
       )}
       {!loadingRuns && (showCreate || runs.length === 0) && (
+        <button type="button" className="secondary" disabled={busy}
+          aria-expanded={analyzeStart} onClick={() => setAnalyzeStart(value => !value)}>
+          {analyzeStart ? "返回普通开局" : "从世界资料生成开局"}
+        </button>
+      )}
+      {!loadingRuns && (showCreate || runs.length === 0) && analyzeStart && (
+        <WorldStartPanel worldId={worldId} sessionId={sessionId} disabled={busy}
+          defaultRunKind={runs.length ? "reopen" : "initial"}
+          onConfigureModel={onConfigure} onRequestImportMaterials={onImportMaterials}
+          onJourneyStarted={openStartedJourney}
+          onOpenSource={citation => {
+            const id = citation.source_id.split(":")[1];
+            if (citation.kind === "lore_entry") {
+              onOpenSource({ ...citation, kind: "entry", entry_id: id });
+            } else {
+              onOpenSource({ ...citation, kind: "chunk", document_id: id });
+            }
+          }} />
+      )}
+      {!loadingRuns && (showCreate || runs.length === 0) && !analyzeStart && (
         <div className="journal-create">
           <label>冒险名称
           <input
