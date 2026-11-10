@@ -16,6 +16,7 @@ import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
+import { WorldPulsePanel } from "../world-pulse";
 import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
@@ -73,6 +74,7 @@ export function AdventureJournal({
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
   const [newsOpen, setNewsOpen] = useState(false);
+  const [pulseOpen, setPulseOpen] = useState(false);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;

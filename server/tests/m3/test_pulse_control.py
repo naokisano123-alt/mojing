@@ -38,7 +38,8 @@ def test_pulse_defaults_off_and_requires_connection(client):
 
     enable = client.put(f"/api/v1/adventures/{run['id']}/world-pulse", json={"enabled": True})
     assert enable.status_code == 409
-    assert enable.json()["error"]["code"] == "PULSE_NOT_CONNECTED"
+    # 控制面由 pulse.control 统一实现，缺会话沿用其错误码
+    assert enable.json()["error"]["code"] == "MODEL_SESSION_UNBOUND"
 
 
 def test_connect_independent_then_enable_and_disable(client):
@@ -59,10 +60,15 @@ def test_connect_independent_then_enable_and_disable(client):
     assert status["mode"] == "independent"
     assert status["available"] is True
 
+    # 契约：只有玩家在线（活动租约）时才允许进入 ready
+    assert client.post(
+        f"/api/v1/adventures/{run['id']}/world-pulse/activity", json={"active": True}
+    ).status_code == 200
     assert client.put(f"/api/v1/adventures/{run['id']}/world-pulse", json={"enabled": True}).status_code == 200
     status = client.get(f"/api/v1/adventures/{run['id']}/world-pulse").json()
     assert status["enabled"] is True
-    assert status["state"] == "ready"
+    # 启停后 worker 循环在跑，状态可能是 ready 或 working，但不应是 off/offline
+    assert status["state"] in {"ready", "working"}
 
     assert client.post(f"/api/v1/adventures/{run['id']}/world-pulse/activity", json={"active": False}).status_code == 200
     assert client.put(f"/api/v1/adventures/{run['id']}/world-pulse", json={"enabled": False}).status_code == 200
