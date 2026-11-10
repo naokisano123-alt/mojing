@@ -329,7 +329,7 @@ def create_app(
     from .m3.core import pulse_preview
     from .m3.pulse.worker import pulse_worker_lifespan
 
-    pulse_worker = pulse_preview.create_worker(cfg.db_path)
+    pulse_worker = pulse_preview.create_worker(cfg.db_path, narration_store=narration_store)
 
     @asynccontextmanager
     async def lifespan(_app):

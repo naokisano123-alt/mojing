@@ -83,10 +83,12 @@ def _apply(conn, instance_id, proposal, _job):
     return {"applied_operations": len(applied["events"])}
 
 
-def create_worker(path):
+def create_worker(path, narration_store=None):
     return PulseWorker(
-        lambda: db(path), session_router=PulseSessionRouter(),
-        snapshot_reader=_read_snapshot, proposal_applier=_apply,
+        lambda: db(path),
+        session_router=PulseSessionRouter(narration_store=narration_store),
+        snapshot_reader=_read_snapshot,
+        proposal_applier=_apply,
     )
 
 
@@ -99,9 +101,68 @@ def register_routes(app, path, worker):
             run = adventures.get_adventure(conn, adventure_id)
             instance = instances.for_adventure(conn, adventure_id)
             config = conn.execute(
-                "SELECT enabled FROM pulse_instance_configs WHERE instance_id=?", (instance["id"],)
+                "SELECT enabled, paused FROM pulse_instance_configs WHERE instance_id=?",
+                (instance["id"],),
             ).fetchone()
-        return {"available": run["mode"] == "fake", "enabled": bool(config and config["enabled"])}
+        session = worker.session_router.status_for(instance["id"])
+        enabled = bool(config and config["enabled"])
+        if session["mode"] in ("independent", "reuse_narration"):
+            available = True
+        else:
+            available = run["mode"] == "fake"
+        if not enabled:
+            state = "off"
+        elif not session["ready"]:
+            state = "waiting_for_model"
+        else:
+            state = "ready"
+        return {
+            "available": available,
+            "enabled": enabled,
+            "mode": session["mode"],
+            "state": state,
+            "model": session["model"],
+        }
+
+    @app.post(prefix + "/connect")
+    def connect(adventure_id: str, payload: dict):
+        mode = payload.get("mode", "independent")
+        with db(path) as conn:
+            run = adventures.get_adventure(conn, adventure_id)
+            instance = instances.for_adventure(conn, adventure_id)
+        if run["mode"] != "live":
+            raise ApiError(409, "PULSE_LIVE_ONLY", "模拟旅程不需要连接模型会话。")
+        if mode == "independent":
+            base_url = payload.get("base_url")
+            model = payload.get("model")
+            api_key = payload.get("api_key")
+            if not all(isinstance(value, str) and value.strip() for value in (base_url, model, api_key)):
+                raise ApiError(422, "VALIDATION_ERROR", "独立模式需要 base_url、model 和 api_key。")
+            result = worker.session_router.bind_independent(
+                instance["id"], base_url=base_url.strip(), model=model.strip(), api_key=api_key
+            )
+        elif mode == "reuse_narration":
+            session_id = payload.get("narration_session_id")
+            if not isinstance(session_id, str) or not session_id.strip():
+                raise ApiError(422, "VALIDATION_ERROR", "复用模式需要 narration_session_id。")
+            result = worker.session_router.bind_reuse_narration(instance["id"], session_id.strip())
+        else:
+            raise ApiError(422, "VALIDATION_ERROR", "mode 只能是 independent 或 reuse_narration。")
+        return {"mode": result["mode"], "model": result.get("model")}
+
+    @app.post(prefix + "/activity")
+    def activity(adventure_id: str, payload: dict):
+        active = payload.get("active")
+        if type(active) is not bool:
+            raise ApiError(422, "VALIDATION_ERROR", "active 须为布尔值。")
+        with db(path) as conn:
+            adventures.get_adventure(conn, adventure_id)
+            instance = instances.for_adventure(conn, adventure_id)
+        if active:
+            worker.activity_registry.touch(instance["id"])
+        else:
+            worker.activity_registry.mark_offline(instance["id"])
+        return {"active": active}
 
     @app.put(prefix)
     async def set_enabled(adventure_id: str, payload: dict):
@@ -111,16 +172,18 @@ def register_routes(app, path, worker):
         with db(path) as conn:
             conn.execute("BEGIN IMMEDIATE")
             run = adventures.get_adventure(conn, adventure_id)
-            if run["mode"] != "fake":
-                raise ApiError(409, "PULSE_PREVIEW_ONLY", "世界脉动预览仅支持模拟旅程。")
             instance = instances.for_adventure(conn, adventure_id)
             instance_id = instance["id"]
-            if enabled:
-                seeded = conn.execute(
-                    "SELECT 1 FROM world_events WHERE instance_id=? LIMIT 1", (instance_id,)
-                ).fetchone()
-                if not seeded and _source(conn, instance["world_id"]) is None:
-                    raise ApiError(422, "PULSE_SOURCE_REQUIRED", "请先导入一份资料或启用一条人工设定。")
+            is_fake = run["mode"] == "fake"
+            if enabled and not is_fake:
+                session = worker.session_router.status_for(instance_id)
+                if not session["ready"]:
+                    raise ApiError(409, "PULSE_NOT_CONNECTED", "请先连接模型会话再启用世界脉动。")
+            seeded = conn.execute(
+                "SELECT 1 FROM world_events WHERE instance_id=? LIMIT 1", (instance_id,)
+            ).fetchone()
+            if enabled and not seeded and _source(conn, instance["world_id"]) is None:
+                raise ApiError(422, "PULSE_SOURCE_REQUIRED", "请先导入一份资料或启用一条人工设定。")
             configure_instance_pulse(conn, instance_id, enabled=enabled, paused=False)
             if enabled and not seeded:
                 queued = conn.execute("""
@@ -130,21 +193,27 @@ def register_routes(app, path, worker):
                 if not queued:
                     schedule_on_turn_commit(
                         conn, instance_id=instance_id, adventure_id=adventure_id,
-                        adventure_revision=run["revision"], kind="seed", idempotency_key=f"preview:{uuid4().hex}",
+                        adventure_revision=run["revision"], kind="seed",
+                        idempotency_key=f"pulse:{uuid4().hex}",
                     )
             if enabled:
                 resume_waiting_jobs(conn, instance_id)
             else:
                 cancel_instance_jobs(
                     conn, instance_id, include_running=True,
-                    reason_code="PULSE_DISABLED", reason_summary="世界脉动预览已关闭。",
+                    reason_code="PULSE_DISABLED", reason_summary="世界脉动已关闭。",
                 )
 
         if enabled:
-            activate(worker, instance_id)
+            if is_fake:
+                activate(worker, instance_id)
+            else:
+                worker.start()
+                worker.activity_registry.touch(instance_id)
         else:
             worker.activity_registry.mark_offline(instance_id)
-            worker.session_router.unbind(instance_id)
+            if is_fake:
+                worker.session_router.unbind(instance_id)
         return {"available": True, "enabled": enabled}
 
 
