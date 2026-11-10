@@ -32,7 +32,7 @@ export interface WorldPulsePanelProps {
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEFAULT_MODEL_NAME = 'deepseek-chat';
-const DEFAULT_HEARTBEAT_MS = 60_000;
+const DEFAULT_HEARTBEAT_MS = 20_000;
 
 export function WorldPulsePanel({
   adventureId,
@@ -47,6 +47,7 @@ export function WorldPulsePanel({
   defaultModel = DEFAULT_MODEL_NAME,
   onStatusChange,
 }: WorldPulsePanelProps) {
+  const [open, setOpen] = useState(defaultOpen);
   const [status, setStatus] = useState<WorldPulseStatus | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [busy, setBusy] = useState<boolean>(false);
@@ -216,10 +217,12 @@ export function WorldPulsePanel({
     const targetId = adventureId.trim();
     if (!targetId) return;
 
-    const generation = epochRef.current;
     const pulseEnabled = Boolean(status?.enabled);
 
-    if (pulseEnabled && isForegroundOnline() && heartbeatIntervalMs > 0) {
+    if (pulseEnabled && isForegroundOnline()) {
+      void sendActivitySafe(targetId, true, epochRef.current);
+    }
+    if (pulseEnabled && heartbeatIntervalMs > 0) {
       heartbeatTimerRef.current = setInterval(() => {
         if (
           mountedRef.current &&
@@ -235,7 +238,6 @@ export function WorldPulsePanel({
     const handleVisibilityChange = () => {
       if (!mountedRef.current || currentAdventureIdRef.current !== targetId) return;
       if (document.visibilityState === 'hidden') {
-        clearHeartbeat();
         void sendActivitySafe(targetId, false, epochRef.current);
         setNotice('已切入后台，世界脉动已暂停请求；返回前台时不会补演后台期间事件。');
       } else if (isForegroundOnline()) {
@@ -248,7 +250,6 @@ export function WorldPulsePanel({
 
     const handleOffline = () => {
       if (!mountedRef.current || currentAdventureIdRef.current !== targetId) return;
-      clearHeartbeat();
       void sendActivitySafe(targetId, false, epochRef.current);
       if (statusRef.current) {
         updateStatus({
@@ -280,7 +281,6 @@ export function WorldPulsePanel({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
-      void generation;
     };
   }, [
     adventureId,
@@ -438,9 +438,7 @@ export function WorldPulsePanel({
       }
       updateStatus(next);
 
-      if (targetEnabled && isForegroundOnline()) {
-        void sendActivitySafe(adventureId, true, generation);
-      } else if (!targetEnabled) {
+      if (!targetEnabled) {
         clearHeartbeat();
         void sendActivitySafe(adventureId, false, generation);
       }
@@ -499,7 +497,12 @@ export function WorldPulsePanel({
 
   return (
     <details
-      open={defaultOpen}
+      open={open}
+      onToggle={event => {
+        const next = event.currentTarget.open;
+        setOpen(next);
+        if (!next) setApiKey('');
+      }}
       className="world-pulse-panel"
       aria-label="世界脉动控制与预算"
       data-viewport="mobile-ready"
@@ -517,7 +520,7 @@ export function WorldPulsePanel({
         </span>
       </summary>
 
-      <div className="world-pulse-body">
+      {open && <div className="world-pulse-body">
         <div className="world-pulse-status-card" data-testid="pulse-status-card">
           <div className="world-pulse-status-row">
             <span>
@@ -554,7 +557,7 @@ export function WorldPulsePanel({
           ) : (
             <p>
               <strong>费用与边界说明：</strong>
-              世界脉动默认关闭。连接会话不会自动开启脉动；启用后，每次确认回合使游戏时间推进且存在到期事件时，后台会发起额外的模型调用并消耗 Token。关闭或暂停期间普通冒险叙事仍可继续，且恢复时不会补演离线期间的历史。
+              世界脉动默认关闭。连接会话不会自动开启脉动；启用后，初始化局势和推进到期事件可能发起额外的模型调用并消耗 Token。关闭或暂停期间普通冒险叙事仍可继续，且恢复时不会补演离线期间的历史。
             </p>
           )}
         </div>
@@ -870,7 +873,7 @@ export function WorldPulsePanel({
             <p>{error}</p>
           </div>
         )}
-      </div>
+      </div>}
     </details>
   );
 }

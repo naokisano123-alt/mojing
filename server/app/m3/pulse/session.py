@@ -163,7 +163,7 @@ class PulseSessionRouter:
         self._timeout_seconds = timeout_seconds
         self._allowed_base_urls = (
             {validate_and_normalize_base_url(u) for u in allowed_base_urls}
-            if allowed_base_urls
+            if allowed_base_urls is not None
             else None
         )
         self._require_https = bool(require_https)
@@ -222,13 +222,13 @@ class PulseSessionRouter:
         若该实例此前已绑定过独立会话，先安全释放旧的独立会话（绝不影响叙事会话池）。
         连接操作本身不启用脉动、不发起付费测试请求。
         """
-        normalized_url = self._validate_url_policy(base_url)
-        self._cleanup_owned_session(instance_id)
         try:
+            normalized_url = self._validate_url_policy(base_url)
             created = self._pulse_store.create(base_url=normalized_url, model=model, api_key=api_key)
         except GatewayError as exc:
             raise PulseError(exc.code, exc.message, status=exc.status) from None
 
+        self._cleanup_owned_session(instance_id)
         sid = str(created["session_id"])
         gen = self._bump_generation(instance_id)
         self._bindings[instance_id] = _PulseBinding(

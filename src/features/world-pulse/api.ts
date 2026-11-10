@@ -57,12 +57,19 @@ export const PULSE_STATE_DESCRIPTIONS: Record<PulseRuntimeState, string> = {
 };
 
 export const PULSE_REASON_LABELS: Record<string, string> = {
+  PULSE_JOB_FAILED: '最近一次推演失败。普通冒险仍可继续，可关闭后重新开启脉动。',
+  PULSE_SOURCE_REQUIRED: '请导入一份世界资料或确认至少一条设定，再重新开启脉动。',
   PULSE_DISABLED: '玩家已主动关闭世界脉动。',
   PULSE_DISABLED_OR_PAUSED: '世界脉动处于关闭或暂停状态。',
   MODEL_SESSION_UNBOUND: '尚未绑定脉动模型会话，请先配置独立连接或复用叙事会话。',
   MODEL_SESSION_EXPIRED: '模型会话已过期或服务已重启，请重新连接。',
   MODEL_AUTH_FAILED: '模型 API Key 认证失败，请重新输入有效凭据连接。',
   CLIENT_OFFLINE: '当前页面离线或处于后台，已暂停付费推演。',
+  PULSE_DAILY_CALL_BUDGET_EXHAUSTED: '当游戏日脉动调用次数已达上限。',
+  PULSE_DAILY_TOKEN_BUDGET_EXHAUSTED: '当游戏日脉动 Token 预算已达上限。',
+  PULSE_ROUND_CALL_BUDGET_EXCEEDED: '本轮脉动调用次数已达上限。',
+  PULSE_ROUND_TOKEN_BUDGET_EXCEEDED: '本轮脉动 Token 预算已达上限。',
+  PULSE_COOLDOWN_ACTIVE: '脉动调用冷却中。',
   DAILY_CALL_BUDGET_EXHAUSTED: '当游戏日脉动调用次数已达上限，将在下一游戏日恢复。',
   DAILY_TOKEN_BUDGET_EXHAUSTED: '当游戏日脉动 Token 预算已达上限，将在下一游戏日恢复。',
   ROUND_BUDGET_EXHAUSTED: '本轮脉动预算已达上限，已自动延后。',

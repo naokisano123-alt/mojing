@@ -74,6 +74,24 @@ def _build_pulse_user_prompt(request: PulseModelRequest) -> str:
     )
 
 
+def build_pulse_prompts(request: PulseModelRequest) -> tuple[str, str]:
+    if not request.snapshot.get("use_event_prompts"):
+        return _build_pulse_system_prompt(request.kind), _build_pulse_user_prompt(request)
+
+    from app.m3.events import build_pulse_event_prompts
+
+    prompts = build_pulse_event_prompts(request)
+    system = prompts["system_prompt"]
+    if request.kind == "advance":
+        system += (
+            '\n如事态确实形成玩家可接触的公告，可提议一条传播，字段为 '
+            'holder_id="player"、knowledge_type="rumor"、channel="notice"、title、content、'
+            'source_event_id（已存在的许可事件）、learned_minute（当前确认分钟）。'
+            '没有可信传播渠道时省略 transmissions；禁止公开权威记录中的秘密。'
+        )
+    return system, prompts["user_prompt"]
+
+
 class PulseModelClientProtocol(Protocol):
     """世界脉动模型客户端协议。"""
 
@@ -253,8 +271,7 @@ class OpenAIPulseModelClient:
 
     async def propose(self, request: PulseModelRequest) -> PulseModelResponse:
         purpose = f"world_pulse_{request.kind}"
-        sys_prompt = _build_pulse_system_prompt(request.kind)
-        user_prompt = _build_pulse_user_prompt(request)
+        sys_prompt, user_prompt = build_pulse_prompts(request)
         est_prompt_tokens = estimate_tokens(sys_prompt + "\n" + user_prompt)
 
         payload = {

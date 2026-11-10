@@ -124,6 +124,7 @@ def get_or_init_instance_config(
                 cooldown_seconds, min_game_minute_interval, defer_seconds,
                 last_pulsed_minute, resume_anchor_minute, last_call_at, updated_at
             ) VALUES (?, 0, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+            ON CONFLICT(instance_id) DO NOTHING
             """,
             (
                 instance_id,

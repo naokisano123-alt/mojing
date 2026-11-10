@@ -313,7 +313,7 @@ def connect_pulse_session(
 
 
 def _has_existing_events_or_seed_job(conn: sqlite3.Connection, instance_id: str) -> bool:
-    """检查实例是否已有权威事件或已存在活跃/已完成的 seed 任务。"""
+    """检查实例是否已有权威事件或已存在活跃的 seed 任务。"""
     tables = {
         str(r[0])
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -332,7 +332,7 @@ def _has_existing_events_or_seed_job(conn: sqlite3.Connection, instance_id: str)
         SELECT 1 FROM pulse_jobs
         WHERE instance_id = ?
           AND kind = 'seed'
-          AND status IN ('pending', 'running', 'waiting_for_model', 'completed')
+          AND status IN ('pending', 'running', 'waiting_for_model')
         LIMIT 1
         """,
         (instance_id,),
@@ -548,7 +548,7 @@ def build_combined_pulse_callbacks(
         if "summary" in envelope and envelope["summary"]:
             events_payload["summary"] = envelope["summary"]
 
-        validated_events = events_validator(events_payload, context) if ops else None
+        validated_events = events_validator(events_payload, context) if ops or context["kind"] == "seed" else None
         validated_transmissions: Any = transmissions
         if transmissions and knowledge_validator is not None:
             validated_transmissions = knowledge_validator(transmissions, context)

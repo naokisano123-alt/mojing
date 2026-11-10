@@ -62,7 +62,7 @@ def _derive_control_state(
     for j in recent_jobs:
         st = j.get("status")
         ecode = j.get("error_code")
-        if st == "waiting_for_model" and ecode:
+        if st == "waiting_for_model" and ecode and waiting_code is None:
             waiting_code = str(ecode)
         elif st == "pending":
             nra = j.get("next_retry_at")
@@ -98,6 +98,8 @@ def _derive_control_state(
     ):
         return "working", None
 
+    if recent_jobs and recent_jobs[0]["status"] == "failed":
+        return "ready", "PULSE_JOB_FAILED"
     return "ready", None
 
 
@@ -137,7 +139,7 @@ def get_pulse_status(
     for r in counts_rows:
         counts[str(r["status"])] = int(r["n"])
 
-    recent_jobs_raw = list_jobs(conn, instance_id, limit=20)
+    recent_jobs_raw = list_jobs(conn, instance_id, limit=20, recent=True)
     sanitized_jobs = [
         {
             "job_id": j["job_id"],

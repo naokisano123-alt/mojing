@@ -5,6 +5,7 @@ from fastapi import Query, Request, Response
 
 from ..db import db
 from ..errors import ApiError
+from ..m3.knowledge import build_adventure_narration_knowledge_context
 from ..model_gateway.errors import GatewayError
 from ..narration.core import DraftError, FakeModelClient, HistoryTurn, NarrationRequest, generate_draft, validate_request
 from ..narration.lifecycle import await_request_work
@@ -116,7 +117,10 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
     async def commit_draft(adventure_id: str, draft_id: str, payload: dict | None = None):
         active_instance = None
         with db(cfg.db_path) as conn:
-            run = service.commit(conn, adventure_id, draft_id, (payload or {}).get('apply_changes', False))
+            run = service.commit(
+                conn, adventure_id, draft_id, (payload or {}).get('apply_changes', False),
+                pulse_worker=pulse_worker,
+            )
             if run['mode'] == 'fake':
                 instance = instances.for_adventure(conn, adventure_id)
                 config = conn.execute(
@@ -170,6 +174,9 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
                     [f"{turn.action} {turn.narrative}" for turn in history], recent[0]['sequence'] if recent else 1,
                 )
                 notes = item_descriptions.for_character(conn, run['world_id'], run['character'])
+                known_news = build_adventure_narration_knowledge_context(
+                    conn, adventure_id, action=action, location=(run['character'] or {}).get('location', ''),
+                )
             if run['mode'] == 'live':
                 session_id = payload.get('session_id')
                 if not isinstance(session_id, str) or not session_id:
@@ -194,7 +201,8 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
                                        item_descriptions=item_descriptions.for_prompt(notes, action),
                                        adventure_memory=facts, memory_excerpts=excerpts,
                                        memory_items=tuple(snapshot["items"].values()),
-                                       clock=clock, clock_max_minutes=clock_max)
+                                       clock=clock, clock_max_minutes=clock_max,
+                                       world_knowledge=known_news.prompt_block)
             draft = await await_request_work(http_request, generate_draft(request, client), 60)
             result = {'request_id': draft_id, 'mode': run['mode'], 'narrative': draft.narrative,
                       'references': list(draft.references), 'sources': list(bundle.metadata),

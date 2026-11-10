@@ -74,7 +74,6 @@ export function AdventureJournal({
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
   const [newsOpen, setNewsOpen] = useState(false);
-  const [pulseOpen, setPulseOpen] = useState(false);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
@@ -592,6 +591,8 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
+          {run.mode === "live" && <WorldPulsePanel key={run.id} adventureId={run.id}
+            narrationSessionId={sessionId} defaultOpen={false} />}
           <details
             className="journal-sources"
             aria-label="世界消息"

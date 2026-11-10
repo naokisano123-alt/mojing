@@ -54,6 +54,7 @@ class NarrationRequest:
     memory_excerpts: tuple[dict, ...] = ()
     clock: dict | None = None
     clock_max_minutes: int | None = None
+    world_knowledge: str = ""
 
 
 @dataclass(frozen=True)

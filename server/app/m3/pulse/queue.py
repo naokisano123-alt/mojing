@@ -114,28 +114,20 @@ def list_jobs(
     *,
     status: str | None = None,
     limit: int = 50,
+    recent: bool = False,
 ) -> list[dict[str, Any]]:
-    """按实例列出任务记录（脱敏）。"""
+    """按实例列出任务记录，状态面板可优先读取最近更新的任务。"""
     conn.row_factory = sqlite3.Row
+    where = "instance_id = ?"
+    params: tuple[Any, ...] = (instance_id,)
     if status is not None:
-        rows = conn.execute(
-            """
-            SELECT * FROM pulse_jobs
-            WHERE instance_id = ? AND status = ?
-            ORDER BY created_at ASC, rowid ASC LIMIT ?
-            """,
-            (instance_id, status, limit),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT * FROM pulse_jobs
-            WHERE instance_id = ?
-            ORDER BY created_at ASC, rowid ASC LIMIT ?
-            """,
-            (instance_id, limit),
-        ).fetchall()
-    return [_row_to_job_dict(r) for r in rows]
+        where += " AND status = ?"
+        params += (status,)
+    order = "updated_at DESC, rowid DESC" if recent else "created_at ASC, rowid ASC"
+    rows = conn.execute(
+        f"SELECT * FROM pulse_jobs WHERE {where} ORDER BY {order} LIMIT ?", (*params, limit),
+    )
+    return [_row_to_job_dict(row) for row in rows]
 
 
 def enqueue(conn: sqlite3.Connection, trigger: PulseTrigger | dict[str, Any]) -> dict[str, Any]:

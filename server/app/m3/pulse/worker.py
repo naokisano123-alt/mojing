@@ -18,6 +18,7 @@ import sqlite3
 import time
 from typing import Any, AsyncIterator, Callable, ContextManager
 
+from app.errors import ApiError
 from app.m3.pulse.budget import (
     BudgetExhaustedError,
     PulseBudgetManager,
@@ -25,7 +26,7 @@ from app.m3.pulse.budget import (
     estimate_call_reservation_tokens,
     get_or_init_instance_config,
 )
-from app.m3.pulse.client import UpstreamRequestFailedError
+from app.m3.pulse.client import UpstreamRequestFailedError, build_pulse_prompts
 from app.m3.pulse.errors import PulseError, sanitize_text
 from app.m3.pulse.queue import (
     _require_instance,
@@ -700,14 +701,27 @@ class PulseWorker:
             requested_max_out = int(
                 job.get("payload", {}).get("max_tokens") or self.default_max_output_tokens
             )
+            is_paid_call = session_mode in ("independent", "reuse_narration")
+            budget_input = snapshot_data
+            if is_paid_call and snapshot_data.get("use_event_prompts"):
+                try:
+                    budget_input = "\n".join(build_pulse_prompts(PulseModelRequest(
+                        instance_id=inst_id, kind=job["kind"], base_world_revision=snapshot_revision,
+                        target_world_minute=snapshot_world_minute, snapshot=snapshot_data,
+                    )))
+                except ApiError as exc:
+                    failed = fail_or_retry(
+                        conn, job_id, lease_token, error_code=exc.code,
+                        error_summary="本次推演输入未通过校验。", now=now, retryable=False,
+                    )
+                    return {"job": failed, "outcome": "snapshot_failed", "reason_code": exc.code}
+
             est_prompt_toks, max_tokens_for_call, est_total_toks = estimate_call_reservation_tokens(
-                snapshot_data,
+                budget_input,
                 kind=str(job["kind"]),
                 max_output_tokens=requested_max_out,
                 max_tokens_per_round=int(cfg["max_tokens_per_round"]),
             )
-            is_paid_call = session_mode in ("independent", "reuse_narration")
-
             try:
                 reservation = self.budget_manager.reserve(
                     conn,
