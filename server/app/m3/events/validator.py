@@ -1,11 +1,12 @@
-"""M3.1 / M3.5 世界事件提议纯函数校验器（`validate_proposal`）。
+"""M3.1 / M3.5 世界事件提议纯函数校验器（`validate_proposal`，M3 Wave 2 扩展）。
 
-契约要求（`docs/contracts/M3_WAVE1_API.md` & `docs/collaboration/M3_WAVE1_GEMINI_MARCIN.md`）：
+契约要求（`docs/contracts/M3_WAVE1_API.md`, `docs/contracts/M3_WAVE2_API.md` & `docs/collaboration/M3_WAVE2_GEMINI_MARCIN.md`）：
 1. 校验器内部纯计算，不执行 SQLite I/O 或网络请求。
-2. 拒绝未知字段、跨实例引用、非法时间或版本、伪造来源、任意 JSON 路径写入与直接修改玩家个人账本。
-3. 验证时间先后、生命周期转换、父事件引用、自引用与因果有向无环图（DAG）环路。
-4. 验证初始局势生成主线数量（3～6 条活跃主线）与临时事件活跃上限。
-5. 验证战争、政权更替等重大转折的阶段性演进与已登记前置条件。
+2. 拒绝未知根字段、跨实例引用、错误旧版本（事件版本与世界实例版本）、伪造时间、伪造 Canon 来源、任意 JSON 路径写入与直接修改玩家个人账本。
+3. 解决事件包 `mode` 与队列任务 `kind`、数据库 `revision` 与对外 `world_revision` / `base_world_revision`、以及 `world_minute` 与 `target_world_minute` 的双向适配与一致性核验。
+4. 验证时间先后、生命周期转换、父事件引用、自引用与因果有向无环图（DAG）环路。
+5. 验证初始局势生成主线数量（3～6 条活跃主线）与临时事件活跃上限（含快照外存量活跃临时事件计数）。
+6. 验证战争、政权更替等重大转折的阶段性演进与已登记前置条件。
 """
 
 from __future__ import annotations
@@ -21,8 +22,10 @@ from .errors import (
     EventRevisionConflictError,
     EventValidationError,
     PlayerLedgerProtectedError,
+    PulseSourceRequiredError,
     SourceFabricatedError,
     TurnpointValidationError,
+    WorldRevisionConflictError,
 )
 from .types import (
     CONSEQUENCE_DOMAINS,
@@ -55,7 +58,21 @@ from .types import (
     ValidatedEventProposal,
 )
 
-_ALLOWED_ROOT_KEYS = frozenset({"operations", "mode", "summary", "instance_id"})
+_ALLOWED_ROOT_KEYS = frozenset(
+    {
+        "operations",
+        "mode",
+        "kind",
+        "summary",
+        "instance_id",
+        "world_minute",
+        "target_world_minute",
+        "world_revision",
+        "base_world_revision",
+        "revision",
+        "transmissions",
+    }
+)
 
 _SERVER_MANAGED_TIME_KEYS = frozenset({"created_minute", "updated_minute", "created_at", "updated_at"})
 _SERVER_MANAGED_ID_KEYS = frozenset({"event_id", "revision", "expected_event_revision"})
@@ -120,6 +137,22 @@ def _u16_units(text: str, field_name: str) -> int:
         ) from exc
 
 
+def _safe_u16_truncate(text: str, max_units: int) -> str:
+    if max_units <= 0:
+        return ""
+    if _u16_units(text, "text") <= max_units:
+        return text
+    units = 0
+    chars: list[str] = []
+    for ch in text:
+        ch_units = 2 if ord(ch) > 0xFFFF else 1
+        if units + ch_units > max_units:
+            break
+        chars.append(ch)
+        units += ch_units
+    return "".join(chars)
+
+
 def _require_non_empty_str(value: Any, field_name: str, max_units: int) -> str:
     if not isinstance(value, str) or not value.strip():
         raise EventValidationError(
@@ -174,75 +207,241 @@ def _check_forbidden_keys(mapping: Mapping[str, Any], location_hint: str) -> Non
             raise ArbitraryPathForbiddenError(key)
 
 
+def _extract_mode_from_mapping(data: Mapping[str, Any], prefix: str) -> tuple[str | None, bool]:
+    has_mode = "mode" in data and data["mode"] is not None
+    has_kind = "kind" in data and data["kind"] is not None
+    if not has_mode and not has_kind:
+        has_job_kind = "job_kind" in data and data["job_kind"] is not None
+        if has_job_kind:
+            jk = data["job_kind"]
+            if jk not in PROPOSAL_MODES:
+                raise EventValidationError(
+                    "CONTEXT_INVALID",
+                    f"{prefix}.job_kind 仅支持 'seed' 或 'advance'。",
+                    {"job_kind": jk},
+                )
+            return str(jk), True
+        return None, False
+
+    if has_mode and has_kind and data["mode"] != data["kind"]:
+        raise EventValidationError(
+            "MODE_KIND_MISMATCH",
+            f"{prefix} 中 mode ({data['mode']!r}) 与 kind ({data['kind']!r}) 不一致。",
+            {"mode": data["mode"], "kind": data["kind"]},
+        )
+    resolved = data["mode"] if has_mode else data["kind"]
+    if resolved not in PROPOSAL_MODES:
+        raise EventValidationError(
+            "CONTEXT_INVALID",
+            f"{prefix} 的 mode/kind 仅支持 'seed' 或 'advance'。",
+            {"mode": resolved},
+        )
+    return str(resolved), True
+
+
+def _extract_minute_from_mapping(data: Mapping[str, Any], prefix: str) -> int | None:
+    has_wm = "world_minute" in data and data["world_minute"] is not None
+    has_tm = "target_world_minute" in data and data["target_world_minute"] is not None
+    if not has_wm and not has_tm:
+        return None
+    wm = _require_strict_int(data["world_minute"], f"{prefix}.world_minute", min_value=0) if has_wm else None
+    tm = _require_strict_int(data["target_world_minute"], f"{prefix}.target_world_minute", min_value=0) if has_tm else None
+    if wm is not None and tm is not None and wm != tm:
+        raise EventValidationError(
+            "TIMESTAMP_OVERRIDE_FORBIDDEN",
+            f"{prefix} 中 world_minute ({wm}) 与 target_world_minute ({tm}) 不一致。",
+            {"world_minute": wm, "target_world_minute": tm},
+        )
+    return wm if wm is not None else tm
+
+
+def _extract_revision_from_mapping(data: Mapping[str, Any], prefix: str, instance_id: str) -> int | None:
+    keys = [k for k in ("base_world_revision", "world_revision", "revision") if k in data and data[k] is not None]
+    if not keys:
+        return None
+    values = [
+        _require_strict_int(data[k], f"{prefix}.{k}", min_value=0)
+        for k in keys
+    ]
+    if len(set(values)) > 1:
+        raise WorldRevisionConflictError(
+            instance_id,
+            values[0],
+            values[1],
+            f"{prefix} 中世界版本号字段不一致: {dict(zip(keys, values))}。",
+        )
+    return values[0]
+
+
 def _normalize_context(context: ProposalValidationContext | Mapping[str, Any]) -> ProposalValidationContext:
     if isinstance(context, ProposalValidationContext):
         return context
     if not isinstance(context, Mapping):
         raise EventValidationError("CONTEXT_INVALID", "校验上下文必须为 ProposalValidationContext 或映射对象。")
 
-    instance_id = _require_non_empty_str(context.get("instance_id"), "context.instance_id", 120)
-    world_minute = _require_strict_int(context.get("world_minute", 0), "context.world_minute", min_value=0)
-    mode = context.get("mode", "advance")
-    if mode not in PROPOSAL_MODES:
-        raise EventValidationError(
-            "CONTEXT_INVALID",
-            "context.mode 仅支持 'seed' 或 'advance'。",
-            {"mode": mode},
+    snap_raw = context.get("snapshot")
+    snap: Mapping[str, Any] = snap_raw if isinstance(snap_raw, Mapping) else {}
+
+    raw_inst_id = context.get("instance_id") if context.get("instance_id") is not None else snap.get("instance_id")
+    instance_id = _require_non_empty_str(raw_inst_id, "context.instance_id", 120)
+    if snap.get("instance_id") is not None:
+        snap_inst_id = _require_non_empty_str(snap.get("instance_id"), "snapshot.instance_id", 120)
+        if snap_inst_id != instance_id:
+            raise CrossInstanceReferenceError(instance_id, snap_inst_id, snap_inst_id)
+
+    if snap.get("blocked") is True or context.get("blocked") is True:
+        reason_code = str(snap.get("reason_code") or context.get("reason_code") or "PULSE_SOURCE_REQUIRED")
+        reason_msg = str(
+            snap.get("reason_message")
+            or context.get("reason_message")
+            or "当前世界没有可用的已确认设定条目或导入资料，无法生成初始事件线。"
         )
+        world_id = str(snap.get("world_id") or context.get("world_id") or "")
+        if reason_code == "PULSE_SOURCE_REQUIRED":
+            raise PulseSourceRequiredError(world_id, instance_id, reason_msg, status=422)
+        raise EventValidationError(reason_code, reason_msg, {"instance_id": instance_id})
 
-    raw_sources = context.get("allowed_source_ids", ())
-    if not isinstance(raw_sources, (list, tuple, set, frozenset)) or any(
-        not isinstance(s, str) or not s.strip() for s in raw_sources
-    ):
-        raise EventValidationError("CONTEXT_INVALID", "context.allowed_source_ids 必须为字符串集合。")
+    ctx_mode, ctx_has_mode = _extract_mode_from_mapping(context, "context")
+    snap_mode, snap_has_mode = _extract_mode_from_mapping(snap, "context.snapshot")
+    if ctx_has_mode and snap_has_mode and ctx_mode != snap_mode:
+        raise EventValidationError(
+            "MODE_KIND_MISMATCH",
+            f"context 模式 ({ctx_mode}) 与 snapshot 模式 ({snap_mode}) 不一致。",
+            {"context_mode": ctx_mode, "snapshot_mode": snap_mode},
+        )
+    mode: Any = ctx_mode or snap_mode or "advance"
+    strict_mode_match = bool(context.get("strict_mode_match", ctx_has_mode or snap_has_mode))
 
-    raw_existing = context.get("existing_events", {})
-    if not isinstance(raw_existing, Mapping):
-        raise EventValidationError("CONTEXT_INVALID", "context.existing_events 必须为映射对象。")
+    ctx_min = _extract_minute_from_mapping(context, "context")
+    snap_min = _extract_minute_from_mapping(snap, "context.snapshot")
+    world_minute = ctx_min if ctx_min is not None else (snap_min if snap_min is not None else 0)
+
+    ctx_rev = _extract_revision_from_mapping(context, "context", instance_id)
+    snap_rev = _extract_revision_from_mapping(snap, "context.snapshot", instance_id)
+    if ctx_rev is not None and snap_rev is not None and ctx_rev != snap_rev:
+        raise WorldRevisionConflictError(instance_id, snap_rev, ctx_rev)
+    base_world_revision = ctx_rev if ctx_rev is not None else snap_rev
+
+    # 汇总 existing_events：支持直接传入 existing_events，也支持从 snapshot.due_events + causal_neighborhood 提取
     existing_events: dict[str, dict[str, Any]] = {}
-    for eid, ev in raw_existing.items():
-        if not isinstance(eid, str) or not isinstance(ev, Mapping):
-            raise EventValidationError("CONTEXT_INVALID", "context.existing_events 条目结构无效。")
-        existing_events[eid] = dict(ev)
+    for neighbor_list_key in ("causal_neighborhood", "related_events", "due_events"):
+        for container in (snap, context):
+            raw_list = container.get(neighbor_list_key)
+            if isinstance(raw_list, (list, tuple)):
+                for ev in raw_list:
+                    if isinstance(ev, Mapping) and isinstance(ev.get("event_id"), str):
+                        existing_events[ev["event_id"]] = dict(ev)
 
-    raw_other = context.get("other_instance_event_ids", {})
-    if not isinstance(raw_other, Mapping):
-        raise EventValidationError("CONTEXT_INVALID", "context.other_instance_event_ids 必须为映射对象。")
-    other_instance_event_ids = {str(k): str(v) for k, v in raw_other.items()}
+    for container in (snap, context):
+        if "existing_events" in container and container["existing_events"] is not None:
+            raw_existing = container["existing_events"]
+            if not isinstance(raw_existing, Mapping):
+                raise EventValidationError("CONTEXT_INVALID", "context.existing_events 必须为映射对象。")
+            for eid, ev in raw_existing.items():
+                if not isinstance(eid, str) or not isinstance(ev, Mapping):
+                    raise EventValidationError("CONTEXT_INVALID", "context.existing_events 条目结构无效。")
+                existing_events[eid] = dict(ev)
 
-    raw_preconditions = context.get("registered_precondition_ids", ())
-    if not isinstance(raw_preconditions, (list, tuple, set, frozenset)) or any(
-        not isinstance(p, str) or not p.strip() for p in raw_preconditions
-    ):
-        raise EventValidationError("CONTEXT_INVALID", "context.registered_precondition_ids 必须为字符串集合。")
+    # 汇总 allowed_source_ids
+    collected_sources: set[str] = set()
+    has_explicit_sources = False
+    for container in (snap, context):
+        if "allowed_source_ids" in container and container["allowed_source_ids"] is not None:
+            has_explicit_sources = True
+            raw_sources = container["allowed_source_ids"]
+            if not isinstance(raw_sources, (list, tuple, set, frozenset)) or any(
+                not isinstance(s, str) or not s.strip() for s in raw_sources
+            ):
+                raise EventValidationError("CONTEXT_INVALID", "context.allowed_source_ids 必须为字符串集合。")
+            collected_sources.update(s.strip() for s in raw_sources)
+        if "canon_sources" in container and isinstance(container["canon_sources"], (list, tuple)):
+            has_explicit_sources = True
+            for src_item in container["canon_sources"]:
+                if isinstance(src_item, Mapping) and isinstance(src_item.get("source_id"), str):
+                    collected_sources.add(src_item["source_id"].strip())
+                elif hasattr(src_item, "source_id") and isinstance(src_item.source_id, str):
+                    collected_sources.add(src_item.source_id.strip())
+
+    if mode == "advance":
+        for ev in existing_events.values():
+            for sid in ev.get("source_ids", ()) or ():
+                if isinstance(sid, str) and sid.strip():
+                    collected_sources.add(sid.strip())
+
+    # 汇总 other_instance_event_ids
+    other_instance_event_ids: dict[str, str] = {}
+    for container in (snap, context):
+        if "other_instance_event_ids" in container and container["other_instance_event_ids"] is not None:
+            raw_other = container["other_instance_event_ids"]
+            if not isinstance(raw_other, Mapping):
+                raise EventValidationError("CONTEXT_INVALID", "context.other_instance_event_ids 必须为映射对象。")
+            for k, v in raw_other.items():
+                other_instance_event_ids[str(k)] = str(v)
+
+    # 汇总 registered_precondition_ids
+    registered_preconditions: set[str] = set()
+    for container in (snap, context):
+        if "registered_precondition_ids" in container and container["registered_precondition_ids"] is not None:
+            raw_pre = container["registered_precondition_ids"]
+            if not isinstance(raw_pre, (list, tuple, set, frozenset)) or any(
+                not isinstance(p, str) or not p.strip() for p in raw_pre
+            ):
+                raise EventValidationError("CONTEXT_INVALID", "context.registered_precondition_ids 必须为字符串集合。")
+            registered_preconditions.update(p.strip() for p in raw_pre)
+
+    # 汇总 allowed_event_ids（用于校验本轮传播引用不指向未授权事件或本批新建事件）
+    allowed_event_ids: set[str] = set(existing_events.keys())
+    for container in (snap, context):
+        if "allowed_event_ids" in container and isinstance(container["allowed_event_ids"], (list, tuple, set, frozenset)):
+            allowed_event_ids.update(str(x).strip() for x in container["allowed_event_ids"] if str(x).strip())
 
     min_threads = _require_strict_int(
-        context.get("min_initial_threads", DEFAULT_MIN_INITIAL_THREADS),
+        context.get(
+            "min_initial_threads",
+            snap.get("min_initial_threads", DEFAULT_MIN_INITIAL_THREADS),
+        ),
         "context.min_initial_threads",
         min_value=1,
     )
     max_threads = _require_strict_int(
-        context.get("max_initial_threads", DEFAULT_MAX_INITIAL_THREADS),
+        context.get(
+            "max_initial_threads",
+            snap.get("max_initial_threads", DEFAULT_MAX_INITIAL_THREADS),
+        ),
         "context.max_initial_threads",
         min_value=min_threads,
     )
     max_incidents = _require_strict_int(
-        context.get("max_active_incidents", DEFAULT_MAX_ACTIVE_INCIDENTS),
+        context.get(
+            "max_active_incidents",
+            snap.get("max_active_incidents", DEFAULT_MAX_ACTIVE_INCIDENTS),
+        ),
         "context.max_active_incidents",
         min_value=0,
+    )
+
+    raw_active_inc = context.get("active_incident_count", snap.get("active_incident_count"))
+    active_incident_count = (
+        _require_strict_int(raw_active_inc, "context.active_incident_count", min_value=0)
+        if raw_active_inc is not None
+        else None
     )
 
     return ProposalValidationContext(
         instance_id=instance_id,
         world_minute=world_minute,
         mode=mode,
-        allowed_source_ids=frozenset(s.strip() for s in raw_sources),
+        allowed_source_ids=frozenset(collected_sources) if (has_explicit_sources or collected_sources) else frozenset(),
         existing_events=existing_events,
         other_instance_event_ids=other_instance_event_ids,
-        registered_precondition_ids=frozenset(p.strip() for p in raw_preconditions),
+        registered_precondition_ids=frozenset(registered_preconditions),
         min_initial_threads=min_threads,
         max_initial_threads=max_threads,
         max_active_incidents=max_incidents,
+        base_world_revision=base_world_revision,
+        active_incident_count=active_incident_count,
+        strict_mode_match=strict_mode_match,
+        allowed_event_ids=frozenset(allowed_event_ids),
     )
 
 
@@ -535,6 +734,64 @@ def _detect_causal_cycles(cause_graph: dict[str, tuple[str, ...]]) -> None:
             dfs(event_id)
 
 
+def _validate_envelope_transmissions(
+    raw_transmissions: Any,
+    ctx: ProposalValidationContext,
+    mode: str,
+) -> tuple[dict[str, Any], ...]:
+    """对顶层可选 `transmissions` 数组做封套级安全边界检查（传播细节由 Ma 的模块核验）。
+
+    根据 `M3_WAVE2_API.md`：
+    - 拒绝在传播项内夹带玩家个人账本字段或任意 JSON 路径；
+    - 拒绝跨实例标识；
+    - Seed 首版省略传播（若传入非空传播或引用本批新建临时事件 ID 则拒绝）。
+    """
+    if raw_transmissions is None:
+        return ()
+    if not isinstance(raw_transmissions, (list, tuple)):
+        raise EventValidationError(
+            "VALIDATION_ERROR",
+            "字段 transmissions 必须为数组。",
+            {"field": "transmissions"},
+        )
+    if mode == "seed" and len(raw_transmissions) > 0:
+        raise EventValidationError(
+            "SEED_TRANSMISSIONS_FORBIDDEN",
+            "Seed 阶段仅写入权威初始事件，首版禁止在 Seed 批次夹带知识传播记录。",
+            {"field": "transmissions"},
+        )
+    cleaned: list[dict[str, Any]] = []
+    for idx, item in enumerate(raw_transmissions):
+        label = f"transmissions[{idx}]"
+        if not isinstance(item, Mapping):
+            raise EventValidationError(
+                "VALIDATION_ERROR",
+                f"{label} 必须为对象。",
+                {"field": label},
+            )
+        _check_forbidden_keys(item, label)
+        for inst_key in ("instance_id", "world_instance_id"):
+            if inst_key in item and item[inst_key] is not None:
+                t_inst = _require_non_empty_str(item[inst_key], f"{label}.{inst_key}", 120)
+                if t_inst != ctx.instance_id:
+                    raise CrossInstanceReferenceError(ctx.instance_id, t_inst, t_inst)
+        src_ev = item.get("source_event_id")
+        if isinstance(src_ev, str) and src_ev.strip():
+            s_id = src_ev.strip()
+            if s_id in ctx.other_instance_event_ids:
+                raise CrossInstanceReferenceError(
+                    ctx.instance_id, s_id, ctx.other_instance_event_ids[s_id]
+                )
+            if s_id.startswith(("__pending_create_", "temp_", "new_")):
+                raise EventValidationError(
+                    "TEMP_EVENT_REFERENCE_FORBIDDEN",
+                    f"{label} 禁止引用本批新建事件的临时 ID: {s_id}。",
+                    {"field": f"{label}.source_event_id", "source_event_id": s_id},
+                )
+        cleaned.append(dict(item))
+    return tuple(cleaned)
+
+
 def validate_proposal(
     payload: object,
     context: ProposalValidationContext | Mapping[str, Any],
@@ -546,6 +803,14 @@ def validate_proposal(
         raise EventValidationError("PROPOSAL_INVALID", "事件提议顶层必须为 JSON 对象。")
 
     _check_forbidden_keys(payload, "proposal")
+    root_time_override = set(payload.keys()) & _SERVER_MANAGED_TIME_KEYS
+    if root_time_override:
+        raise EventValidationError(
+            "TIMESTAMP_OVERRIDE_FORBIDDEN",
+            f"事件提议顶层禁止指定服务端管理的时间戳字段: {sorted(root_time_override)}。",
+            {"forbidden_fields": sorted(root_time_override)},
+        )
+
     unknown_root = set(payload.keys()) - _ALLOWED_ROOT_KEYS
     if unknown_root:
         raise EventValidationError(
@@ -554,22 +819,65 @@ def validate_proposal(
             {"unknown_fields": sorted(unknown_root)},
         )
 
+    # 1. 核对回显的实例身份
     if "instance_id" in payload and payload["instance_id"] is not None:
         prop_instance_id = _require_non_empty_str(payload["instance_id"], "instance_id", 120)
         if prop_instance_id != ctx.instance_id:
             raise CrossInstanceReferenceError(ctx.instance_id, prop_instance_id, prop_instance_id)
 
-    mode = payload.get("mode", ctx.mode)
-    if mode not in PROPOSAL_MODES:
+    # 2. 核对回显的 mode / kind
+    has_prop_mode = "mode" in payload and payload["mode"] is not None
+    has_prop_kind = "kind" in payload and payload["kind"] is not None
+    if has_prop_mode and has_prop_kind and payload["mode"] != payload["kind"]:
         raise EventValidationError(
-            "VALIDATION_ERROR",
-            f"提议模式 mode 仅支持 {PROPOSAL_MODES}。",
-            {"mode": mode},
+            "MODE_KIND_MISMATCH",
+            f"提议顶层 mode ({payload['mode']!r}) 与 kind ({payload['kind']!r}) 不一致。",
+            {"mode": payload["mode"], "kind": payload["kind"]},
         )
+    raw_prop_mode = payload["mode"] if has_prop_mode else (payload["kind"] if has_prop_kind else None)
+    if raw_prop_mode is not None:
+        if raw_prop_mode not in PROPOSAL_MODES:
+            raise EventValidationError(
+                "VALIDATION_ERROR",
+                f"提议模式 mode/kind 仅支持 {PROPOSAL_MODES}。",
+                {"mode": raw_prop_mode},
+            )
+        if ctx.strict_mode_match and raw_prop_mode != ctx.mode:
+            raise EventValidationError(
+                "MODE_KIND_MISMATCH",
+                f"提议回显的 mode/kind ({raw_prop_mode!r}) 与当前任务类型 ({ctx.mode!r}) 不一致。",
+                {"expected_mode": ctx.mode, "actual_mode": raw_prop_mode},
+            )
+        mode = raw_prop_mode
+    else:
+        mode = ctx.mode
+
+    # 3. 核对回显的世界时间（防止模型伪造或篡改世界时钟）
+    echoed_minute = _extract_minute_from_mapping(payload, "proposal")
+    if echoed_minute is not None and echoed_minute != ctx.world_minute:
+        raise EventValidationError(
+            "TIMESTAMP_OVERRIDE_FORBIDDEN",
+            f"提议回显的世界时间 ({echoed_minute}) 与已确认实例时间 ({ctx.world_minute}) 不一致，拒绝伪造时间。",
+            {"expected_world_minute": ctx.world_minute, "actual_world_minute": echoed_minute},
+        )
+
+    # 4. 核对回显的世界实例版本（base_world_revision / world_revision / revision）
+    echoed_rev = _extract_revision_from_mapping(payload, "proposal", ctx.instance_id)
+    if echoed_rev is not None and ctx.base_world_revision is not None and echoed_rev != ctx.base_world_revision:
+        raise WorldRevisionConflictError(
+            ctx.instance_id,
+            ctx.base_world_revision,
+            echoed_rev,
+        )
+    effective_base_rev = ctx.base_world_revision if ctx.base_world_revision is not None else echoed_rev
 
     summary = ""
     if "summary" in payload and payload["summary"] is not None:
         summary = _require_non_empty_str(payload["summary"], "summary", 500)
+
+    validated_transmissions = _validate_envelope_transmissions(
+        payload.get("transmissions"), ctx, mode
+    )
 
     raw_ops = payload.get("operations")
     if not isinstance(raw_ops, (list, tuple)) or not raw_ops:
@@ -589,6 +897,17 @@ def validate_proposal(
     working_events: dict[str, dict[str, Any]] = {
         eid: dict(ev) for eid, ev in ctx.existing_events.items()
     }
+    initial_working_incidents = sum(
+        1
+        for ev in working_events.values()
+        if ev.get("kind") == "incident" and ev.get("status") not in TERMINAL_EVENT_STATUSES
+    )
+    outside_active_incidents = (
+        max(0, ctx.active_incident_count - initial_working_incidents)
+        if ctx.active_incident_count is not None
+        else 0
+    )
+
     cause_graph: dict[str, tuple[str, ...]] = {
         eid: tuple(ev.get("cause_event_ids", ())) for eid, ev in working_events.items()
     }
@@ -737,7 +1056,7 @@ def validate_proposal(
                         ctx.instance_id, cid, ctx.other_instance_event_ids[cid]
                     )
                 parent_ev = working_events.get(cid)
-                if parent_ev is None:
+                if parent_ev is None or cid.startswith("__pending_create_"):
                     raise EventValidationError(
                         "CAUSE_EVENT_NOT_FOUND",
                         f"{op_label} 引用的父事件 {cid} 在当前实例中不存在。",
@@ -1167,12 +1486,13 @@ def validate_proposal(
                 },
             )
 
-    # 校验未完成临时事件数量上限
-    active_incidents = sum(
+    # 校验未完成临时事件数量上限（叠加快照外存量活跃临时事件数）
+    working_active_incidents = sum(
         1
         for ev in working_events.values()
         if ev.get("kind") == "incident" and ev.get("status") not in TERMINAL_EVENT_STATUSES
     )
+    active_incidents = outside_active_incidents + working_active_incidents
     if active_incidents > ctx.max_active_incidents:
         raise EventValidationError(
             "INCIDENT_LIMIT_EXCEEDED",
@@ -1189,4 +1509,6 @@ def validate_proposal(
         world_minute=ctx.world_minute,
         operations=tuple(validated_ops),
         summary=summary,
+        base_world_revision=effective_base_rev,
+        transmissions=validated_transmissions,
     )

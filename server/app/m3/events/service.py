@@ -1,10 +1,12 @@
-"""M3.1 / M3.5 世界事件账本持久层服务（`apply_proposal`, `snapshot`, `restore`, 到期分页读取等）。
+"""M3.1 / M3.5 世界事件账本持久层服务（`read_snapshot`, `apply_proposal`, `snapshot`, `restore`, 到期分页读取等）。
 
-契约要求（`docs/contracts/M3_WAVE1_API.md` & `docs/collaboration/M3_WAVE1_GEMINI_MARCIN.md`）：
+契约要求（`docs/contracts/M3_WAVE1_API.md`, `docs/contracts/M3_WAVE2_API.md` & `docs/collaboration/M3_WAVE2_GEMINI_MARCIN.md`）：
 1. 模块数据库写入口接收已打开的 `sqlite3.Connection`，模块不自行调用 `conn.commit()`。
-2. 以 `world_instances.id` 为隔离单位，事件更新用 `expected_event_revision` 比较，单份提议中任意一项失败即通过 `SAVEPOINT` 整体回滚，不留部分写入。
-3. 使用服务端分配身份（`event_id`, `consequence_id`）和版本号（`revision`），追加式写入修订历史 `world_event_revisions`。
-4. 提供到期事件分页读取（`list_due_events`）、因果链追溯（`trace_causality`）、重大转折前置条件登记（`register_precondition`）以及可移植快照导出与恢复（`snapshot` / `restore`）。
+2. 提供可供 `PulseWorker` 直接接入的只读快照回调 `read_snapshot(conn, instance_id, job)`，
+   完成队列任务 `kind` 与事件包 `mode`、数据库 `world_instances.revision` 与对外 `world_revision` / `base_world_revision` 的映射。
+3. Seed 按可解释的稳定顺序挑选有效 Canon 设定条目与文档分块节选，各自设条数与单条字符上限，整体受字符预算约束；无授权资料时返回可展示的阻塞原因（`PULSE_SOURCE_REQUIRED`）。
+4. Advance 仅读取到期活跃事件（`status='active' AND next_update_minute <= world_minute`）及最小因果邻域、允许的 Canon ID 与节选；无到期事件或到期时间超过已确认分钟时返回跳过（`skip=True`）。
+5. `apply_proposal(conn, instance_id, validated, job=None, ...)` 在 `SAVEPOINT` 保护下重新核对实际数据库状态（实例版本、已确认时间、事件版本、跨实例引用、因果环、临时事件上限与重大转折前置条件），任何一项失败则完整回滚。
 """
 
 from __future__ import annotations
@@ -23,29 +25,56 @@ from .errors import (
     EventRevisionConflictError,
     EventValidationError,
     InstanceNotFoundError,
+    PulseSourceRequiredError,
     SnapshotRestoreError,
     SourceFabricatedError,
+    WorldRevisionConflictError,
 )
 from .schema import ensure_events_schema
 from .types import (
     CONSEQUENCE_DOMAINS,
+    DEFAULT_ADVANCE_CHAR_BUDGET,
+    DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS,
+    DEFAULT_ADVANCE_MAX_CHUNK_CHARS,
+    DEFAULT_ADVANCE_MAX_CHUNKS,
+    DEFAULT_ADVANCE_MAX_DUE_EVENTS,
+    DEFAULT_ADVANCE_MAX_ENTRIES,
+    DEFAULT_ADVANCE_MAX_ENTRY_CHARS,
     DEFAULT_MAX_ACTIVE_INCIDENTS,
     DEFAULT_MAX_INITIAL_THREADS,
     DEFAULT_MIN_INITIAL_THREADS,
+    DEFAULT_SEED_CHAR_BUDGET,
+    DEFAULT_SEED_MAX_CHUNK_CHARS,
+    DEFAULT_SEED_MAX_CHUNKS,
+    DEFAULT_SEED_MAX_ENTRIES,
+    DEFAULT_SEED_MAX_ENTRY_CHARS,
     EVENT_KINDS,
     EVENT_SCOPES,
     EVENT_STATUSES,
     IMPACT_TYPES,
+    LORE_ENTRY_TYPE_PRIORITY,
     MAJOR_TURNPOINT_STAGES,
     MAJOR_TURNPOINT_TYPES,
+    PROPOSAL_MODES,
     SNAPSHOT_FORMAT_VERSION,
     TERMINAL_EVENT_STATUSES,
+    CanonSourceItem,
     ProposalMode,
     ProposalValidationContext,
     ValidatedEventOp,
     ValidatedEventProposal,
 )
-from .validator import _detect_causal_cycles, _require_non_empty_str, _require_strict_int, validate_proposal
+from .validator import (
+    _detect_causal_cycles,
+    _extract_minute_from_mapping,
+    _extract_mode_from_mapping,
+    _extract_revision_from_mapping,
+    _require_non_empty_str,
+    _require_strict_int,
+    _safe_u16_truncate,
+    _u16_units,
+    validate_proposal,
+)
 
 
 def _default_event_id() -> str:
@@ -90,30 +119,49 @@ def ensure_instance_exists(
             "SELECT id, world_id, adventure_id, world_minute, revision FROM world_instances WHERE id = ?",
             (instance_id,),
         ).fetchone()
+    rev = int(row[4])
     return {
         "id": row[0],
         "world_id": row[1],
         "adventure_id": row[2],
         "world_minute": int(row[3]),
-        "revision": int(row[4]),
+        "revision": rev,
+        "world_revision": rev,
     }
 
 
-def _get_instance_row(conn: sqlite3.Connection, instance_id: str) -> dict[str, Any]:
-    ensure_events_schema(conn)
+def _get_instance_row(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    *,
+    read_only: bool = False,
+) -> dict[str, Any]:
+    if not read_only:
+        ensure_events_schema(conn)
+    else:
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "world_events" not in tables:
+            ensure_events_schema(conn)
     instance_id = _require_non_empty_str(instance_id, "instance_id", 120)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(world_instances)").fetchall()}
+    rev_col = "revision" if "revision" in cols else ("world_revision" if "world_revision" in cols else "0")
     row = conn.execute(
-        "SELECT id, world_id, adventure_id, world_minute, revision FROM world_instances WHERE id = ?",
+        f"SELECT id, world_id, adventure_id, world_minute, {rev_col} FROM world_instances WHERE id = ?",
         (instance_id,),
     ).fetchone()
     if row is None:
         raise InstanceNotFoundError(instance_id)
+    rev = int(row[4] or 0)
     return {
         "id": row[0],
         "world_id": row[1],
         "adventure_id": row[2],
-        "world_minute": int(row[3]),
-        "revision": int(row[4]),
+        "world_minute": int(row[3] or 0),
+        "revision": rev,
+        "world_revision": rev,
     }
 
 
@@ -223,7 +271,12 @@ def _load_consequences_map(
     return mapping
 
 
-def _discover_world_canon_sources(conn: sqlite3.Connection, world_id: str) -> frozenset[str]:
+def _discover_world_canon_sources(
+    conn: sqlite3.Connection,
+    world_id: str,
+    *,
+    confirmed_entries_only: bool = True,
+) -> frozenset[str]:
     """从数据库发现当前 `world_id` 下所有合法且未软删除的 `chunk:<id>` 与 `entry:<id>`。"""
     if not world_id:
         return frozenset()
@@ -235,28 +288,745 @@ def _discover_world_canon_sources(conn: sqlite3.Connection, world_id: str) -> fr
         ).fetchall()
     }
     if "chunks" in tables and "documents" in tables:
+        doc_cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
+        status_clause = "AND (d.status IS NULL OR d.status = 'ready')" if "status" in doc_cols else ""
         rows = conn.execute(
-            """
+            f"""
             SELECT c.id
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
-            WHERE c.world_id = ? AND d.deleted_at IS NULL
+            WHERE c.world_id = ? AND d.deleted_at IS NULL {status_clause}
             """,
             (world_id,),
         ).fetchall()
         for r in rows:
             allowed.add(f"chunk:{r[0]}")
     if "lore_entries" in tables:
-        rows = conn.execute(
-            """
-            SELECT id FROM lore_entries
-            WHERE world_id = ? AND deleted_at IS NULL
-            """,
-            (world_id,),
-        ).fetchall()
+        entry_cols = {r[1] for r in conn.execute("PRAGMA table_info(lore_entries)").fetchall()}
+        if confirmed_entries_only and "status" in entry_cols:
+            rows = conn.execute(
+                """
+                SELECT id FROM lore_entries
+                WHERE world_id = ? AND deleted_at IS NULL AND status = 'confirmed'
+                """,
+                (world_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id FROM lore_entries
+                WHERE world_id = ? AND deleted_at IS NULL
+                """,
+                (world_id,),
+            ).fetchall()
         for r in rows:
             allowed.add(f"entry:{r[0]}")
     return frozenset(allowed)
+
+
+def _fetch_all_canon_candidates(
+    conn: sqlite3.Connection,
+    world_id: str,
+    *,
+    fallback_sources: list[Mapping[str, Any]] | tuple[Any, ...] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """按可解释的稳定顺序读取指定世界下所有有效设定条目与文档分块候选。
+
+    稳定顺序规则：
+    1. 设定条目（`lore_entries`）：仅取 `deleted_at IS NULL AND status = 'confirmed'` 且正文非空的条目，
+       按 `(类型优先级 LORE_ENTRY_TYPE_PRIORITY, id ASC)` 排序；
+    2. 文档分块（`chunks JOIN documents`）：仅取 `d.deleted_at IS NULL AND (d.status IS NULL OR d.status = 'ready')`
+       且正文非空的分块，按 `(c.chunk_index ASC, d.created_at ASC, d.id ASC, c.id ASC)` 跨文档轮询排序（优先覆盖各份文档的首块与前序章节）。
+    """
+    entry_candidates: list[dict[str, Any]] = []
+    chunk_candidates: list[dict[str, Any]] = []
+
+    if world_id:
+        tables = {
+            row[0]
+            for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "lore_entries" in tables:
+            entry_cols = {r[1] for r in conn.execute("PRAGMA table_info(lore_entries)").fetchall()}
+            status_sql = "AND status = 'confirmed'" if "status" in entry_cols else ""
+            type_col = "type" if "type" in entry_cols else "'other'"
+            title_col = "title" if "title" in entry_cols else "''"
+            summary_col = "summary" if "summary" in entry_cols else "''"
+            rows = conn.execute(
+                f"""
+                SELECT id, {type_col}, {title_col}, {summary_col}
+                FROM lore_entries
+                WHERE world_id = ? AND deleted_at IS NULL {status_sql}
+                ORDER BY id ASC
+                """,
+                (world_id,),
+            ).fetchall()
+            raw_entries: list[tuple[int, str, dict[str, Any]]] = []
+            for r in rows:
+                eid = str(r[0] or "").strip()
+                etype = str(r[1] or "other").strip()
+                etitle = str(r[2] or "").strip()
+                esummary = str(r[3] or "").strip()
+                body = esummary if esummary else etitle
+                if not eid or not body:
+                    continue
+                priority = LORE_ENTRY_TYPE_PRIORITY.get(etype.lower(), 99)
+                raw_entries.append(
+                    (
+                        priority,
+                        eid,
+                        {
+                            "source_id": f"entry:{eid}",
+                            "kind": "entry",
+                            "title": etitle or f"设定条目 {eid}",
+                            "text": f"【{etitle}】{esummary}" if (etitle and esummary and etitle not in esummary) else body,
+                            "entry_type": etype,
+                        },
+                    )
+                )
+            raw_entries.sort(key=lambda item: (item[0], item[1]))
+            entry_candidates = [item[2] for item in raw_entries]
+
+        if "chunks" in tables and "documents" in tables:
+            doc_cols = {r[1] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
+            status_sql = "AND (d.status IS NULL OR d.status = 'ready')" if "status" in doc_cols else ""
+            created_col = "d.created_at" if "created_at" in doc_cols else "d.id"
+            filename_col = "d.filename" if "filename" in doc_cols else "d.id"
+            rows = conn.execute(
+                f"""
+                SELECT c.id, c.document_id, c.chunk_index, c.heading_path, c.text, {filename_col}, {created_col}
+                FROM chunks c
+                JOIN documents d ON d.id = c.document_id
+                WHERE c.world_id = ? AND d.deleted_at IS NULL {status_sql}
+                ORDER BY c.chunk_index ASC, {created_col} ASC, d.id ASC, c.id ASC
+                """,
+                (world_id,),
+            ).fetchall()
+            for r in rows:
+                cid = str(r[0] or "").strip()
+                doc_id = str(r[1] or "").strip()
+                c_idx = int(r[2] or 0)
+                heading = str(r[3] or "").strip()
+                ctext = str(r[4] or "").strip()
+                fname = str(r[5] or "").strip()
+                if not cid or not ctext:
+                    continue
+                title_label = f"{fname} · {heading}" if (fname and heading) else (heading or fname or f"分块 {cid}")
+                chunk_candidates.append(
+                    {
+                        "source_id": f"chunk:{cid}",
+                        "kind": "chunk",
+                        "title": title_label,
+                        "text": ctext,
+                        "document_id": doc_id,
+                        "chunk_index": c_idx,
+                    }
+                )
+
+    # 若数据库中无表或无记录，且测试任务显式注入了合成 canon_sources，则按相同确定性规则归一化
+    if not entry_candidates and not chunk_candidates and fallback_sources:
+        fb_entries: list[tuple[int, str, dict[str, Any]]] = []
+        fb_chunks: list[tuple[int, str, str, dict[str, Any]]] = []
+        for raw_item in fallback_sources:
+            item_obj = (
+                raw_item.to_dict()
+                if isinstance(raw_item, CanonSourceItem)
+                else (dict(raw_item) if isinstance(raw_item, Mapping) else None)
+            )
+            if not item_obj:
+                continue
+            sid = str(item_obj.get("source_id") or "").strip()
+            text = str(item_obj.get("text") or "").strip()
+            if not sid or not text:
+                continue
+            title = str(item_obj.get("title") or "").strip()
+            if sid.startswith("entry:"):
+                etype = str(item_obj.get("entry_type") or "other").strip()
+                prio = LORE_ENTRY_TYPE_PRIORITY.get(etype.lower(), 99)
+                fb_entries.append(
+                    (
+                        prio,
+                        sid,
+                        {
+                            "source_id": sid,
+                            "kind": "entry",
+                            "title": title or sid,
+                            "text": text,
+                            "entry_type": etype,
+                        },
+                    )
+                )
+            elif sid.startswith("chunk:"):
+                c_idx = int(item_obj.get("chunk_index") or 0)
+                doc_id = str(item_obj.get("document_id") or "")
+                fb_chunks.append(
+                    (
+                        c_idx,
+                        doc_id,
+                        sid,
+                        {
+                            "source_id": sid,
+                            "kind": "chunk",
+                            "title": title or sid,
+                            "text": text,
+                            "document_id": doc_id,
+                            "chunk_index": c_idx,
+                        },
+                    )
+                )
+        fb_entries.sort(key=lambda x: (x[0], x[1]))
+        fb_chunks.sort(key=lambda x: (x[0], x[1], x[2]))
+        entry_candidates = [x[2] for x in fb_entries]
+        chunk_candidates = [x[3] for x in fb_chunks]
+
+    return entry_candidates, chunk_candidates
+
+
+def select_canon_sources(
+    conn: sqlite3.Connection,
+    world_id: str,
+    *,
+    max_entries: int = DEFAULT_SEED_MAX_ENTRIES,
+    max_chunks: int = DEFAULT_SEED_MAX_CHUNKS,
+    max_entry_chars: int = DEFAULT_SEED_MAX_ENTRY_CHARS,
+    max_chunk_chars: int = DEFAULT_SEED_MAX_CHUNK_CHARS,
+    char_budget: int = DEFAULT_SEED_CHAR_BUDGET,
+    preferred_source_ids: tuple[str, ...] | list[str] | frozenset[str] = (),
+    fallback_sources: list[Mapping[str, Any]] | tuple[Any, ...] | None = None,
+) -> dict[str, Any]:
+    """按可解释的稳定顺序挑选有效 Canon 设定条目与分块节选，严格执行单类数量上限、单条字符上限与总字符预算。
+
+    挑选顺序：
+    1. 若提供了 `preferred_source_ids`（例如 Advance 中到期事件及因果邻域已绑定的来源 ID），
+       先按 `preferred_source_ids` 出现顺序挑选对应的有效条目或分块；
+    2. 再按稳定顺序挑選设定条目（`entry:<id>`，上限 `max_entries` 条，每条最多 `max_entry_chars` UTF-16 单位）；
+    3. 随后按跨文档分块轮询顺序挑选文档分块（`chunk:<id>`，上限 `max_chunks` 条，每条最多 `max_chunk_chars` UTF-16 单位）；
+    4. 全程累计字符数不超过 `char_budget`。
+    """
+    max_entries = _require_strict_int(max_entries, "max_entries", min_value=0)
+    max_chunks = _require_strict_int(max_chunks, "max_chunks", min_value=0)
+    max_entry_chars = _require_strict_int(max_entry_chars, "max_entry_chars", min_value=32)
+    max_chunk_chars = _require_strict_int(max_chunk_chars, "max_chunk_chars", min_value=32)
+    char_budget = _require_strict_int(char_budget, "char_budget", min_value=64)
+
+    entry_candidates, chunk_candidates = _fetch_all_canon_candidates(
+        conn, world_id, fallback_sources=fallback_sources
+    )
+    all_available_ids: set[str] = {
+        c["source_id"] for c in entry_candidates
+    } | {
+        c["source_id"] for c in chunk_candidates
+    }
+
+    by_id: dict[str, dict[str, Any]] = {
+        c["source_id"]: c for c in (*entry_candidates, *chunk_candidates)
+    }
+
+    ordered_queue: list[dict[str, Any]] = []
+    queued_ids: set[str] = set()
+
+    for pref_id in preferred_source_ids:
+        if pref_id in by_id and pref_id not in queued_ids:
+            ordered_queue.append(by_id[pref_id])
+            queued_ids.add(pref_id)
+
+    for item in entry_candidates:
+        if item["source_id"] not in queued_ids:
+            ordered_queue.append(item)
+            queued_ids.add(item["source_id"])
+
+    for item in chunk_candidates:
+        if item["source_id"] not in queued_ids:
+            ordered_queue.append(item)
+            queued_ids.add(item["source_id"])
+
+    selected_items: list[CanonSourceItem] = []
+    used_entries = 0
+    used_chunks = 0
+    used_chars = 0
+
+    for cand in ordered_queue:
+        if used_chars >= char_budget:
+            break
+        kind = cand["kind"]
+        if kind == "entry":
+            if used_entries >= max_entries:
+                continue
+            per_item_cap = max_entry_chars
+        else:
+            if used_chunks >= max_chunks:
+                continue
+            per_item_cap = max_chunk_chars
+
+        remaining_budget = char_budget - used_chars
+        if remaining_budget <= 0:
+            break
+
+        effective_cap = min(per_item_cap, remaining_budget)
+        raw_text = cand["text"].strip()
+        raw_units = _u16_units(raw_text, "canon.text")
+        if raw_units > effective_cap:
+            excerpt = _safe_u16_truncate(raw_text, effective_cap).strip()
+            truncated = True
+        else:
+            excerpt = raw_text
+            truncated = False
+
+        if not excerpt:
+            continue
+
+        excerpt_units = _u16_units(excerpt, "canon.excerpt")
+        src_obj = CanonSourceItem(
+            source_id=cand["source_id"],
+            kind=kind,
+            title=cand.get("title", ""),
+            text=excerpt,
+            entry_type=cand.get("entry_type", ""),
+            document_id=cand.get("document_id", ""),
+            chunk_index=cand.get("chunk_index"),
+            char_count=excerpt_units,
+            truncated=truncated,
+        )
+        selected_items.append(src_obj)
+        used_chars += excerpt_units
+        if kind == "entry":
+            used_entries += 1
+        else:
+            used_chunks += 1
+
+    return {
+        "sources": tuple(selected_items),
+        "canon_sources": [s.to_dict() for s in selected_items],
+        "selected_source_ids": [s.source_id for s in selected_items],
+        "all_valid_source_ids": sorted(all_available_ids),
+        "budget": {
+            "selection_order": "preferred_event_sources -> confirmed_lore_entries(type_priority,id) -> ready_document_chunks(chunk_index,doc_created_at,doc_id,chunk_id)",
+            "max_entries": max_entries,
+            "max_chunks": max_chunks,
+            "max_entry_chars": max_entry_chars,
+            "max_chunk_chars": max_chunk_chars,
+            "char_budget": char_budget,
+            "used_chars": used_chars,
+            "selected_entry_count": used_entries,
+            "selected_chunk_count": used_chunks,
+            "total_available_entries": len(entry_candidates),
+            "total_available_chunks": len(chunk_candidates),
+        },
+    }
+
+
+def _select_minimal_causal_neighborhood(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    due_events: list[dict[str, Any]],
+    consequences_map: dict[str, list[dict[str, Any]]],
+    *,
+    max_neighbors: int = DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS,
+) -> list[dict[str, Any]]:
+    """为到期活跃事件抽取最小因果邻域（同一实例内的直接父事件 + 1 跳直接衍生事件，不含其它无关事件）。"""
+    max_neighbors = _require_strict_int(max_neighbors, "max_neighbors", min_value=0)
+    if not due_events or max_neighbors == 0:
+        return []
+
+    due_ids = {ev["event_id"] for ev in due_events}
+    parent_ids: list[str] = []
+    seen_candidates: set[str] = set(due_ids)
+
+    # 1. 直接因果父事件（按到期事件顺序收集）
+    for ev in due_events:
+        for cid in ev.get("cause_event_ids", ()):
+            if isinstance(cid, str) and cid not in seen_candidates:
+                seen_candidates.add(cid)
+                parent_ids.append(cid)
+
+    neighbors: list[dict[str, Any]] = []
+    if parent_ids:
+        placeholders = ",".join("?" for _ in parent_ids)
+        rows = conn.execute(
+            f"""
+            SELECT instance_id, event_id, kind, title, description, location, scope,
+                   participants_json, stage, status, created_minute, updated_minute,
+                   next_update_minute, cause_event_ids_json, source_ids_json,
+                   turnpoint_type, precondition_ids_json, revision
+            FROM world_events
+            WHERE instance_id = ? AND event_id IN ({placeholders})
+            ORDER BY updated_minute DESC, created_minute ASC, event_id ASC
+            """,
+            (instance_id, *parent_ids),
+        ).fetchall()
+        by_eid = {r[1]: _row_to_event_dict(r, consequences_map) for r in rows}
+        for pid in parent_ids:
+            if pid in by_eid and len(neighbors) < max_neighbors:
+                neighbors.append(by_eid[pid])
+
+    # 2. 若仍有配额，补充 1 跳直接子事件及本实例近期已发生演进（updated_minute > created_minute 或已产生后果）的潜在上游事件
+    if len(neighbors) < max_neighbors:
+        all_rows = conn.execute(
+            """
+            SELECT instance_id, event_id, kind, title, description, location, scope,
+                   participants_json, stage, status, created_minute, updated_minute,
+                   next_update_minute, cause_event_ids_json, source_ids_json,
+                   turnpoint_type, precondition_ids_json, revision
+            FROM world_events
+            WHERE instance_id = ?
+            ORDER BY updated_minute DESC, revision DESC, created_minute ASC, event_id ASC
+            """,
+            (instance_id,),
+        ).fetchall()
+        for r in all_rows:
+            eid = r[1]
+            if eid in seen_candidates:
+                continue
+            causes = json.loads(r[13] or "[]")
+            if any(c in due_ids for c in causes):
+                seen_candidates.add(eid)
+                neighbors.append(_row_to_event_dict(r, consequences_map))
+                if len(neighbors) >= max_neighbors:
+                    break
+        if len(neighbors) < max_neighbors:
+            for r in all_rows:
+                eid = r[1]
+                if eid in seen_candidates:
+                    continue
+                status_val = r[9]
+                created_min = int(r[10] or 0)
+                updated_min = int(r[11] or 0)
+                rev_val = int(r[17] or 1)
+                if status_val in ("active", "completed") and (
+                    updated_min > created_min or rev_val > 1 or bool(consequences_map.get(eid))
+                ):
+                    seen_candidates.add(eid)
+                    neighbors.append(_row_to_event_dict(r, consequences_map))
+                    if len(neighbors) >= max_neighbors:
+                        break
+
+    return neighbors
+
+
+def _read_world_intro(conn: sqlite3.Connection, world_id: str) -> str:
+    if not world_id:
+        return ""
+    tables = {
+        r[0]
+        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    }
+    if "worlds" not in tables:
+        return ""
+    row = conn.execute(
+        "SELECT name, description FROM worlds WHERE id = ? AND deleted_at IS NULL",
+        (world_id,),
+    ).fetchone()
+    if row is None:
+        return ""
+    name = str(row[0] or "").strip()
+    desc = str(row[1] or "").strip()
+    if name and desc:
+        return _safe_u16_truncate(f"{name}：{desc}", 600)
+    return _safe_u16_truncate(name or desc, 600)
+
+
+def read_snapshot(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    job: Mapping[str, Any] | None = None,
+    *,
+    max_seed_entries: int = DEFAULT_SEED_MAX_ENTRIES,
+    max_seed_chunks: int = DEFAULT_SEED_MAX_CHUNKS,
+    max_seed_entry_chars: int = DEFAULT_SEED_MAX_ENTRY_CHARS,
+    max_seed_chunk_chars: int = DEFAULT_SEED_MAX_CHUNK_CHARS,
+    seed_char_budget: int = DEFAULT_SEED_CHAR_BUDGET,
+    max_due_events: int = DEFAULT_ADVANCE_MAX_DUE_EVENTS,
+    max_causal_neighbors: int = DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS,
+    max_advance_entries: int = DEFAULT_ADVANCE_MAX_ENTRIES,
+    max_advance_chunks: int = DEFAULT_ADVANCE_MAX_CHUNKS,
+    max_advance_entry_chars: int = DEFAULT_ADVANCE_MAX_ENTRY_CHARS,
+    max_advance_chunk_chars: int = DEFAULT_ADVANCE_MAX_CHUNK_CHARS,
+    advance_char_budget: int = DEFAULT_ADVANCE_CHAR_BUDGET,
+    max_active_incidents: int = DEFAULT_MAX_ACTIVE_INCIDENTS,
+) -> dict[str, Any]:
+    """可供 `PulseWorker` 直接挂载的只读快照读取回调 `read_snapshot(conn, instance_id, job) -> dict`。
+
+    严格遵守 `docs/contracts/M3_WAVE2_API.md` 与 `M3_WAVE2_GEMINI_MARCIN.md`：
+    - 只读查询，不修改数据库状态；
+    - 世界分钟（`world_minute` / `target_world_minute`）与版本（`world_revision` / `base_world_revision` / `revision`）
+      均取自已确认实例根 `world_instances`；
+    - 同时写入 `kind` 与 `mode` 映射；
+    - Seed：按稳定顺序从当前世界有效 Canon 挑选设定条目与分块节选，受条数与字符预算约束；
+      无授权资料时返回 `status='blocked', blocked=True, skip=True, reason_code='PULSE_SOURCE_REQUIRED'` 及可展示中文原因；
+    - Advance：仅传到期的活跃事件（`status='active' AND next_update_minute <= world_minute`）及最小因果邻域、
+      允许的 Canon ID 与节选；无到期事件或到期时间超过已确认分钟时返回 `status='skipped', skip=True` 及明确跳过原因。
+    """
+    inst = _get_instance_row(conn, instance_id, read_only=True)
+    world_id = str(inst["world_id"] or "")
+    confirmed_minute = int(inst["world_minute"])
+    confirmed_revision = int(inst["revision"])
+
+    job_map: Mapping[str, Any] = job if isinstance(job, Mapping) else {}
+    if job_map.get("instance_id") is not None:
+        job_inst_id = _require_non_empty_str(job_map.get("instance_id"), "job.instance_id", 120)
+        if job_inst_id != instance_id:
+            raise CrossInstanceReferenceError(instance_id, job_inst_id, job_inst_id)
+
+    resolved_mode, _ = _extract_mode_from_mapping(job_map, "job")
+    kind: ProposalMode = (resolved_mode or "advance")  # type: ignore[assignment]
+
+    payload_raw = job_map.get("payload")
+    job_payload: Mapping[str, Any] = payload_raw if isinstance(payload_raw, Mapping) else {}
+    fallback_canon = job_payload.get("canon_sources")
+    explicit_allowed_ids = job_payload.get("allowed_source_ids")
+
+    other_rows = conn.execute(
+        "SELECT event_id, instance_id FROM world_events WHERE instance_id != ?",
+        (instance_id,),
+    ).fetchall()
+    other_instance_event_ids = {str(r[0]): str(r[1]) for r in other_rows}
+
+    base_envelope: dict[str, Any] = {
+        "instance_id": instance_id,
+        "world_id": world_id,
+        "world_minute": confirmed_minute,
+        "target_world_minute": confirmed_minute,
+        "world_revision": confirmed_revision,
+        "base_world_revision": confirmed_revision,
+        "revision": confirmed_revision,
+        "kind": kind,
+        "mode": kind,
+        "job_kind": kind,
+    }
+
+    if kind == "seed":
+        selection = select_canon_sources(
+            conn,
+            world_id,
+            max_entries=max_seed_entries,
+            max_chunks=max_seed_chunks,
+            max_entry_chars=max_seed_entry_chars,
+            max_chunk_chars=max_seed_chunk_chars,
+            char_budget=seed_char_budget,
+            fallback_sources=fallback_canon if isinstance(fallback_canon, (list, tuple)) else None,
+        )
+        canon_sources = selection["canon_sources"]
+        selected_ids = list(selection["selected_source_ids"])
+        if not selected_ids and isinstance(explicit_allowed_ids, (list, tuple)):
+            for raw_sid in explicit_allowed_ids:
+                if isinstance(raw_sid, str) and (raw_sid.startswith("chunk:") or raw_sid.startswith("entry:")):
+                    selected_ids.append(raw_sid.strip())
+
+        if not canon_sources and not selected_ids:
+            reason_msg = "当前世界尚无已确认的设定条目或有效导入资料分块，无法生成初始事件线。请先导入一份世界资料或确认至少一条人工设定。"
+            return {
+                **base_envelope,
+                "status": "blocked",
+                "blocked": True,
+                "skip": True,
+                "reason_code": "PULSE_SOURCE_REQUIRED",
+                "reason_message": reason_msg,
+                "reason": reason_msg,
+                "world_intro": _read_world_intro(conn, world_id),
+                "canon_sources": [],
+                "allowed_source_ids": [],
+                "allowed_event_ids": [],
+                "min_initial_threads": DEFAULT_MIN_INITIAL_THREADS,
+                "max_initial_threads": DEFAULT_MAX_INITIAL_THREADS,
+                "budget": selection["budget"],
+                "other_instance_event_ids": other_instance_event_ids,
+            }
+
+        allowed_ids = sorted(set(selected_ids) | set(selection["all_valid_source_ids"]))
+        return {
+            **base_envelope,
+            "status": "ready",
+            "blocked": False,
+            "skip": False,
+            "reason_code": None,
+            "reason_message": None,
+            "world_intro": _read_world_intro(conn, world_id),
+            "canon_sources": canon_sources,
+            "allowed_source_ids": allowed_ids,
+            "selected_source_ids": selected_ids,
+            "allowed_event_ids": [],
+            "min_initial_threads": int(job_payload.get("min_initial_threads", DEFAULT_MIN_INITIAL_THREADS)),
+            "max_initial_threads": int(job_payload.get("max_initial_threads", DEFAULT_MAX_INITIAL_THREADS)),
+            "budget": selection["budget"],
+            "other_instance_event_ids": other_instance_event_ids,
+        }
+
+    # ==================== kind == "advance" ====================
+    # 检查请求的到期时间是否超过已确认分钟
+    requested_due_minute = (
+        job_map.get("due_minute")
+        if job_map.get("due_minute") is not None
+        else job_map.get("target_world_minute")
+    )
+    if requested_due_minute is not None:
+        req_min = _require_strict_int(requested_due_minute, "job.target_world_minute", min_value=0)
+        if req_min > confirmed_minute:
+            msg = f"任务请求的到期时间 ({req_min}) 超过实例已确认分钟 ({confirmed_minute})，本次跳过推进。"
+            return {
+                **base_envelope,
+                "status": "skipped",
+                "skip": True,
+                "blocked": False,
+                "reason_code": "DUE_TIME_EXCEEDS_CONFIRMED_MINUTE",
+                "reason_message": msg,
+                "reason": msg,
+                "requested_due_minute": req_min,
+                "due_events": [],
+                "causal_neighborhood": [],
+                "canon_sources": [],
+                "allowed_source_ids": [],
+                "allowed_event_ids": [],
+                "active_incident_count": 0,
+                "max_active_incidents": max_active_incidents,
+                "registered_precondition_ids": [],
+                "other_instance_event_ids": other_instance_event_ids,
+            }
+
+    consequences_map = _load_consequences_map(conn, instance_id)
+    due_rows = conn.execute(
+        """
+        SELECT instance_id, event_id, kind, title, description, location, scope,
+               participants_json, stage, status, created_minute, updated_minute,
+               next_update_minute, cause_event_ids_json, source_ids_json,
+               turnpoint_type, precondition_ids_json, revision
+        FROM world_events
+        WHERE instance_id = ?
+          AND status = 'active'
+          AND next_update_minute IS NOT NULL
+          AND next_update_minute <= ?
+        ORDER BY next_update_minute ASC, created_minute ASC, event_id ASC
+        LIMIT ?
+        """,
+        (instance_id, confirmed_minute, max_due_events),
+    ).fetchall()
+    due_events = [_row_to_event_dict(r, consequences_map) for r in due_rows]
+
+    active_incident_count = int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM world_events
+            WHERE instance_id = ? AND kind = 'incident' AND status IN ('active', 'stalled')
+            """,
+            (instance_id,),
+        ).fetchone()[0]
+    )
+
+    if not due_events:
+        earliest_row = conn.execute(
+            """
+            SELECT MIN(next_update_minute)
+            FROM world_events
+            WHERE instance_id = ? AND status = 'active' AND next_update_minute IS NOT NULL
+            """,
+            (instance_id,),
+        ).fetchone()
+        earliest_next = int(earliest_row[0]) if (earliest_row and earliest_row[0] is not None) else None
+        if earliest_next is not None and earliest_next > confirmed_minute:
+            reason_code = "DUE_TIME_EXCEEDS_CONFIRMED_MINUTE"
+            reason_msg = (
+                f"最早活跃事件到期时间 ({earliest_next}) 超过当前已确认世界分钟 ({confirmed_minute})，本次跳过推进。"
+            )
+        else:
+            reason_code = "NO_DUE_EVENTS"
+            reason_msg = f"当前已确认世界分钟 ({confirmed_minute}) 下没有待处理的到期活跃事件，本次跳过推进。"
+        return {
+            **base_envelope,
+            "status": "skipped",
+            "skip": True,
+            "blocked": False,
+            "reason_code": reason_code,
+            "reason_message": reason_msg,
+            "reason": reason_msg,
+            "earliest_next_update_minute": earliest_next,
+            "due_events": [],
+            "causal_neighborhood": [],
+            "canon_sources": [],
+            "allowed_source_ids": [],
+            "allowed_event_ids": [],
+            "active_incident_count": active_incident_count,
+            "max_active_incidents": max_active_incidents,
+            "registered_precondition_ids": [],
+            "other_instance_event_ids": other_instance_event_ids,
+        }
+
+    causal_neighborhood = _select_minimal_causal_neighborhood(
+        conn,
+        instance_id,
+        due_events,
+        consequences_map,
+        max_neighbors=max_causal_neighbors,
+    )
+
+    pre_rows = conn.execute(
+        """
+        SELECT precondition_id, source_ids_json
+        FROM world_event_preconditions
+        WHERE instance_id = ? AND status = 'satisfied'
+        ORDER BY registered_minute ASC, precondition_id ASC
+        """,
+        (instance_id,),
+    ).fetchall()
+    registered_precondition_ids = [str(r[0]) for r in pre_rows]
+
+    # 收集到期事件、最小因果邻域和已满足前置条件关联的优先 source_ids
+    preferred_sources: list[str] = []
+    seen_pref: set[str] = set()
+    for ev in (*due_events, *causal_neighborhood):
+        for sid in ev.get("source_ids", ()):
+            if isinstance(sid, str) and sid not in seen_pref:
+                seen_pref.add(sid)
+                preferred_sources.append(sid)
+    for r in pre_rows:
+        for sid in json.loads(r[1] or "[]"):
+            if isinstance(sid, str) and sid not in seen_pref:
+                seen_pref.add(sid)
+                preferred_sources.append(sid)
+
+    selection = select_canon_sources(
+        conn,
+        world_id,
+        max_entries=max_advance_entries,
+        max_chunks=max_advance_chunks,
+        max_entry_chars=max_advance_entry_chars,
+        max_chunk_chars=max_advance_chunk_chars,
+        char_budget=advance_char_budget,
+        preferred_source_ids=tuple(preferred_sources),
+        fallback_sources=fallback_canon if isinstance(fallback_canon, (list, tuple)) else None,
+    )
+
+    allowed_source_set: set[str] = (
+        set(selection["selected_source_ids"])
+        | set(selection["all_valid_source_ids"])
+        | set(preferred_sources)
+    )
+    if isinstance(explicit_allowed_ids, (list, tuple)):
+        for raw_sid in explicit_allowed_ids:
+            if isinstance(raw_sid, str) and (raw_sid.startswith("chunk:") or raw_sid.startswith("entry:")):
+                allowed_source_set.add(raw_sid.strip())
+
+    allowed_event_ids = sorted(
+        {ev["event_id"] for ev in due_events} | {ev["event_id"] for ev in causal_neighborhood}
+    )
+
+    return {
+        **base_envelope,
+        "status": "ready",
+        "skip": False,
+        "blocked": False,
+        "reason_code": None,
+        "reason_message": None,
+        "due_events": due_events,
+        "causal_neighborhood": causal_neighborhood,
+        "canon_sources": selection["canon_sources"],
+        "allowed_source_ids": sorted(allowed_source_set),
+        "selected_source_ids": list(selection["selected_source_ids"]),
+        "allowed_event_ids": allowed_event_ids,
+        "active_incident_count": active_incident_count,
+        "max_active_incidents": max_active_incidents,
+        "registered_precondition_ids": registered_precondition_ids,
+        "budget": selection["budget"],
+        "other_instance_event_ids": other_instance_event_ids,
+    }
 
 
 def _load_validation_context_from_db(
@@ -269,6 +1039,8 @@ def _load_validation_context_from_db(
     min_initial_threads: int = DEFAULT_MIN_INITIAL_THREADS,
     max_initial_threads: int = DEFAULT_MAX_INITIAL_THREADS,
     max_active_incidents: int = DEFAULT_MAX_ACTIVE_INCIDENTS,
+    expected_world_revision: int | None = None,
+    strict_mode_match: bool = False,
 ) -> ProposalValidationContext:
     inst = _get_instance_row(conn, instance_id)
     effective_minute = inst["world_minute"] if world_minute is None else _require_strict_int(
@@ -318,10 +1090,16 @@ def _load_validation_context_from_db(
     if allowed_source_ids is not None:
         effective_sources = frozenset(str(s).strip() for s in allowed_source_ids if str(s).strip())
     else:
-        effective_sources = _discover_world_canon_sources(conn, inst["world_id"])
+        effective_sources = _discover_world_canon_sources(conn, inst["world_id"], confirmed_entries_only=True)
         # 同时将实例内既有事件已验证的 source_ids 纳入允许集
         for ev in existing_events.values():
             effective_sources = effective_sources | frozenset(ev.get("source_ids", ()))
+
+    active_inc_count = sum(
+        1
+        for ev in existing_events.values()
+        if ev.get("kind") == "incident" and ev.get("status") not in TERMINAL_EVENT_STATUSES
+    )
 
     return ProposalValidationContext(
         instance_id=instance_id,
@@ -334,6 +1112,10 @@ def _load_validation_context_from_db(
         min_initial_threads=min_initial_threads,
         max_initial_threads=max_initial_threads,
         max_active_incidents=max_active_incidents,
+        base_world_revision=expected_world_revision,
+        active_incident_count=active_inc_count,
+        strict_mode_match=strict_mode_match,
+        allowed_event_ids=frozenset(existing_events.keys()),
     )
 
 
@@ -378,10 +1160,16 @@ def _proposal_to_raw_dict(proposal: ValidatedEventProposal) -> dict[str, Any]:
     result: dict[str, Any] = {
         "instance_id": proposal.instance_id,
         "mode": proposal.mode,
+        "kind": proposal.mode,
+        "world_minute": proposal.world_minute,
         "operations": ops,
     }
+    if proposal.base_world_revision is not None:
+        result["base_world_revision"] = proposal.base_world_revision
     if proposal.summary:
         result["summary"] = proposal.summary
+    if proposal.transmissions:
+        result["transmissions"] = [dict(t) for t in proposal.transmissions]
     return result
 
 
@@ -389,18 +1177,21 @@ def apply_proposal(
     conn: sqlite3.Connection,
     instance_id: str,
     proposal: ValidatedEventProposal | Mapping[str, Any],
+    job: Mapping[str, Any] | None = None,
     *,
     world_minute: int | None = None,
+    expected_world_revision: int | None = None,
     allowed_source_ids: frozenset[str] | set[str] | list[str] | tuple[str, ...] | None = None,
     max_active_incidents: int = DEFAULT_MAX_ACTIVE_INCIDENTS,
     id_factory: Callable[[], str] | None = None,
     consequence_id_factory: Callable[[], str] | None = None,
 ) -> dict[str, Any]:
-    """在 `SAVEPOINT` 保护下将事件提议原子应用到指定世界实例。
+    """在 `SAVEPOINT` 保护下将事件提议原子应用到指定世界实例（兼容直接调用与 `PulseWorker` 4 参数回调）。
 
     - 模块不自行调用 `conn.commit()`，保留调用方外层事务边界。
-    - 应用时实时复核数据库内当前事件版本、跨实例引用、因果环与上限；
-      任意单个操作失败均回滚整个 `SAVEPOINT`，绝不产生部分写入。
+    - 应用时实时复核数据库内当前实例版本（`world_instances.revision`）、已确认世界时间、
+      事件版本（`expected_event_revision`）、跨实例引用、因果环与临时事件上限；
+      任意单个操作失败均回滚整个 `SAVEPOINT`，绝不产生半笔状态。
     """
     ensure_events_schema(conn)
     instance_id = _require_non_empty_str(instance_id, "instance_id", 120)
@@ -410,18 +1201,64 @@ def apply_proposal(
     savepoint_name = f"sp_m3_events_apply_{uuid4().hex[:8]}"
     conn.execute(f"SAVEPOINT {savepoint_name}")
     try:
+        inst_row = _get_instance_row(conn, instance_id)
+        db_revision = int(inst_row["revision"])
+        db_world_minute = int(inst_row["world_minute"])
+
+        job_map: Mapping[str, Any] = job if isinstance(job, Mapping) else {}
+        if job_map.get("instance_id") is not None:
+            j_inst = _require_non_empty_str(job_map.get("instance_id"), "job.instance_id", 120)
+            if j_inst != instance_id:
+                raise CrossInstanceReferenceError(instance_id, j_inst, j_inst)
+
+        job_mode, job_has_mode = _extract_mode_from_mapping(job_map, "job")
+        job_minute = _extract_minute_from_mapping(job_map, "job")
+        job_rev = _extract_revision_from_mapping(job_map, "job", instance_id)
+
+        # 核对期望的世界实例版本（expected_world_revision / job.base_world_revision / proposal.base_world_revision）
+        target_world_rev = expected_world_revision if expected_world_revision is not None else job_rev
         if isinstance(proposal, ValidatedEventProposal):
             if proposal.instance_id != instance_id:
                 raise CrossInstanceReferenceError(
                     instance_id, proposal.instance_id, proposal.instance_id
                 )
+            if proposal.base_world_revision is not None:
+                if target_world_rev is not None and proposal.base_world_revision != target_world_rev:
+                    raise WorldRevisionConflictError(
+                        instance_id, target_world_rev, proposal.base_world_revision
+                    )
+                target_world_rev = proposal.base_world_revision
+
+        if target_world_rev is not None and db_revision != target_world_rev:
+            raise WorldRevisionConflictError(instance_id, target_world_rev, db_revision)
+
+        if isinstance(proposal, ValidatedEventProposal):
+            if job_has_mode and job_mode != proposal.mode:
+                raise EventValidationError(
+                    "MODE_KIND_MISMATCH",
+                    f"提议模式 ({proposal.mode!r}) 与队列任务类型 ({job_mode!r}) 不一致。",
+                    {"proposal_mode": proposal.mode, "job_kind": job_mode},
+                )
+            if job_minute is not None and world_minute is None and proposal.world_minute != job_minute:
+                raise EventValidationError(
+                    "TIMESTAMP_OVERRIDE_FORBIDDEN",
+                    f"提议时间 ({proposal.world_minute}) 与队列任务时间 ({job_minute}) 不一致。",
+                    {"proposal_minute": proposal.world_minute, "job_minute": job_minute},
+                )
+            if job is not None and proposal.world_minute > db_world_minute and world_minute is None:
+                raise EventValidationError(
+                    "TIMESTAMP_OVERRIDE_FORBIDDEN",
+                    f"提议时间 ({proposal.world_minute}) 超过实例已确认时间 ({db_world_minute})。",
+                    {"proposal_minute": proposal.world_minute, "confirmed_minute": db_world_minute},
+                )
             effective_minute = proposal.world_minute if world_minute is None else world_minute
             raw_payload = _proposal_to_raw_dict(proposal)
+            if world_minute is not None:
+                raw_payload["world_minute"] = world_minute
             inferred_mode = proposal.mode
+            strict_mode = True
             if allowed_source_ids is None:
-                # 若调用方先通过 validate_proposal 校验，汇集已通过校验的 source_ids 与库内来源
-                inst_row = _get_instance_row(conn, instance_id)
-                db_sources = _discover_world_canon_sources(conn, inst_row["world_id"])
+                db_sources = _discover_world_canon_sources(conn, inst_row["world_id"], confirmed_entries_only=True)
                 prop_sources = frozenset(
                     sid for op in proposal.operations for sid in (op.source_ids or ())
                 )
@@ -430,13 +1267,36 @@ def apply_proposal(
                 effective_allowed_sources = frozenset(allowed_source_ids)
         elif isinstance(proposal, Mapping):
             raw_payload = dict(proposal)
-            inferred_mode = raw_payload.get("mode", "advance")
-            if inferred_mode not in ("seed", "advance"):
-                inferred_mode = "advance"
-            effective_minute = world_minute
-            effective_allowed_sources = (
-                frozenset(allowed_source_ids) if allowed_source_ids is not None else None
-            )
+            prop_mode, prop_has_mode = _extract_mode_from_mapping(raw_payload, "proposal")
+            if job_has_mode and prop_has_mode and job_mode != prop_mode:
+                raise EventValidationError(
+                    "MODE_KIND_MISMATCH",
+                    f"提议模式 ({prop_mode!r}) 与队列任务类型 ({job_mode!r}) 不一致。",
+                    {"proposal_mode": prop_mode, "job_kind": job_mode},
+                )
+            inferred_mode = (job_mode or prop_mode or "advance")  # type: ignore[assignment]
+            strict_mode = bool(job_has_mode or prop_has_mode)
+
+            if world_minute is not None:
+                effective_minute = world_minute
+            elif job_minute is not None:
+                if job_minute > db_world_minute:
+                    raise EventValidationError(
+                        "TIMESTAMP_OVERRIDE_FORBIDDEN",
+                        f"任务目标时间 ({job_minute}) 超过数据库已确认分钟 ({db_world_minute})。",
+                        {"job_minute": job_minute, "confirmed_minute": db_world_minute},
+                    )
+                effective_minute = job_minute
+            else:
+                effective_minute = db_world_minute
+
+            payload_Strategy_sources = job_map.get("payload", {}).get("allowed_source_ids") if isinstance(job_map.get("payload"), Mapping) else None
+            if allowed_source_ids is not None:
+                effective_allowed_sources = frozenset(allowed_source_ids)
+            elif isinstance(payload_Strategy_sources, (list, tuple, set, frozenset)):
+                effective_allowed_sources = frozenset(str(x).strip() for x in payload_Strategy_sources if str(x).strip())
+            else:
+                effective_allowed_sources = None
         else:
             raise EventValidationError("PROPOSAL_INVALID", "proposal 必须为 ValidatedEventProposal 或字典。")
 
@@ -447,6 +1307,8 @@ def apply_proposal(
             mode=inferred_mode,
             allowed_source_ids=effective_allowed_sources,
             max_active_incidents=max_active_incidents,
+            expected_world_revision=target_world_rev,
+            strict_mode_match=strict_mode,
         )
         validated = validate_proposal(raw_payload, db_context)
         commit_minute = validated.world_minute
@@ -454,6 +1316,8 @@ def apply_proposal(
         applied_events: list[dict[str, Any]] = []
         applied_consequences: list[dict[str, Any]] = []
         applied_revisions: list[dict[str, Any]] = []
+        created_event_ids: list[str] = []
+        updated_event_ids: list[str] = []
 
         for op in validated.operations:
             if op.op == "create":
@@ -587,6 +1451,7 @@ def apply_proposal(
                     ),
                 )
                 applied_events.append(event_record)
+                created_event_ids.append(new_event_id)
                 applied_revisions.append(
                     {
                         "instance_id": instance_id,
@@ -733,6 +1598,7 @@ def apply_proposal(
                     ),
                 )
                 applied_events.append(event_record)
+                updated_event_ids.append(target_id)
                 applied_revisions.append(
                     {
                         "instance_id": instance_id,
@@ -749,7 +1615,14 @@ def apply_proposal(
         return {
             "instance_id": instance_id,
             "mode": validated.mode,
+            "kind": validated.mode,
             "world_minute": commit_minute,
+            "target_world_minute": commit_minute,
+            "world_revision": db_revision,
+            "base_world_revision": db_revision,
+            "applied_operations": len(applied_events),
+            "created_event_ids": created_event_ids,
+            "updated_event_ids": updated_event_ids,
             "events": applied_events,
             "consequences": applied_consequences,
             "revisions": applied_revisions,
@@ -1264,6 +2137,7 @@ def snapshot(conn: sqlite3.Connection, instance_id: str) -> dict[str, Any]:
             "format_version": SNAPSHOT_FORMAT_VERSION,
             "instance_id": instance_id,
             "world_minute": inst["world_minute"],
+            "world_revision": inst["revision"],
             "events": events,
             "revisions": revisions,
             "consequences": consequences,
@@ -1280,14 +2154,7 @@ def restore(
     source_id_map: Mapping[str, str] | None = None,
     allowed_source_ids: frozenset[str] | set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
-    """在单个写事务（`SAVEPOINT`）内将事件快照原子恢复到目标世界实例 `target_instance_id`。
-
-    支持检查点恢复多分支隔离与跨设备导入：
-    - 从同一检查点快照可恢复出两个或多个独立实例（领域对象 `event_id` 在各自新实例内合法复用）；
-    - 重新核对快照内部因果引用、版本一致性、时间先后与外部 Canon 来源引用；
-    - 支持通过 `source_id_map` 在跨库迁移导入时重映射 `chunk:<id>` / `entry:<id>`；
-    - 若校验失败，完整回滚 `SAVEPOINT`，绝不在目标实例留下半吊子脏数据。
-    """
+    """在单个写事务（`SAVEPOINT`）内将事件快照原子恢复到目标世界实例 `target_instance_id`。"""
     ensure_events_schema(conn)
     target_instance_id = _require_non_empty_str(target_instance_id, "target_instance_id", 120)
 
@@ -1354,7 +2221,7 @@ def restore(
                 str(s).strip() for s in allowed_source_ids if str(s).strip()
             )
         else:
-            discovered = _discover_world_canon_sources(conn, target_world_id)
+            discovered = _discover_world_canon_sources(conn, target_world_id, confirmed_entries_only=False)
             permitted_sources = discovered if discovered else None
 
         def remap_source_id(sid: str) -> str:
@@ -1394,7 +2261,7 @@ def restore(
                 raise SnapshotRestoreError("SNAPSHOT_TIME_INVALID", "前置条件登记时间晚于快照时间。")
             p_parts = [_require_non_empty_str(x, "participant", 80) for x in pre.get("participants", [])]
             p_sources = [remap_source_id(x) for x in pre.get("source_ids", [])]
-            p_causes = [_require_non_empty_str(x, "cause_event_id", 120) for x in pre.get("cause_event_ids", [])]
+            p_causes = [_require_non_empty_str(x, "cause_event_ids", 120) for x in pre.get("cause_event_ids", [])]
 
             conn.execute(
                 """
@@ -1643,3 +2510,8 @@ def restore(
         conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
         conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
         raise
+
+
+# 别名导出，方便 PulseWorker 接线
+read_pulse_snapshot = read_snapshot
+apply_pulse_proposal = apply_proposal
