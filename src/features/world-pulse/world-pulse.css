@@ -1,0 +1,291 @@
+.world-pulse-panel {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  color: var(--text);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.world-pulse-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.world-pulse-summary-title {
+  font-weight: 600;
+}
+
+.world-pulse-state-badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+.world-pulse-state-badge[data-state="ready"],
+.world-pulse-state-badge[data-state="working"] {
+  border-color: var(--green);
+  background: var(--soft);
+  color: var(--green);
+}
+
+.world-pulse-state-badge[data-state="waiting_for_model"],
+.world-pulse-state-badge[data-state="budget_limited"],
+.world-pulse-state-badge[data-state="offline"] {
+  color: var(--accent);
+}
+
+.world-pulse-body {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.world-pulse-status-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  display: grid;
+  gap: 6px;
+}
+
+.world-pulse-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.world-pulse-state-desc {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.world-pulse-reason {
+  font-size: 12px;
+  color: var(--accent);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.world-pulse-cost-banner {
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.world-pulse-cost-banner p {
+  margin: 0;
+}
+
+.world-pulse-warning-banner {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.65;
+  display: grid;
+  gap: 8px;
+}
+
+.world-pulse-warning-banner p {
+  margin: 0;
+}
+
+.world-pulse-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.world-pulse-toggle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.world-pulse-confirm-box {
+  padding: 12px;
+  border: 1px solid var(--green);
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.7;
+  display: grid;
+  gap: 10px;
+}
+
+.world-pulse-confirm-box p {
+  margin: 0;
+}
+
+.world-pulse-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.world-pulse-config-section {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  display: grid;
+  gap: 12px;
+}
+
+.world-pulse-mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.world-pulse-tab-btn {
+  flex: 1 1 140px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.world-pulse-tab-btn.is-active {
+  border-color: var(--green);
+  background: var(--soft);
+  color: var(--green);
+  font-weight: 500;
+}
+
+.world-pulse-form,
+.world-pulse-reuse-box {
+  display: grid;
+  gap: 10px;
+}
+
+.world-pulse-form-hint,
+.world-pulse-reuse-status {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+}
+
+.world-pulse-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.world-pulse-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.world-pulse-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.world-pulse-usage-card {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  display: grid;
+  gap: 8px;
+}
+
+.world-pulse-usage-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin: 0;
+}
+
+.world-pulse-usage-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.world-pulse-timeout-note {
+  font-size: 11px;
+  color: var(--accent);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.world-pulse-notice {
+  font-size: 12px;
+  color: var(--green);
+  margin: 0;
+  line-height: 1.6;
+}
+
+.world-pulse-error p {
+  margin: 0;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .world-pulse-panel {
+    padding: 14px 12px;
+    border-radius: 12px;
+  }
+
+  .world-pulse-toggle-actions button,
+  .world-pulse-confirm-actions button,
+  .world-pulse-form-actions button,
+  .world-pulse-reuse-box button {
+    min-height: 42px;
+    font-size: 13px;
+  }
+
+  .world-pulse-tab-btn {
+    min-height: 40px;
+    font-size: 12px;
+  }
+}
