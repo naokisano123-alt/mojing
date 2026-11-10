@@ -342,6 +342,15 @@ def create_app(
 
         _m3_adapters.load_builtin_adapters()
         try:
+            from .m3 import world_analysis as _world_analysis_pkg
+            from .m3.core import world_analysis as _world_analysis_seam
+
+            provider = getattr(_world_analysis_pkg, "provider", None)
+            if provider is not None:
+                _world_analysis_seam.register_provider(provider)
+        except Exception:
+            pass
+        try:
             async with pulse_worker_lifespan(pulse_worker, auto_start_loop=False):
                 yield
         finally:
@@ -1169,6 +1178,32 @@ def create_app(
                 conn, instance["id"], draft_id, require_current_draft=True,
                 contactability_provider=player_contacts,
             )
+
+    # ---- M3 第四轮：从资料建立初始局势（公共插槽，真实实现待接入） ----
+    from .m3.core import world_analysis as m4_analysis
+
+    @app.post("/api/v1/worlds/{world_id}/analysis-drafts", status_code=201)
+    def create_analysis_draft(world_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        provider = m4_analysis.require_provider()
+        with db(cfg.db_path) as conn:
+            _get_world(conn, world_id)
+            return provider.analyze(conn, world_id, payload)
+
+    @app.get("/api/v1/analysis-drafts/{draft_id}")
+    def get_analysis_draft(draft_id: str) -> dict[str, Any]:
+        provider = m4_analysis.require_provider()
+        with db(cfg.db_path) as conn:
+            draft = provider.get_draft(conn, draft_id)
+            if draft is None:
+                raise ApiError(404, "DRAFT_NOT_FOUND", "开局草案不存在或已过期。")
+            return draft
+
+    @app.post("/api/v1/analysis-drafts/{draft_id}/confirm")
+    def confirm_analysis_draft(draft_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        provider = m4_analysis.require_provider()
+        with db(cfg.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return provider.confirm(conn, draft_id, payload)
 
     return app
 
