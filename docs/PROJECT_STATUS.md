@@ -12,6 +12,6 @@ M3 第三轮已完成组合与自动化验收。
 
 - 第三轮加入从消息发起查证、NPC 状态参与接触判断，以及含已删除来源的存档迁移。北境组合验收已通过。自定义世界的 NPC 初始化与自动调度待接入。
 
-参见 [M3 总纲](M3_DESIGN_DRAFT.md)、[第三轮验收](reports/codex-m3-wave3-completion.md) 与 [四助手任务](collaboration/M3_WAVE3.md)。
+参见 [M3 总纲](M3_DESIGN_DRAFT.md)、[第三轮验收](reports/codex-m3-wave3-completion.md) 与 [第四轮任务](collaboration/M3_WAVE4.md)。
 
 启动方式见[README](../README.md)，本轮记录见[codex-solo-m2](reports/codex-solo-m2.md)，[M2验收](M2_ACCEPTANCE.md)。Python后端尚未部署，在线静态站点不代表当前完整版本。M0/M1数据保持独立，不自动迁移或清空。

@@ -124,4 +124,4 @@ M0使用浏览器localStorage键mojing-m0-v1；M1使用SQLite，二者隔离。�
 
 ## 当前进度
 
-M3 已接入世界实例、事件账本、玩家消息与可选模型脉动。正式旅程默认关闭脉动，两种会话模式已通过 HTTP Mock 验收。见 [当前状态](docs/PROJECT_STATUS.md)、[M3 总纲](docs/M3_DESIGN_DRAFT.md)、[集成验收](docs/reports/codex-m3-wave2-completion.md) 和 [本轮任务](docs/collaboration/M3_WAVE3.md)。M2 历史交付见 [M2 验收](docs/M2_ACCEPTANCE.md)。
+M3 已接入世界实例、事件账本、玩家消息与可选模型脉动。正式旅程默认关闭脉动，两种会话模式已通过 HTTP Mock 验收。见 [当前状态](docs/PROJECT_STATUS.md)、[M3 总纲](docs/M3_DESIGN_DRAFT.md)、[集成验收](docs/reports/codex-m3-wave3-completion.md) 和 [本轮任务](docs/collaboration/M3_WAVE4.md)。M2 历史交付见 [M2 验收](docs/M2_ACCEPTANCE.md)。
