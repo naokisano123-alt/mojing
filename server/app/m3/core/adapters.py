@@ -75,7 +75,9 @@ def restore_all(
     new_instance_id: str,
     world_id: str,
 ) -> None:
-    for name, payload in sorted(domain_snapshots.items()):
+    restore_order = sorted(domain_snapshots, key=lambda name: (name != "events", name != "knowledge", name))
+    for name in restore_order:
+        payload = domain_snapshots[name]
         adapter = _REGISTRY.get(name)
         if adapter is None:
             raise ApiError(422, "SNAPSHOT_DOMAIN_UNSUPPORTED", "此版本无法恢复该存档的世界状态。")

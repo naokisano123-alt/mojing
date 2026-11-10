@@ -17,6 +17,7 @@ import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
 import { WorldPulsePanel } from "../world-pulse";
+import { WorldEncounterPanel } from "../world-encounters";
 import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
@@ -74,6 +75,7 @@ export function AdventureJournal({
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
   const [newsOpen, setNewsOpen] = useState(false);
+  const [newsRefresh, setNewsRefresh] = useState(0);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
   const draftKey = run && draft ? `${run.id}:${draft.id}` : null;
@@ -601,7 +603,17 @@ export function AdventureJournal({
             <summary>世界消息 · 只显示你有渠道得知的消息</summary>
             {newsOpen && <>
               {run.mode === "fake" && <PulsePreview key={run.id} adventureId={run.id} />}
-              <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at} />
+              <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at}
+                refreshTrigger={newsRefresh} />
+              <WorldEncounterPanel key={run.id} adventureId={run.id} defaultOpen={false}
+                composerDraft={action} onComposerDraftChange={setAction} onExpandComposer={setExpanded}
+                refreshTrigger={`${run.revision}:${newsRefresh}`}
+                disabled={busy || draft?.status === "ready" || draft?.status === "pending"}
+                onTurnCommitted={() => {
+                  setAction("");
+                  setExpanded(false);
+                  setNewsRefresh(value => value + 1);
+                }} />
             </>}
           </details>
         </>

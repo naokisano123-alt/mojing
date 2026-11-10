@@ -18,7 +18,15 @@ class EventsAdapter:
         return events.snapshot(conn, instance_id)
 
     def restore(self, conn: Any, snapshot: Any, *, new_instance_id: str, world_id: str) -> None:
-        events.restore(conn, new_instance_id, snapshot)
+        from ..portability.service import _extract_event_snapshot_source_ids, discover_world_source_catalog
+
+        catalog = discover_world_source_catalog(conn, world_id)
+        refs = set(_extract_event_snapshot_source_ids(snapshot))
+        if refs & catalog["deleted_historical_sources"].keys():
+            allowed = set(catalog["active_sources"]) | set(catalog["deleted_historical_sources"])
+            events.restore(conn, new_instance_id, snapshot, allowed_source_ids=allowed)
+        else:
+            events.restore(conn, new_instance_id, snapshot)
 
 
 class KnowledgeAdapter:
@@ -46,4 +54,17 @@ class KnowledgeAdapter:
 
 
 def builtin_adapters() -> list[Any]:
-    return [EventsAdapter(), KnowledgeAdapter()]
+    adapters: list[Any] = [EventsAdapter(), KnowledgeAdapter()]
+    try:
+        from ..encounters import EncountersAdapter
+
+        adapters.append(EncountersAdapter())
+    except Exception:
+        pass
+    try:
+        from ..npcs import NpcsAdapter
+
+        adapters.append(NpcsAdapter())
+    except Exception:
+        pass
+    return adapters
