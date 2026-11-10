@@ -1,0 +1,3120 @@
+{
+  "instance_id": "inst_northern_frontier_001",
+  "world_id": "world_northern_frontier_001",
+  "seed": {
+    "instance_id": "inst_northern_frontier_001",
+    "world_minute": 0,
+    "world_revision": 1,
+    "applied_operations": 10,
+    "created_npc_ids": [
+      "npc_han_shopkeeper",
+      "npc_hawk_blacksmith",
+      "npc_marta_innkeeper",
+      "npc_eilin_mayor",
+      "npc_renn_captain",
+      "npc_garret_caravan",
+      "npc_linn_envoy",
+      "npc_victor_warden",
+      "npc_serena_councillor",
+      "npc_claude_commissioner"
+    ],
+    "updated_npc_ids": [],
+    "updated_task_ids": [
+      "task_han_iron_inventory",
+      "task_mayor_winter_reserve",
+      "task_reroute_eastern_valley",
+      "task_starlight_contract_push",
+      "task_river_barge_dispatch"
+    ],
+    "npcs": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_han_shopkeeper",
+        "name": "韩掌柜",
+        "role": "霜木镇铁料与矿产原料商",
+        "identity": "霜木镇铁料与矿产原料商",
+        "faction": "霜木镇独立商户联席",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在霜木镇铁料铺盘点生铁库存并核对边关来信",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+        "goal": "保住独立原料铺货源，防止被星辉大商会吞并",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "日间挂牌营业班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_han_iron_inventory",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01",
+          "entry:faction_starlight_guild_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "task_id": "task_han_iron_inventory",
+          "task_title": "盘点镇内生铁与精煤库存",
+          "task_stage": "核对星辉商会报价与库房余量",
+          "task_progress_percent": 30,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 60,
+        "next_update_minute": 60,
+        "revision": 1,
+        "tasks": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "npc_id": "npc_han_shopkeeper",
+            "task_id": "task_han_iron_inventory",
+            "title": "盘点镇内生铁与精煤库存",
+            "stage": "核对星辉商会报价与库房余量",
+            "progress_percent": 30,
+            "status": "active",
+            "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01",
+              "entry:faction_starlight_guild_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_hawk_blacksmith",
+        "name": "霍克铁匠",
+        "role": "霜木镇老铁匠坊主",
+        "identity": "霜木镇老铁匠坊主",
+        "faction": "霜木镇工匠行会",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "开启双锻炉赶制北境护路队与镇民预定的铁器",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "护路队巡山装备交期将近，需趁焦炭充足全速锻打",
+        "goal": "按期交付护路队锁甲与农具，维持铁匠坊声誉",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "常规双炉锻造班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "from_shift": "晨间备料班",
+          "to_shift": "常规双炉锻造班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 60,
+        "next_update_minute": 60,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_marta_innkeeper",
+        "name": "玛塔老板娘",
+        "role": "霜木镇灰鹿酒馆掌柜",
+        "identity": "霜木镇灰鹿酒馆掌柜",
+        "faction": "霜木镇商户",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在灰鹿酒馆大堂招待歇脚旅人并留意商道传闻",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "灰鬃商队今日应抵镇投宿，需提前备好热汤与客房",
+        "goal": "经营灰鹿酒馆，收集北境商道第一手风声",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "午间迎客与消息打听班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "from_shift": "晨间清扫班",
+          "to_shift": "午间迎客与消息打听班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 60,
+        "next_update_minute": 60,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_eilin_mayor",
+        "name": "艾琳镇长",
+        "role": "霜木镇执政官",
+        "identity": "霜木镇执政官",
+        "faction": "北境王国地方公署",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在镇公署核算入冬煤炭与铁料储备表",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+        "goal": "维护霜木镇民生与工商业稳定",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "公署日间值守",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_mayor_winter_reserve",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "task_id": "task_mayor_winter_reserve",
+          "task_title": "霜木镇冬储物资核算",
+          "task_stage": "汇总各工坊燃料缺口",
+          "task_progress_percent": 20,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "npc_id": "npc_eilin_mayor",
+            "task_id": "task_mayor_winter_reserve",
+            "title": "霜木镇冬储物资核算",
+            "stage": "汇总各工坊燃料缺口",
+            "progress_percent": 20,
+            "status": "active",
+            "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_renn_captain",
+        "name": "雷恩队长",
+        "role": "北境护路队队长",
+        "identity": "北境护路队队长",
+        "faction": "北境护路队",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "率护路队员在霜木镇南门核查过往货车",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "防范边关加税后走私客与山贼扰乱商道治安",
+        "goal": "保障霜木镇至寒铁城及白河谷地的道路安全",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "镇门与南口巡防班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "from_shift": "清晨操演班",
+          "to_shift": "镇门与南口巡防班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_garret_caravan",
+        "name": "加雷特首领",
+        "role": "灰鬃商队总领队",
+        "identity": "灰鬃商队总领队",
+        "faction": "灰鬃商队",
+        "home_location": "寒铁城",
+        "location": "北境主商道",
+        "origin_location": "北境主商道",
+        "destination_location": "",
+        "current_activity": "在北境主商道分岔口指挥车队转向东侧白河谷地",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "灰岩边关加征三成生铁重税，改走白河谷地水陆联运以规避重税",
+        "goal": "将寒铁城与边境生铁安全运抵霜木镇",
+        "depth_tier": "associated",
+        "tier_label_zh": "关联",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "行商押运班",
+        "availability": "in_transit",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_reroute_eastern_valley",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02",
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "task_id": "task_reroute_eastern_valley",
+          "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "task_stage": "先遣伙计探路与重编驮队",
+          "task_progress_percent": 25,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 60,
+        "next_update_minute": 60,
+        "revision": 1,
+        "tasks": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "npc_id": "npc_garret_caravan",
+            "task_id": "task_reroute_eastern_valley",
+            "title": "灰鬃商队改走东侧白河谷地转运生铁",
+            "stage": "先遣伙计探路与重编驮队",
+            "progress_percent": 25,
+            "status": "active",
+            "motivation": "灰岩边关加征三成生铁重税，改走白河谷地水陆联运以规避重税",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_trade_routes_02",
+              "entry:diplomacy_loran_tariff_02"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_linn_envoy",
+        "name": "林恩特使",
+        "role": "星辉大商会北境督办",
+        "identity": "星辉大商会北境督办",
+        "faction": "星辉大商会",
+        "home_location": "寒铁城",
+        "location": "寒铁城",
+        "origin_location": "寒铁城",
+        "destination_location": "",
+        "current_activity": "在寒铁城总栈审阅霜木镇各工坊的原料依赖度报告",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+        "goal": "垄断北境生铁与成品铁器分销渠道",
+        "depth_tier": "associated",
+        "tier_label_zh": "关联",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "总栈督办值守",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_starlight_contract_push",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:faction_starlight_guild_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "task_id": "task_starlight_contract_push",
+          "task_title": "推行北境工坊排他包销契约",
+          "task_stage": "调拨寒铁城总栈生铁准备压价",
+          "task_progress_percent": 40,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "npc_id": "npc_linn_envoy",
+            "task_id": "task_starlight_contract_push",
+            "title": "推行北境工坊排他包销契约",
+            "stage": "调拨寒铁城总栈生铁准备压价",
+            "progress_percent": 40,
+            "status": "active",
+            "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "entry:faction_starlight_guild_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_victor_warden",
+        "name": "维克多矿监",
+        "role": "寒铁城矿务司主管",
+        "identity": "寒铁城矿务司主管",
+        "faction": "寒铁城矿务司",
+        "home_location": "寒铁城",
+        "location": "寒铁城",
+        "origin_location": "寒铁城",
+        "destination_location": "",
+        "current_activity": "在寒铁城矿务司核查新矿脉勘探文书",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "与白河城争夺交界山脊富铁矿脉特许权",
+        "goal": "维护寒铁城对北境矿产的优先管辖权",
+        "depth_tier": "background",
+        "tier_label_zh": "背景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "矿石配额审批班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:conflict_iron_vein_03"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "from_shift": "矿坑早检",
+          "to_shift": "矿石配额审批班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_serena_councillor",
+        "name": "瑟蕾娜议员",
+        "role": "白河城贸易市政官",
+        "identity": "白河城贸易市政官",
+        "faction": "白河城市政厅",
+        "home_location": "白河城",
+        "location": "白河城",
+        "origin_location": "白河城",
+        "destination_location": "",
+        "current_activity": "在白河城港务厅调度东谷水陆联运驳船",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+        "goal": "扩大白河城在北境水陆贸易中的枢纽地位",
+        "depth_tier": "background",
+        "tier_label_zh": "背景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "市政厅日班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_river_barge_dispatch",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "task_id": "task_river_barge_dispatch",
+          "task_title": "白河水路铁矿驳船扩编",
+          "task_stage": "征调东谷渡口平底驳船",
+          "task_progress_percent": 35,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "npc_id": "npc_serena_councillor",
+            "task_id": "task_river_barge_dispatch",
+            "title": "白河水路铁矿驳船扩编",
+            "stage": "征调东谷渡口平底驳船",
+            "progress_percent": 35,
+            "status": "active",
+            "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_trade_routes_02",
+              "entry:conflict_iron_vein_03"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "npc_id": "npc_claude_commissioner",
+        "name": "克劳德专员",
+        "role": "洛兰公国灰岩边关税务官",
+        "identity": "洛兰公国灰岩边关税务官",
+        "faction": "洛兰公国财政署",
+        "home_location": "灰岩边关",
+        "location": "灰岩边关",
+        "origin_location": "灰岩边关",
+        "destination_location": "",
+        "current_activity": "在灰岩边关关隘督导税吏按新税率清点过境生铁车队",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "执行洛兰公国加征三成生铁关税令，充实公国边境财政",
+        "goal": "严格执行灰岩边关新关税标准",
+        "depth_tier": "background",
+        "tier_label_zh": "背景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "重税稽查班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "from_shift": "边关宿值",
+          "to_shift": "重税稽查班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": []
+      }
+    ],
+    "idempotent_replay": false
+  },
+  "step_60": {
+    "snapshot_budget": {
+      "max_foreground_npcs": 3,
+      "max_associated_npcs": 2,
+      "max_background_npcs": 0,
+      "max_total_npcs": 5,
+      "foreground_char_budget": 420,
+      "associated_char_budget": 240,
+      "background_char_budget": 120,
+      "total_char_budget": 2200,
+      "min_action_interval_by_tier": {
+        "foreground": 15,
+        "associated": 30,
+        "background": 120
+      },
+      "selected_foreground_count": 3,
+      "selected_associated_count": 1,
+      "selected_background_count": 0,
+      "selected_total_count": 4,
+      "total_due_candidates": 4,
+      "total_evaluated_npcs": 10,
+      "used_chars": 607
+    },
+    "selected_npc_ids": [
+      "npc_han_shopkeeper",
+      "npc_hawk_blacksmith",
+      "npc_marta_innkeeper",
+      "npc_garret_caravan"
+    ],
+    "applied": {
+      "instance_id": "inst_northern_frontier_001",
+      "world_minute": 60,
+      "world_revision": 2,
+      "applied_operations": 4,
+      "created_npc_ids": [],
+      "updated_npc_ids": [
+        "npc_han_shopkeeper",
+        "npc_hawk_blacksmith",
+        "npc_marta_innkeeper",
+        "npc_garret_caravan"
+      ],
+      "updated_task_ids": [
+        "task_reroute_eastern_valley"
+      ],
+      "npcs": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_han_shopkeeper",
+          "name": "韩掌柜",
+          "role": "霜木镇铁料与矿产原料商",
+          "identity": "霜木镇铁料与矿产原料商",
+          "faction": "霜木镇独立商户联席",
+          "home_location": "霜木镇",
+          "location": "白河城",
+          "origin_location": "霜木镇",
+          "destination_location": "白河城",
+          "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+          "current_action_kind": "travel",
+          "action_kind": "travel",
+          "motivation": "灰鬃商队因边关重税改道延误，需赶在星辉大商会垄断前赴白河城锁定水路生铁",
+          "goal": "保住独立原料铺货源，防止被星辉大商会吞并",
+          "depth_tier": "foreground",
+          "tier_label_zh": "近景",
+          "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+          "shift_name": "日间挂牌营业班",
+          "availability": "in_transit",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "task_han_iron_inventory",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02",
+            "evt_local_competition_03"
+          ],
+          "cause_fact_ids": [
+            "fact_han_caravan_delay"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "action_meta": {
+            "duration_minutes": 90,
+            "from_location": "霜木镇",
+            "to_location": "白河城"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 60,
+          "last_action_minute": 60,
+          "next_due_minute": 150,
+          "next_update_minute": 150,
+          "revision": 2,
+          "tasks": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "npc_id": "npc_han_shopkeeper",
+              "task_id": "task_han_iron_inventory",
+              "title": "盘点镇内生铁与精煤库存",
+              "stage": "核对星辉商会报价与库房余量",
+              "progress_percent": 30,
+              "status": "active",
+              "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+              "cause_event_ids": [],
+              "cause_fact_ids": [],
+              "source_ids": [
+                "chunk:north_geography_01",
+                "entry:faction_starlight_guild_01"
+              ],
+              "created_minute": 0,
+              "updated_minute": 0,
+              "revision": 1
+            }
+          ]
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_hawk_blacksmith",
+          "name": "霍克铁匠",
+          "role": "霜木镇老铁匠坊主",
+          "identity": "霜木镇老铁匠坊主",
+          "faction": "霜木镇工匠行会",
+          "home_location": "霜木镇",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "current_activity": "关停副锻炉并带领学徒切换至单炉节炭与废铁分拣班，优先保障护路队急单",
+          "current_action_kind": "shift_change",
+          "action_kind": "shift_change",
+          "motivation": "同样面对灰鬃商队改道导致的生铁与精煤延期，选择留守工坊换班节流以不断火",
+          "goal": "按期交付护路队锁甲与农具，维持铁匠坊声誉",
+          "depth_tier": "foreground",
+          "tier_label_zh": "近景",
+          "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+          "shift_name": "单炉节炭与废铁分拣班",
+          "availability": "busy",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_hawk_coal_shortage"
+          ],
+          "source_ids": [
+            "chunk:north_geography_01"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "from_shift": "常规双炉锻造班",
+            "to_shift": "单炉节炭与废铁分拣班"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 60,
+          "last_action_minute": 60,
+          "next_due_minute": 120,
+          "next_update_minute": 120,
+          "revision": 2,
+          "tasks": []
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_marta_innkeeper",
+          "name": "玛塔老板娘",
+          "role": "霜木镇灰鹿酒馆掌柜",
+          "identity": "霜木镇灰鹿酒馆掌柜",
+          "faction": "霜木镇商户",
+          "home_location": "霜木镇",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "current_activity": "在灰鹿酒馆与护路队雷恩队长商议延误商队接应与住客安顿",
+          "current_action_kind": "conversation_plan",
+          "action_kind": "conversation_plan",
+          "motivation": "旅人纷纷议论商队改道，需向护路队队长核实道路实情并调整客房预留",
+          "goal": "经营灰鹿酒馆，收集北境商道第一手风声",
+          "depth_tier": "foreground",
+          "tier_label_zh": "近景",
+          "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 130）",
+          "shift_name": "午间迎客与消息打听班",
+          "availability": "available",
+          "counterpart_npc_id": "npc_renn_captain",
+          "conversation_topic": "核实灰鬃商队改走白河谷地的延误天数与南门治安巡防",
+          "current_task_id": "",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_marta_road_rumor"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "target_npc_id": "npc_renn_captain",
+            "meeting_location": "霜木镇",
+            "conversation_topic": "核实灰鬃商队改走白河谷地的延误天数与南门治安巡防"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 60,
+          "last_action_minute": 60,
+          "next_due_minute": 120,
+          "next_update_minute": 120,
+          "revision": 2,
+          "tasks": []
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_garret_caravan",
+          "name": "加雷特首领",
+          "role": "灰鬃商队总领队",
+          "identity": "灰鬃商队总领队",
+          "faction": "灰鬃商队",
+          "home_location": "寒铁城",
+          "location": "北境主商道",
+          "origin_location": "北境主商道",
+          "destination_location": "",
+          "current_activity": "在白河谷地渡口督导灰鬃商队将大宗生铁转装驳船与轻车",
+          "current_action_kind": "task_progress",
+          "action_kind": "task_progress",
+          "motivation": "绕开灰岩边关三成重税后全速推进东谷水陆联运，力争减少霜木镇断供损失",
+          "goal": "将寒铁城与边境生铁安全运抵霜木镇",
+          "depth_tier": "associated",
+          "tier_label_zh": "关联",
+          "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 50）",
+          "shift_name": "行商押运班",
+          "availability": "in_transit",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "task_reroute_eastern_valley",
+          "cause_event_ids": [
+            "evt_loran_tariff_01",
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_garret_tariff_notice"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "task_id": "task_reroute_eastern_valley",
+            "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+            "task_stage": "抵达白河谷地西口并分批装运生铁过渡口",
+            "task_progress_percent": 65,
+            "task_status": "active"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 60,
+          "last_action_minute": 60,
+          "next_due_minute": 120,
+          "next_update_minute": 120,
+          "revision": 2,
+          "tasks": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "npc_id": "npc_garret_caravan",
+              "task_id": "task_reroute_eastern_valley",
+              "title": "灰鬃商队改走东侧白河谷地转运生铁",
+              "stage": "抵达白河谷地西口并分批装运生铁过渡口",
+              "progress_percent": 65,
+              "status": "active",
+              "motivation": "绕开灰岩边关三成重税后全速推进东谷水陆联运，力争减少霜木镇断供损失",
+              "cause_event_ids": [
+                "evt_loran_tariff_01",
+                "evt_caravan_reroute_02"
+              ],
+              "cause_fact_ids": [
+                "fact_garret_tariff_notice"
+              ],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "created_minute": 0,
+              "updated_minute": 60,
+              "revision": 2
+            }
+          ]
+        }
+      ],
+      "idempotent_replay": false
+    },
+    "han_accessibility": {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_han_shopkeeper",
+      "name": "韩掌柜",
+      "role": "霜木镇铁料与矿产原料商",
+      "identity": "霜木镇铁料与矿产原料商",
+      "location": "白河城",
+      "origin_location": "霜木镇",
+      "destination_location": "白河城",
+      "player_location": "霜木镇",
+      "world_minute": 60,
+      "contactable": false,
+      "accessible": false,
+      "availability": "in_transit",
+      "shift_name": "日间挂牌营业班",
+      "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+      "current_action_kind": "travel",
+      "next_due_minute": 150,
+      "revision": 2,
+      "reason_code": "NPC_DEPARTED_IN_TRANSIT",
+      "reason_message": "韩掌柜已离开霜木镇，正在前往白河城途中。"
+    },
+    "hawk_accessibility": {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_hawk_blacksmith",
+      "name": "霍克铁匠",
+      "role": "霜木镇老铁匠坊主",
+      "identity": "霜木镇老铁匠坊主",
+      "location": "霜木镇",
+      "origin_location": "霜木镇",
+      "destination_location": "",
+      "player_location": "霜木镇",
+      "world_minute": 60,
+      "contactable": true,
+      "accessible": true,
+      "availability": "busy",
+      "shift_name": "单炉节炭与废铁分拣班",
+      "current_activity": "关停副锻炉并带领学徒切换至单炉节炭与废铁分拣班，优先保障护路队急单",
+      "current_action_kind": "shift_change",
+      "next_due_minute": 120,
+      "revision": 2,
+      "reason_code": "OK",
+      "reason_message": "霍克铁匠当前在霜木镇（关停副锻炉并带领学徒切换至单炉节炭与废铁分拣班，优先保障护路队急单），可以发起交谈。"
+    }
+  },
+  "step_90_no_due": {
+    "status": "skipped",
+    "skip": true,
+    "reason_code": "NO_DUE_NPCS",
+    "earliest_next_due_minute": 120,
+    "model_skipped": true
+  },
+  "step_120": {
+    "snapshot_budget": {
+      "max_foreground_npcs": 3,
+      "max_associated_npcs": 2,
+      "max_background_npcs": 0,
+      "max_total_npcs": 5,
+      "foreground_char_budget": 420,
+      "associated_char_budget": 240,
+      "background_char_budget": 120,
+      "total_char_budget": 2200,
+      "min_action_interval_by_tier": {
+        "foreground": 15,
+        "associated": 30,
+        "background": 120
+      },
+      "selected_foreground_count": 2,
+      "selected_associated_count": 1,
+      "selected_background_count": 0,
+      "selected_total_count": 3,
+      "total_due_candidates": 3,
+      "total_evaluated_npcs": 10,
+      "used_chars": 483
+    },
+    "selected_npc_ids": [
+      "npc_hawk_blacksmith",
+      "npc_marta_innkeeper",
+      "npc_garret_caravan"
+    ],
+    "han_tier_evaluation": {
+      "npc_id": "npc_han_shopkeeper",
+      "name": "韩掌柜",
+      "location": "白河城",
+      "previous_tier": "foreground",
+      "current_tier": "foreground",
+      "tier_label_zh": "近景",
+      "transition": "unchanged",
+      "relevance_score": 140,
+      "reason_codes": [
+        "LOCAL_PLAYER_LOCATION_EVENT",
+        "ACTIVE_DUE_EVENT_PARTICIPANT",
+        "DUE_EVENT_CAUSAL_MOTIVATION",
+        "LEFT_PLAYER_LOCATION"
+      ],
+      "reason_summary": "维持(近景)：LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION、LEFT_PLAYER_LOCATION（相关性得分 140）",
+      "is_due": false,
+      "next_due_minute": 150,
+      "selected_for_simulation": false,
+      "excluded_reason": "NPC_NOT_DUE",
+      "allocated_char_budget": 0,
+      "used_chars": 0,
+      "excerpt": ""
+    },
+    "applied": {
+      "instance_id": "inst_northern_frontier_001",
+      "world_minute": 120,
+      "world_revision": 3,
+      "applied_operations": 3,
+      "created_npc_ids": [],
+      "updated_npc_ids": [
+        "npc_hawk_blacksmith",
+        "npc_marta_innkeeper",
+        "npc_garret_caravan"
+      ],
+      "updated_task_ids": [
+        "task_hawk_scrap_smelting",
+        "task_reroute_eastern_valley"
+      ],
+      "npcs": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_hawk_blacksmith",
+          "name": "霍克铁匠",
+          "role": "霜木镇老铁匠坊主",
+          "identity": "霜木镇老铁匠坊主",
+          "faction": "霜木镇工匠行会",
+          "home_location": "霜木镇",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "current_activity": "在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭",
+          "current_action_kind": "task_progress",
+          "action_kind": "task_progress",
+          "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+          "goal": "按期交付护路队锁甲与农具，维持铁匠坊声誉",
+          "depth_tier": "foreground",
+          "tier_label_zh": "近景",
+          "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 220）",
+          "shift_name": "单炉节炭与废铁分拣班",
+          "availability": "available",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "task_hawk_scrap_smelting",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02",
+            "evt_local_competition_03"
+          ],
+          "cause_fact_ids": [
+            "fact_hawk_coal_shortage"
+          ],
+          "source_ids": [
+            "chunk:north_geography_01"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "task_id": "task_hawk_scrap_smelting",
+            "task_title": "旧铁器与边角料重熔提纯",
+            "task_stage": "完成首炉回收熟铁锭锻打",
+            "task_progress_percent": 60,
+            "task_status": "active"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 120,
+          "last_action_minute": 120,
+          "next_due_minute": 180,
+          "next_update_minute": 180,
+          "revision": 3,
+          "tasks": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "npc_id": "npc_hawk_blacksmith",
+              "task_id": "task_hawk_scrap_smelting",
+              "title": "旧铁器与边角料重熔提纯",
+              "stage": "完成首炉回收熟铁锭锻打",
+              "progress_percent": 60,
+              "status": "active",
+              "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+              "cause_event_ids": [
+                "evt_caravan_reroute_02",
+                "evt_local_competition_03"
+              ],
+              "cause_fact_ids": [
+                "fact_hawk_coal_shortage"
+              ],
+              "source_ids": [
+                "chunk:north_geography_01"
+              ],
+              "created_minute": 120,
+              "updated_minute": 120,
+              "revision": 1
+            }
+          ]
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_marta_innkeeper",
+          "name": "玛塔老板娘",
+          "role": "霜木镇灰鹿酒馆掌柜",
+          "identity": "霜木镇灰鹿酒馆掌柜",
+          "faction": "霜木镇商户",
+          "home_location": "霜木镇",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "current_activity": "在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商",
+          "current_action_kind": "shift_change",
+          "action_kind": "shift_change",
+          "motivation": "与雷恩队长核实商队晚到详情后，将预留大通铺改为接待滞留散客",
+          "goal": "经营灰鹿酒馆，收集北境商道第一手风声",
+          "depth_tier": "foreground",
+          "tier_label_zh": "近景",
+          "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 160）",
+          "shift_name": "晚间酒馆食宿接待班",
+          "availability": "available",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_marta_road_rumor"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "from_shift": "午间迎客与消息打听班",
+            "to_shift": "晚间酒馆食宿接待班"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 120,
+          "last_action_minute": 120,
+          "next_due_minute": 180,
+          "next_update_minute": 180,
+          "revision": 3,
+          "tasks": []
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_garret_caravan",
+          "name": "加雷特首领",
+          "role": "灰鬃商队总领队",
+          "identity": "灰鬃商队总领队",
+          "faction": "灰鬃商队",
+          "home_location": "寒铁城",
+          "location": "北境主商道",
+          "origin_location": "北境主商道",
+          "destination_location": "",
+          "current_activity": "完成白河谷地水陆转运，率领灰鬃商队主力向霜木镇东口进发",
+          "current_action_kind": "task_progress",
+          "action_kind": "task_progress",
+          "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+          "goal": "将寒铁城与边境生铁安全运抵霜木镇",
+          "depth_tier": "associated",
+          "tier_label_zh": "关联",
+          "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 80）",
+          "shift_name": "行商押运班",
+          "availability": "in_transit",
+          "counterpart_npc_id": "",
+          "conversation_topic": "",
+          "current_task_id": "task_reroute_eastern_valley",
+          "cause_event_ids": [
+            "evt_loran_tariff_01",
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_garret_tariff_notice"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "action_meta": {
+            "duration_minutes": 60,
+            "task_id": "task_reroute_eastern_valley",
+            "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+            "task_stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+            "task_progress_percent": 100,
+            "task_status": "completed"
+          },
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 120,
+          "last_action_minute": 120,
+          "next_due_minute": 180,
+          "next_update_minute": 180,
+          "revision": 3,
+          "tasks": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "npc_id": "npc_garret_caravan",
+              "task_id": "task_reroute_eastern_valley",
+              "title": "灰鬃商队改走东侧白河谷地转运生铁",
+              "stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+              "progress_percent": 100,
+              "status": "completed",
+              "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+              "cause_event_ids": [
+                "evt_loran_tariff_01",
+                "evt_caravan_reroute_02"
+              ],
+              "cause_fact_ids": [
+                "fact_garret_tariff_notice"
+              ],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "created_minute": 0,
+              "updated_minute": 120,
+              "revision": 3
+            }
+          ]
+        }
+      ],
+      "idempotent_replay": false
+    },
+    "contactable_at_frostwood": {
+      "instance_id": "inst_northern_frontier_001",
+      "player_location": "霜木镇",
+      "world_minute": 120,
+      "items": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_eilin_mayor",
+          "name": "艾琳镇长",
+          "role": "霜木镇执政官",
+          "identity": "霜木镇执政官",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "player_location": "霜木镇",
+          "world_minute": 120,
+          "contactable": true,
+          "accessible": true,
+          "availability": "available",
+          "shift_name": "公署日间值守",
+          "current_activity": "在镇公署核算入冬煤炭与铁料储备表",
+          "current_action_kind": "task_progress",
+          "next_due_minute": 180,
+          "revision": 1,
+          "reason_code": "OK",
+          "reason_message": "艾琳镇长当前在霜木镇（在镇公署核算入冬煤炭与铁料储备表），可以发起交谈。"
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_hawk_blacksmith",
+          "name": "霍克铁匠",
+          "role": "霜木镇老铁匠坊主",
+          "identity": "霜木镇老铁匠坊主",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "player_location": "霜木镇",
+          "world_minute": 120,
+          "contactable": true,
+          "accessible": true,
+          "availability": "available",
+          "shift_name": "单炉节炭与废铁分拣班",
+          "current_activity": "在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭",
+          "current_action_kind": "task_progress",
+          "next_due_minute": 180,
+          "revision": 3,
+          "reason_code": "OK",
+          "reason_message": "霍克铁匠当前在霜木镇（在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭），可以发起交谈。"
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_marta_innkeeper",
+          "name": "玛塔老板娘",
+          "role": "霜木镇灰鹿酒馆掌柜",
+          "identity": "霜木镇灰鹿酒馆掌柜",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "player_location": "霜木镇",
+          "world_minute": 120,
+          "contactable": true,
+          "accessible": true,
+          "availability": "available",
+          "shift_name": "晚间酒馆食宿接待班",
+          "current_activity": "在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商",
+          "current_action_kind": "shift_change",
+          "next_due_minute": 180,
+          "revision": 3,
+          "reason_code": "OK",
+          "reason_message": "玛塔老板娘当前在霜木镇（在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商），可以发起交谈。"
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_renn_captain",
+          "name": "雷恩队长",
+          "role": "北境护路队队长",
+          "identity": "北境护路队队长",
+          "location": "霜木镇",
+          "origin_location": "霜木镇",
+          "destination_location": "",
+          "player_location": "霜木镇",
+          "world_minute": 120,
+          "contactable": true,
+          "accessible": true,
+          "availability": "available",
+          "shift_name": "镇门与南口巡防班",
+          "current_activity": "率护路队员在霜木镇南门核查过往货车",
+          "current_action_kind": "shift_change",
+          "next_due_minute": 180,
+          "revision": 1,
+          "reason_code": "OK",
+          "reason_message": "雷恩队长当前在霜木镇（率护路队员在霜木镇南门核查过往货车），可以发起交谈。"
+        }
+      ],
+      "unavailable_items": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_han_shopkeeper",
+          "name": "韩掌柜",
+          "role": "霜木镇铁料与矿产原料商",
+          "identity": "霜木镇铁料与矿产原料商",
+          "location": "白河城",
+          "origin_location": "霜木镇",
+          "destination_location": "白河城",
+          "player_location": "霜木镇",
+          "world_minute": 120,
+          "contactable": false,
+          "accessible": false,
+          "availability": "in_transit",
+          "shift_name": "日间挂牌营业班",
+          "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+          "current_action_kind": "travel",
+          "next_due_minute": 150,
+          "revision": 2,
+          "reason_code": "NPC_DEPARTED_IN_TRANSIT",
+          "reason_message": "韩掌柜已离开霜木镇，正在前往白河城途中。"
+        }
+      ]
+    }
+  },
+  "http_calls": [
+    {
+      "world_minute": 60,
+      "model": "npc-sim-v3"
+    },
+    {
+      "world_minute": 120,
+      "model": "npc-sim-v3"
+    }
+  ],
+  "final_npcs": [
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_eilin_mayor",
+      "name": "艾琳镇长",
+      "role": "霜木镇执政官",
+      "identity": "霜木镇执政官",
+      "faction": "北境王国地方公署",
+      "home_location": "霜木镇",
+      "location": "霜木镇",
+      "origin_location": "霜木镇",
+      "destination_location": "",
+      "current_activity": "在镇公署核算入冬煤炭与铁料储备表",
+      "current_action_kind": "task_progress",
+      "action_kind": "task_progress",
+      "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+      "goal": "维护霜木镇民生与工商业稳定",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "初始化默认分级",
+      "shift_name": "公署日间值守",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_mayor_winter_reserve",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "action_meta": {
+        "duration_minutes": 180,
+        "task_id": "task_mayor_winter_reserve",
+        "task_title": "霜木镇冬储物资核算",
+        "task_stage": "汇总各工坊燃料缺口",
+        "task_progress_percent": 20,
+        "task_status": "active"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 1,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_eilin_mayor",
+          "task_id": "task_mayor_winter_reserve",
+          "title": "霜木镇冬储物资核算",
+          "stage": "汇总各工坊燃料缺口",
+          "progress_percent": 20,
+          "status": "active",
+          "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+          "cause_event_ids": [],
+          "cause_fact_ids": [],
+          "source_ids": [
+            "chunk:north_geography_01"
+          ],
+          "created_minute": 0,
+          "updated_minute": 0,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_han_shopkeeper",
+      "name": "韩掌柜",
+      "role": "霜木镇铁料与矿产原料商",
+      "identity": "霜木镇铁料与矿产原料商",
+      "faction": "霜木镇独立商户联席",
+      "home_location": "霜木镇",
+      "location": "白河城",
+      "origin_location": "霜木镇",
+      "destination_location": "白河城",
+      "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+      "current_action_kind": "travel",
+      "action_kind": "travel",
+      "motivation": "灰鬃商队因边关重税改道延误，需赶在星辉大商会垄断前赴白河城锁定水路生铁",
+      "goal": "保住独立原料铺货源，防止被星辉大商会吞并",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+      "shift_name": "日间挂牌营业班",
+      "availability": "in_transit",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_han_iron_inventory",
+      "cause_event_ids": [
+        "evt_caravan_reroute_02",
+        "evt_local_competition_03"
+      ],
+      "cause_fact_ids": [
+        "fact_han_caravan_delay"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "action_meta": {
+        "duration_minutes": 90,
+        "from_location": "霜木镇",
+        "to_location": "白河城"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 60,
+      "last_action_minute": 60,
+      "next_due_minute": 150,
+      "next_update_minute": 150,
+      "revision": 2,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_han_shopkeeper",
+          "task_id": "task_han_iron_inventory",
+          "title": "盘点镇内生铁与精煤库存",
+          "stage": "核对星辉商会报价与库房余量",
+          "progress_percent": 30,
+          "status": "active",
+          "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+          "cause_event_ids": [],
+          "cause_fact_ids": [],
+          "source_ids": [
+            "chunk:north_geography_01",
+            "entry:faction_starlight_guild_01"
+          ],
+          "created_minute": 0,
+          "updated_minute": 0,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_hawk_blacksmith",
+      "name": "霍克铁匠",
+      "role": "霜木镇老铁匠坊主",
+      "identity": "霜木镇老铁匠坊主",
+      "faction": "霜木镇工匠行会",
+      "home_location": "霜木镇",
+      "location": "霜木镇",
+      "origin_location": "霜木镇",
+      "destination_location": "",
+      "current_activity": "在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭",
+      "current_action_kind": "task_progress",
+      "action_kind": "task_progress",
+      "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+      "goal": "按期交付护路队锁甲与农具，维持铁匠坊声誉",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 220）",
+      "shift_name": "单炉节炭与废铁分拣班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_hawk_scrap_smelting",
+      "cause_event_ids": [
+        "evt_caravan_reroute_02",
+        "evt_local_competition_03"
+      ],
+      "cause_fact_ids": [
+        "fact_hawk_coal_shortage"
+      ],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "action_meta": {
+        "duration_minutes": 60,
+        "task_id": "task_hawk_scrap_smelting",
+        "task_title": "旧铁器与边角料重熔提纯",
+        "task_stage": "完成首炉回收熟铁锭锻打",
+        "task_progress_percent": 60,
+        "task_status": "active"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 120,
+      "last_action_minute": 120,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 3,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_hawk_blacksmith",
+          "task_id": "task_hawk_scrap_smelting",
+          "title": "旧铁器与边角料重熔提纯",
+          "stage": "完成首炉回收熟铁锭锻打",
+          "progress_percent": 60,
+          "status": "active",
+          "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+          "cause_event_ids": [
+            "evt_caravan_reroute_02",
+            "evt_local_competition_03"
+          ],
+          "cause_fact_ids": [
+            "fact_hawk_coal_shortage"
+          ],
+          "source_ids": [
+            "chunk:north_geography_01"
+          ],
+          "created_minute": 120,
+          "updated_minute": 120,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_linn_envoy",
+      "name": "林恩特使",
+      "role": "星辉大商会北境督办",
+      "identity": "星辉大商会北境督办",
+      "faction": "星辉大商会",
+      "home_location": "寒铁城",
+      "location": "寒铁城",
+      "origin_location": "寒铁城",
+      "destination_location": "",
+      "current_activity": "在寒铁城总栈审阅霜木镇各工坊的原料依赖度报告",
+      "current_action_kind": "task_progress",
+      "action_kind": "task_progress",
+      "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+      "goal": "垄断北境生铁与成品铁器分销渠道",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "升档(关联->近景)：LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_EVENT_PARTICIPANT（相关性得分 95）",
+      "shift_name": "总栈督办值守",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_starlight_contract_push",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "entry:faction_starlight_guild_01"
+      ],
+      "action_meta": {
+        "duration_minutes": 180,
+        "task_id": "task_starlight_contract_push",
+        "task_title": "推行北境工坊排他包销契约",
+        "task_stage": "调拨寒铁城总栈生铁准备压价",
+        "task_progress_percent": 40,
+        "task_status": "active"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 1,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_linn_envoy",
+          "task_id": "task_starlight_contract_push",
+          "title": "推行北境工坊排他包销契约",
+          "stage": "调拨寒铁城总栈生铁准备压价",
+          "progress_percent": 40,
+          "status": "active",
+          "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+          "cause_event_ids": [],
+          "cause_fact_ids": [],
+          "source_ids": [
+            "entry:faction_starlight_guild_01"
+          ],
+          "created_minute": 0,
+          "updated_minute": 0,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_marta_innkeeper",
+      "name": "玛塔老板娘",
+      "role": "霜木镇灰鹿酒馆掌柜",
+      "identity": "霜木镇灰鹿酒馆掌柜",
+      "faction": "霜木镇商户",
+      "home_location": "霜木镇",
+      "location": "霜木镇",
+      "origin_location": "霜木镇",
+      "destination_location": "",
+      "current_activity": "在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商",
+      "current_action_kind": "shift_change",
+      "action_kind": "shift_change",
+      "motivation": "与雷恩队长核实商队晚到详情后，将预留大通铺改为接待滞留散客",
+      "goal": "经营灰鹿酒馆，收集北境商道第一手风声",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 160）",
+      "shift_name": "晚间酒馆食宿接待班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "",
+      "cause_event_ids": [
+        "evt_caravan_reroute_02"
+      ],
+      "cause_fact_ids": [
+        "fact_marta_road_rumor"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "action_meta": {
+        "duration_minutes": 60,
+        "from_shift": "午间迎客与消息打听班",
+        "to_shift": "晚间酒馆食宿接待班"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 120,
+      "last_action_minute": 120,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 3,
+      "tasks": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_renn_captain",
+      "name": "雷恩队长",
+      "role": "北境护路队队长",
+      "identity": "北境护路队队长",
+      "faction": "北境护路队",
+      "home_location": "霜木镇",
+      "location": "霜木镇",
+      "origin_location": "霜木镇",
+      "destination_location": "",
+      "current_activity": "率护路队员在霜木镇南门核查过往货车",
+      "current_action_kind": "shift_change",
+      "action_kind": "shift_change",
+      "motivation": "防范边关加税后走私客与山贼扰乱商道治安",
+      "goal": "保障霜木镇至寒铁城及白河谷地的道路安全",
+      "depth_tier": "foreground",
+      "tier_label_zh": "近景",
+      "depth_reason": "初始化默认分级",
+      "shift_name": "镇门与南口巡防班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "action_meta": {
+        "duration_minutes": 180,
+        "from_shift": "清晨操演班",
+        "to_shift": "镇门与南口巡防班"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 1,
+      "tasks": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_claude_commissioner",
+      "name": "克劳德专员",
+      "role": "洛兰公国灰岩边关税务官",
+      "identity": "洛兰公国灰岩边关税务官",
+      "faction": "洛兰公国财政署",
+      "home_location": "灰岩边关",
+      "location": "灰岩边关",
+      "origin_location": "灰岩边关",
+      "destination_location": "",
+      "current_activity": "在灰岩边关关隘督导税吏按新税率清点过境生铁车队",
+      "current_action_kind": "shift_change",
+      "action_kind": "shift_change",
+      "motivation": "执行洛兰公国加征三成生铁关税令，充实公国边境财政",
+      "goal": "严格执行灰岩边关新关税标准",
+      "depth_tier": "associated",
+      "tier_label_zh": "关联",
+      "depth_reason": "升档(背景->关联)：ACTIVE_EVENT_PARTICIPANT（相关性得分 35）",
+      "shift_name": "重税稽查班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "entry:diplomacy_loran_tariff_02"
+      ],
+      "action_meta": {
+        "duration_minutes": 240,
+        "from_shift": "边关宿值",
+        "to_shift": "重税稽查班"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 240,
+      "next_update_minute": 240,
+      "revision": 1,
+      "tasks": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_garret_caravan",
+      "name": "加雷特首领",
+      "role": "灰鬃商队总领队",
+      "identity": "灰鬃商队总领队",
+      "faction": "灰鬃商队",
+      "home_location": "寒铁城",
+      "location": "北境主商道",
+      "origin_location": "北境主商道",
+      "destination_location": "",
+      "current_activity": "完成白河谷地水陆转运，率领灰鬃商队主力向霜木镇东口进发",
+      "current_action_kind": "task_progress",
+      "action_kind": "task_progress",
+      "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+      "goal": "将寒铁城与边境生铁安全运抵霜木镇",
+      "depth_tier": "associated",
+      "tier_label_zh": "关联",
+      "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 80）",
+      "shift_name": "行商押运班",
+      "availability": "in_transit",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_reroute_eastern_valley",
+      "cause_event_ids": [
+        "evt_loran_tariff_01",
+        "evt_caravan_reroute_02"
+      ],
+      "cause_fact_ids": [
+        "fact_garret_tariff_notice"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "action_meta": {
+        "duration_minutes": 60,
+        "task_id": "task_reroute_eastern_valley",
+        "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+        "task_stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+        "task_progress_percent": 100,
+        "task_status": "completed"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 120,
+      "last_action_minute": 120,
+      "next_due_minute": 180,
+      "next_update_minute": 180,
+      "revision": 3,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_garret_caravan",
+          "task_id": "task_reroute_eastern_valley",
+          "title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+          "progress_percent": 100,
+          "status": "completed",
+          "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+          "cause_event_ids": [
+            "evt_loran_tariff_01",
+            "evt_caravan_reroute_02"
+          ],
+          "cause_fact_ids": [
+            "fact_garret_tariff_notice"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "created_minute": 0,
+          "updated_minute": 120,
+          "revision": 3
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_serena_councillor",
+      "name": "瑟蕾娜议员",
+      "role": "白河城贸易市政官",
+      "identity": "白河城贸易市政官",
+      "faction": "白河城市政厅",
+      "home_location": "白河城",
+      "location": "白河城",
+      "origin_location": "白河城",
+      "destination_location": "",
+      "current_activity": "在白河城港务厅调度东谷水陆联运驳船",
+      "current_action_kind": "task_progress",
+      "action_kind": "task_progress",
+      "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+      "goal": "扩大白河城在北境水陆贸易中的枢纽地位",
+      "depth_tier": "background",
+      "tier_label_zh": "背景",
+      "depth_reason": "初始化默认分级",
+      "shift_name": "市政厅日班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "task_river_barge_dispatch",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_trade_routes_02",
+        "entry:conflict_iron_vein_03"
+      ],
+      "action_meta": {
+        "duration_minutes": 240,
+        "task_id": "task_river_barge_dispatch",
+        "task_title": "白河水路铁矿驳船扩编",
+        "task_stage": "征调东谷渡口平底驳船",
+        "task_progress_percent": 35,
+        "task_status": "active"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 240,
+      "next_update_minute": 240,
+      "revision": 1,
+      "tasks": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "npc_id": "npc_serena_councillor",
+          "task_id": "task_river_barge_dispatch",
+          "title": "白河水路铁矿驳船扩编",
+          "stage": "征调东谷渡口平底驳船",
+          "progress_percent": 35,
+          "status": "active",
+          "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+          "cause_event_ids": [],
+          "cause_fact_ids": [],
+          "source_ids": [
+            "chunk:north_trade_routes_02",
+            "entry:conflict_iron_vein_03"
+          ],
+          "created_minute": 0,
+          "updated_minute": 0,
+          "revision": 1
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_victor_warden",
+      "name": "维克多矿监",
+      "role": "寒铁城矿务司主管",
+      "identity": "寒铁城矿务司主管",
+      "faction": "寒铁城矿务司",
+      "home_location": "寒铁城",
+      "location": "寒铁城",
+      "origin_location": "寒铁城",
+      "destination_location": "",
+      "current_activity": "在寒铁城矿务司核查新矿脉勘探文书",
+      "current_action_kind": "shift_change",
+      "action_kind": "shift_change",
+      "motivation": "与白河城争夺交界山脊富铁矿脉特许权",
+      "goal": "维护寒铁城对北境矿产的优先管辖权",
+      "depth_tier": "background",
+      "tier_label_zh": "背景",
+      "depth_reason": "初始化默认分级",
+      "shift_name": "矿石配额审批班",
+      "availability": "available",
+      "counterpart_npc_id": "",
+      "conversation_topic": "",
+      "current_task_id": "",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "entry:conflict_iron_vein_03"
+      ],
+      "action_meta": {
+        "duration_minutes": 240,
+        "from_shift": "矿坑早检",
+        "to_shift": "矿石配额审批班"
+      },
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "last_action_minute": 0,
+      "next_due_minute": 240,
+      "next_update_minute": 240,
+      "revision": 1,
+      "tasks": []
+    }
+  ],
+  "final_tasks": [
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_eilin_mayor",
+      "task_id": "task_mayor_winter_reserve",
+      "title": "霜木镇冬储物资核算",
+      "stage": "汇总各工坊燃料缺口",
+      "progress_percent": 20,
+      "status": "active",
+      "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "created_minute": 0,
+      "updated_minute": 0,
+      "revision": 1
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_garret_caravan",
+      "task_id": "task_reroute_eastern_valley",
+      "title": "灰鬃商队改走东侧白河谷地转运生铁",
+      "stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+      "progress_percent": 100,
+      "status": "completed",
+      "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+      "cause_event_ids": [
+        "evt_loran_tariff_01",
+        "evt_caravan_reroute_02"
+      ],
+      "cause_fact_ids": [
+        "fact_garret_tariff_notice"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "created_minute": 0,
+      "updated_minute": 120,
+      "revision": 3
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_han_shopkeeper",
+      "task_id": "task_han_iron_inventory",
+      "title": "盘点镇内生铁与精煤库存",
+      "stage": "核对星辉商会报价与库房余量",
+      "progress_percent": 30,
+      "status": "active",
+      "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_geography_01",
+        "entry:faction_starlight_guild_01"
+      ],
+      "created_minute": 0,
+      "updated_minute": 0,
+      "revision": 1
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_hawk_blacksmith",
+      "task_id": "task_hawk_scrap_smelting",
+      "title": "旧铁器与边角料重熔提纯",
+      "stage": "完成首炉回收熟铁锭锻打",
+      "progress_percent": 60,
+      "status": "active",
+      "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+      "cause_event_ids": [
+        "evt_caravan_reroute_02",
+        "evt_local_competition_03"
+      ],
+      "cause_fact_ids": [
+        "fact_hawk_coal_shortage"
+      ],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "created_minute": 120,
+      "updated_minute": 120,
+      "revision": 1
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_linn_envoy",
+      "task_id": "task_starlight_contract_push",
+      "title": "推行北境工坊排他包销契约",
+      "stage": "调拨寒铁城总栈生铁准备压价",
+      "progress_percent": 40,
+      "status": "active",
+      "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "entry:faction_starlight_guild_01"
+      ],
+      "created_minute": 0,
+      "updated_minute": 0,
+      "revision": 1
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "npc_id": "npc_serena_councillor",
+      "task_id": "task_river_barge_dispatch",
+      "title": "白河水路铁矿驳船扩编",
+      "stage": "征调东谷渡口平底驳船",
+      "progress_percent": 35,
+      "status": "active",
+      "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+      "cause_event_ids": [],
+      "cause_fact_ids": [],
+      "source_ids": [
+        "chunk:north_trade_routes_02",
+        "entry:conflict_iron_vein_03"
+      ],
+      "created_minute": 0,
+      "updated_minute": 0,
+      "revision": 1
+    }
+  ],
+  "action_log_count": 17,
+  "final_snapshot": {
+    "format": "m3.npcs.snapshot.v1",
+    "version": 1,
+    "world_id": "world_northern_frontier_001",
+    "source_instance_id": "inst_northern_frontier_001",
+    "world_minute": 120,
+    "world_revision": 3,
+    "npcs": [
+      {
+        "npc_id": "npc_claude_commissioner",
+        "name": "克劳德专员",
+        "role": "洛兰公国灰岩边关税务官",
+        "identity": "洛兰公国灰岩边关税务官",
+        "faction": "洛兰公国财政署",
+        "home_location": "灰岩边关",
+        "location": "灰岩边关",
+        "origin_location": "灰岩边关",
+        "destination_location": "",
+        "current_activity": "在灰岩边关关隘督导税吏按新税率清点过境生铁车队",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "执行洛兰公国加征三成生铁关税令，充实公国边境财政",
+        "goal": "严格执行灰岩边关新关税标准",
+        "depth_tier": "associated",
+        "tier_label_zh": "关联",
+        "depth_reason": "升档(背景->关联)：ACTIVE_EVENT_PARTICIPANT（相关性得分 35）",
+        "shift_name": "重税稽查班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "from_shift": "边关宿值",
+          "to_shift": "重税稽查班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "npc_id": "npc_eilin_mayor",
+        "name": "艾琳镇长",
+        "role": "霜木镇执政官",
+        "identity": "霜木镇执政官",
+        "faction": "北境王国地方公署",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在镇公署核算入冬煤炭与铁料储备表",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+        "goal": "维护霜木镇民生与工商业稳定",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "公署日间值守",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_mayor_winter_reserve",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "task_id": "task_mayor_winter_reserve",
+          "task_title": "霜木镇冬储物资核算",
+          "task_stage": "汇总各工坊燃料缺口",
+          "task_progress_percent": 20,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": [
+          {
+            "npc_id": "npc_eilin_mayor",
+            "task_id": "task_mayor_winter_reserve",
+            "title": "霜木镇冬储物资核算",
+            "stage": "汇总各工坊燃料缺口",
+            "progress_percent": 20,
+            "status": "active",
+            "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_garret_caravan",
+        "name": "加雷特首领",
+        "role": "灰鬃商队总领队",
+        "identity": "灰鬃商队总领队",
+        "faction": "灰鬃商队",
+        "home_location": "寒铁城",
+        "location": "北境主商道",
+        "origin_location": "北境主商道",
+        "destination_location": "",
+        "current_activity": "完成白河谷地水陆转运，率领灰鬃商队主力向霜木镇东口进发",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+        "goal": "将寒铁城与边境生铁安全运抵霜木镇",
+        "depth_tier": "associated",
+        "tier_label_zh": "关联",
+        "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 80）",
+        "shift_name": "行商押运班",
+        "availability": "in_transit",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_reroute_eastern_valley",
+        "cause_event_ids": [
+          "evt_loran_tariff_01",
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_garret_tariff_notice"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "task_id": "task_reroute_eastern_valley",
+          "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "task_stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+          "task_progress_percent": 100,
+          "task_status": "completed"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 120,
+        "last_action_minute": 120,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 3,
+        "tasks": [
+          {
+            "npc_id": "npc_garret_caravan",
+            "task_id": "task_reroute_eastern_valley",
+            "title": "灰鬃商队改走东侧白河谷地转运生铁",
+            "stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+            "progress_percent": 100,
+            "status": "completed",
+            "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+            "cause_event_ids": [
+              "evt_loran_tariff_01",
+              "evt_caravan_reroute_02"
+            ],
+            "cause_fact_ids": [
+              "fact_garret_tariff_notice"
+            ],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "created_minute": 0,
+            "updated_minute": 120,
+            "revision": 3
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_han_shopkeeper",
+        "name": "韩掌柜",
+        "role": "霜木镇铁料与矿产原料商",
+        "identity": "霜木镇铁料与矿产原料商",
+        "faction": "霜木镇独立商户联席",
+        "home_location": "霜木镇",
+        "location": "白河城",
+        "origin_location": "霜木镇",
+        "destination_location": "白河城",
+        "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+        "current_action_kind": "travel",
+        "action_kind": "travel",
+        "motivation": "灰鬃商队因边关重税改道延误，需赶在星辉大商会垄断前赴白河城锁定水路生铁",
+        "goal": "保住独立原料铺货源，防止被星辉大商会吞并",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+        "shift_name": "日间挂牌营业班",
+        "availability": "in_transit",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_han_iron_inventory",
+        "cause_event_ids": [
+          "evt_caravan_reroute_02",
+          "evt_local_competition_03"
+        ],
+        "cause_fact_ids": [
+          "fact_han_caravan_delay"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 90,
+          "from_location": "霜木镇",
+          "to_location": "白河城"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 60,
+        "last_action_minute": 60,
+        "next_due_minute": 150,
+        "next_update_minute": 150,
+        "revision": 2,
+        "tasks": [
+          {
+            "npc_id": "npc_han_shopkeeper",
+            "task_id": "task_han_iron_inventory",
+            "title": "盘点镇内生铁与精煤库存",
+            "stage": "核对星辉商会报价与库房余量",
+            "progress_percent": 30,
+            "status": "active",
+            "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01",
+              "entry:faction_starlight_guild_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_hawk_blacksmith",
+        "name": "霍克铁匠",
+        "role": "霜木镇老铁匠坊主",
+        "identity": "霜木镇老铁匠坊主",
+        "faction": "霜木镇工匠行会",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+        "goal": "按期交付护路队锁甲与农具，维持铁匠坊声誉",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 220）",
+        "shift_name": "单炉节炭与废铁分拣班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_hawk_scrap_smelting",
+        "cause_event_ids": [
+          "evt_caravan_reroute_02",
+          "evt_local_competition_03"
+        ],
+        "cause_fact_ids": [
+          "fact_hawk_coal_shortage"
+        ],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "task_id": "task_hawk_scrap_smelting",
+          "task_title": "旧铁器与边角料重熔提纯",
+          "task_stage": "完成首炉回收熟铁锭锻打",
+          "task_progress_percent": 60,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 120,
+        "last_action_minute": 120,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 3,
+        "tasks": [
+          {
+            "npc_id": "npc_hawk_blacksmith",
+            "task_id": "task_hawk_scrap_smelting",
+            "title": "旧铁器与边角料重熔提纯",
+            "stage": "完成首炉回收熟铁锭锻打",
+            "progress_percent": 60,
+            "status": "active",
+            "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+            "cause_event_ids": [
+              "evt_caravan_reroute_02",
+              "evt_local_competition_03"
+            ],
+            "cause_fact_ids": [
+              "fact_hawk_coal_shortage"
+            ],
+            "source_ids": [
+              "chunk:north_geography_01"
+            ],
+            "created_minute": 120,
+            "updated_minute": 120,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_linn_envoy",
+        "name": "林恩特使",
+        "role": "星辉大商会北境督办",
+        "identity": "星辉大商会北境督办",
+        "faction": "星辉大商会",
+        "home_location": "寒铁城",
+        "location": "寒铁城",
+        "origin_location": "寒铁城",
+        "destination_location": "",
+        "current_activity": "在寒铁城总栈审阅霜木镇各工坊的原料依赖度报告",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+        "goal": "垄断北境生铁与成品铁器分销渠道",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "升档(关联->近景)：LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_EVENT_PARTICIPANT（相关性得分 95）",
+        "shift_name": "总栈督办值守",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_starlight_contract_push",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:faction_starlight_guild_01"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "task_id": "task_starlight_contract_push",
+          "task_title": "推行北境工坊排他包销契约",
+          "task_stage": "调拨寒铁城总栈生铁准备压价",
+          "task_progress_percent": 40,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": [
+          {
+            "npc_id": "npc_linn_envoy",
+            "task_id": "task_starlight_contract_push",
+            "title": "推行北境工坊排他包销契约",
+            "stage": "调拨寒铁城总栈生铁准备压价",
+            "progress_percent": 40,
+            "status": "active",
+            "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "entry:faction_starlight_guild_01"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_marta_innkeeper",
+        "name": "玛塔老板娘",
+        "role": "霜木镇灰鹿酒馆掌柜",
+        "identity": "霜木镇灰鹿酒馆掌柜",
+        "faction": "霜木镇商户",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "与雷恩队长核实商队晚到详情后，将预留大通铺改为接待滞留散客",
+        "goal": "经营灰鹿酒馆，收集北境商道第一手风声",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 160）",
+        "shift_name": "晚间酒馆食宿接待班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_marta_road_rumor"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 60,
+          "from_shift": "午间迎客与消息打听班",
+          "to_shift": "晚间酒馆食宿接待班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 120,
+        "last_action_minute": 120,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 3,
+        "tasks": []
+      },
+      {
+        "npc_id": "npc_renn_captain",
+        "name": "雷恩队长",
+        "role": "北境护路队队长",
+        "identity": "北境护路队队长",
+        "faction": "北境护路队",
+        "home_location": "霜木镇",
+        "location": "霜木镇",
+        "origin_location": "霜木镇",
+        "destination_location": "",
+        "current_activity": "率护路队员在霜木镇南门核查过往货车",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "防范边关加税后走私客与山贼扰乱商道治安",
+        "goal": "保障霜木镇至寒铁城及白河谷地的道路安全",
+        "depth_tier": "foreground",
+        "tier_label_zh": "近景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "镇门与南口巡防班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "action_meta": {
+          "duration_minutes": 180,
+          "from_shift": "清晨操演班",
+          "to_shift": "镇门与南口巡防班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 180,
+        "next_update_minute": 180,
+        "revision": 1,
+        "tasks": []
+      },
+      {
+        "npc_id": "npc_serena_councillor",
+        "name": "瑟蕾娜议员",
+        "role": "白河城贸易市政官",
+        "identity": "白河城贸易市政官",
+        "faction": "白河城市政厅",
+        "home_location": "白河城",
+        "location": "白河城",
+        "origin_location": "白河城",
+        "destination_location": "",
+        "current_activity": "在白河城港务厅调度东谷水陆联运驳船",
+        "current_action_kind": "task_progress",
+        "action_kind": "task_progress",
+        "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+        "goal": "扩大白河城在北境水陆贸易中的枢纽地位",
+        "depth_tier": "background",
+        "tier_label_zh": "背景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "市政厅日班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "task_river_barge_dispatch",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "task_id": "task_river_barge_dispatch",
+          "task_title": "白河水路铁矿驳船扩编",
+          "task_stage": "征调东谷渡口平底驳船",
+          "task_progress_percent": 35,
+          "task_status": "active"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": [
+          {
+            "npc_id": "npc_serena_councillor",
+            "task_id": "task_river_barge_dispatch",
+            "title": "白河水路铁矿驳船扩编",
+            "stage": "征调东谷渡口平底驳船",
+            "progress_percent": 35,
+            "status": "active",
+            "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+            "cause_event_ids": [],
+            "cause_fact_ids": [],
+            "source_ids": [
+              "chunk:north_trade_routes_02",
+              "entry:conflict_iron_vein_03"
+            ],
+            "created_minute": 0,
+            "updated_minute": 0,
+            "revision": 1
+          }
+        ]
+      },
+      {
+        "npc_id": "npc_victor_warden",
+        "name": "维克多矿监",
+        "role": "寒铁城矿务司主管",
+        "identity": "寒铁城矿务司主管",
+        "faction": "寒铁城矿务司",
+        "home_location": "寒铁城",
+        "location": "寒铁城",
+        "origin_location": "寒铁城",
+        "destination_location": "",
+        "current_activity": "在寒铁城矿务司核查新矿脉勘探文书",
+        "current_action_kind": "shift_change",
+        "action_kind": "shift_change",
+        "motivation": "与白河城争夺交界山脊富铁矿脉特许权",
+        "goal": "维护寒铁城对北境矿产的优先管辖权",
+        "depth_tier": "background",
+        "tier_label_zh": "背景",
+        "depth_reason": "初始化默认分级",
+        "shift_name": "矿石配额审批班",
+        "availability": "available",
+        "counterpart_npc_id": "",
+        "conversation_topic": "",
+        "current_task_id": "",
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:conflict_iron_vein_03"
+        ],
+        "action_meta": {
+          "duration_minutes": 240,
+          "from_shift": "矿坑早检",
+          "to_shift": "矿石配额审批班"
+        },
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "last_action_minute": 0,
+        "next_due_minute": 240,
+        "next_update_minute": 240,
+        "revision": 1,
+        "tasks": []
+      }
+    ],
+    "action_log": [
+      {
+        "action_seq": 1,
+        "action_id": "nact_0001",
+        "npc_id": "npc_han_shopkeeper",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "task_progress",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在霜木镇铁料铺盘点生铁库存并核对边关来信",
+        "motivation": "边贸减税协定临近到期，需提前备足霜木镇工坊所需生铁",
+        "depth_tier": "foreground",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 60,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01",
+          "entry:faction_starlight_guild_01"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "task_id": "task_han_iron_inventory",
+          "task_title": "盘点镇内生铁与精煤库存",
+          "task_stage": "核对星辉商会报价与库房余量",
+          "task_progress_percent": 30,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 2,
+        "action_id": "nact_0002",
+        "npc_id": "npc_hawk_blacksmith",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "shift_change",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "开启双锻炉赶制北境护路队与镇民预定的铁器",
+        "motivation": "护路队巡山装备交期将近，需趁焦炭充足全速锻打",
+        "depth_tier": "foreground",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 60,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "from_shift": "晨间备料班",
+          "to_shift": "常规双炉锻造班"
+        }
+      },
+      {
+        "action_seq": 3,
+        "action_id": "nact_0003",
+        "npc_id": "npc_marta_innkeeper",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "shift_change",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在灰鹿酒馆大堂招待歇脚旅人并留意商道传闻",
+        "motivation": "灰鬃商队今日应抵镇投宿，需提前备好热汤与客房",
+        "depth_tier": "foreground",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 60,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "from_shift": "晨间清扫班",
+          "to_shift": "午间迎客与消息打听班"
+        }
+      },
+      {
+        "action_seq": 4,
+        "action_id": "nact_0004",
+        "npc_id": "npc_eilin_mayor",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "task_progress",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在镇公署核算入冬煤炭与铁料储备表",
+        "motivation": "确保霜木镇在边贸税率变动下不断绝冬储物资",
+        "depth_tier": "foreground",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 180,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "details": {
+          "duration_minutes": 180,
+          "task_id": "task_mayor_winter_reserve",
+          "task_title": "霜木镇冬储物资核算",
+          "task_stage": "汇总各工坊燃料缺口",
+          "task_progress_percent": 20,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 5,
+        "action_id": "nact_0005",
+        "npc_id": "npc_renn_captain",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "shift_change",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "率护路队员在霜木镇南门核查过往货车",
+        "motivation": "防范边关加税后走私客与山贼扰乱商道治安",
+        "depth_tier": "foreground",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 180,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 180,
+          "from_shift": "清晨操演班",
+          "to_shift": "镇门与南口巡防班"
+        }
+      },
+      {
+        "action_seq": 6,
+        "action_id": "nact_0006",
+        "npc_id": "npc_garret_caravan",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "task_progress",
+        "from_location": "北境主商道",
+        "to_location": "北境主商道",
+        "current_activity": "在北境主商道分岔口指挥车队转向东侧白河谷地",
+        "motivation": "灰岩边关加征三成生铁重税，改走白河谷地水陆联运以规避重税",
+        "depth_tier": "associated",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 60,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02",
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "task_id": "task_reroute_eastern_valley",
+          "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "task_stage": "先遣伙计探路与重编驮队",
+          "task_progress_percent": 25,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 7,
+        "action_id": "nact_0007",
+        "npc_id": "npc_linn_envoy",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "task_progress",
+        "from_location": "寒铁城",
+        "to_location": "寒铁城",
+        "current_activity": "在寒铁城总栈审阅霜木镇各工坊的原料依赖度报告",
+        "motivation": "趁边关加税与商队延误，迫使霜木镇独立铁匠签署长期包销协议",
+        "depth_tier": "associated",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 180,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:faction_starlight_guild_01"
+        ],
+        "details": {
+          "duration_minutes": 180,
+          "task_id": "task_starlight_contract_push",
+          "task_title": "推行北境工坊排他包销契约",
+          "task_stage": "调拨寒铁城总栈生铁准备压价",
+          "task_progress_percent": 40,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 8,
+        "action_id": "nact_0008",
+        "npc_id": "npc_victor_warden",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "shift_change",
+        "from_location": "寒铁城",
+        "to_location": "寒铁城",
+        "current_activity": "在寒铁城矿务司核查新矿脉勘探文书",
+        "motivation": "与白河城争夺交界山脊富铁矿脉特许权",
+        "depth_tier": "background",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 240,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:conflict_iron_vein_03"
+        ],
+        "details": {
+          "duration_minutes": 240,
+          "from_shift": "矿坑早检",
+          "to_shift": "矿石配额审批班"
+        }
+      },
+      {
+        "action_seq": 9,
+        "action_id": "nact_0009",
+        "npc_id": "npc_serena_councillor",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "task_progress",
+        "from_location": "白河城",
+        "to_location": "白河城",
+        "current_activity": "在白河城港务厅调度东谷水陆联运驳船",
+        "motivation": "吸引避开灰岩边关的商队改走白河城水路以增加市政关税",
+        "depth_tier": "background",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 240,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03"
+        ],
+        "details": {
+          "duration_minutes": 240,
+          "task_id": "task_river_barge_dispatch",
+          "task_title": "白河水路铁矿驳船扩编",
+          "task_stage": "征调东谷渡口平底驳船",
+          "task_progress_percent": 35,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 10,
+        "action_id": "nact_0010",
+        "npc_id": "npc_claude_commissioner",
+        "npc_revision": 1,
+        "op": "seed_npc",
+        "action_kind": "shift_change",
+        "from_location": "灰岩边关",
+        "to_location": "灰岩边关",
+        "current_activity": "在灰岩边关关隘督导税吏按新税率清点过境生铁车队",
+        "motivation": "执行洛兰公国加征三成生铁关税令，充实公国边境财政",
+        "depth_tier": "background",
+        "depth_reason": "初始化默认分级",
+        "world_minute": 0,
+        "next_due_minute": 240,
+        "cause_event_ids": [],
+        "cause_fact_ids": [],
+        "source_ids": [
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "details": {
+          "duration_minutes": 240,
+          "from_shift": "边关宿值",
+          "to_shift": "重税稽查班"
+        }
+      },
+      {
+        "action_seq": 11,
+        "action_id": "nact_0011",
+        "npc_id": "npc_han_shopkeeper",
+        "npc_revision": 2,
+        "op": "act",
+        "action_kind": "travel",
+        "from_location": "霜木镇",
+        "to_location": "白河城",
+        "current_activity": "携原料账册乘轻便马车赶往白河城水运码头洽谈替代生铁船期",
+        "motivation": "灰鬃商队因边关重税改道延误，需赶在星辉大商会垄断前赴白河城锁定水路生铁",
+        "depth_tier": "foreground",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+        "world_minute": 60,
+        "next_due_minute": 150,
+        "cause_event_ids": [
+          "evt_caravan_reroute_02",
+          "evt_local_competition_03"
+        ],
+        "cause_fact_ids": [
+          "fact_han_caravan_delay"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 90,
+          "from_location": "霜木镇",
+          "to_location": "白河城"
+        }
+      },
+      {
+        "action_seq": 12,
+        "action_id": "nact_0012",
+        "npc_id": "npc_hawk_blacksmith",
+        "npc_revision": 2,
+        "op": "act",
+        "action_kind": "shift_change",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "关停副锻炉并带领学徒切换至单炉节炭与废铁分拣班，优先保障护路队急单",
+        "motivation": "同样面对灰鬃商队改道导致的生铁与精煤延期，选择留守工坊换班节流以不断火",
+        "depth_tier": "foreground",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 190）",
+        "world_minute": 60,
+        "next_due_minute": 120,
+        "cause_event_ids": [
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_hawk_coal_shortage"
+        ],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "from_shift": "常规双炉锻造班",
+          "to_shift": "单炉节炭与废铁分拣班"
+        }
+      },
+      {
+        "action_seq": 13,
+        "action_id": "nact_0013",
+        "npc_id": "npc_marta_innkeeper",
+        "npc_revision": 2,
+        "op": "act",
+        "action_kind": "conversation_plan",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在灰鹿酒馆与护路队雷恩队长商议延误商队接应与住客安顿",
+        "motivation": "旅人纷纷议论商队改道，需向护路队队长核实道路实情并调整客房预留",
+        "depth_tier": "foreground",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 130）",
+        "world_minute": 60,
+        "next_due_minute": 120,
+        "cause_event_ids": [
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_marta_road_rumor"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "target_npc_id": "npc_renn_captain",
+          "meeting_location": "霜木镇",
+          "conversation_topic": "核实灰鬃商队改走白河谷地的延误天数与南门治安巡防"
+        }
+      },
+      {
+        "action_seq": 14,
+        "action_id": "nact_0014",
+        "npc_id": "npc_garret_caravan",
+        "npc_revision": 2,
+        "op": "act",
+        "action_kind": "task_progress",
+        "from_location": "北境主商道",
+        "to_location": "北境主商道",
+        "current_activity": "在白河谷地渡口督导灰鬃商队将大宗生铁转装驳船与轻车",
+        "motivation": "绕开灰岩边关三成重税后全速推进东谷水陆联运，力争减少霜木镇断供损失",
+        "depth_tier": "associated",
+        "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT（相关性得分 50）",
+        "world_minute": 60,
+        "next_due_minute": 120,
+        "cause_event_ids": [
+          "evt_loran_tariff_01",
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_garret_tariff_notice"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "task_id": "task_reroute_eastern_valley",
+          "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "task_stage": "抵达白河谷地西口并分批装运生铁过渡口",
+          "task_progress_percent": 65,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 15,
+        "action_id": "nact_0015",
+        "npc_id": "npc_hawk_blacksmith",
+        "npc_revision": 3,
+        "op": "act",
+        "action_kind": "task_progress",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在铁匠坊将回收的旧农具与铁渣重熔提纯为可用熟铁锭",
+        "motivation": "在商队新一批生铁运抵前，靠废铁重熔补足护路队修械原料缺口",
+        "depth_tier": "foreground",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、LOCAL_PLAYER_LOCATION_EVENT、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 220）",
+        "world_minute": 120,
+        "next_due_minute": 180,
+        "cause_event_ids": [
+          "evt_caravan_reroute_02",
+          "evt_local_competition_03"
+        ],
+        "cause_fact_ids": [
+          "fact_hawk_coal_shortage"
+        ],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "task_id": "task_hawk_scrap_smelting",
+          "task_title": "旧铁器与边角料重熔提纯",
+          "task_stage": "完成首炉回收熟铁锭锻打",
+          "task_progress_percent": 60,
+          "task_status": "active"
+        }
+      },
+      {
+        "action_seq": 16,
+        "action_id": "nact_0016",
+        "npc_id": "npc_marta_innkeeper",
+        "npc_revision": 3,
+        "op": "act",
+        "action_kind": "shift_change",
+        "from_location": "霜木镇",
+        "to_location": "霜木镇",
+        "current_activity": "在灰鹿酒馆点亮风灯，接待护路队换防队员与滞留行商",
+        "motivation": "与雷恩队长核实商队晚到详情后，将预留大通铺改为接待滞留散客",
+        "depth_tier": "foreground",
+        "depth_reason": "维持(近景)：CO_LOCATED_WITH_PLAYER、ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 160）",
+        "world_minute": 120,
+        "next_due_minute": 180,
+        "cause_event_ids": [
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_marta_road_rumor"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "from_shift": "午间迎客与消息打听班",
+          "to_shift": "晚间酒馆食宿接待班"
+        }
+      },
+      {
+        "action_seq": 17,
+        "action_id": "nact_0017",
+        "npc_id": "npc_garret_caravan",
+        "npc_revision": 3,
+        "op": "act",
+        "action_kind": "task_progress",
+        "from_location": "北境主商道",
+        "to_location": "北境主商道",
+        "current_activity": "完成白河谷地水陆转运，率领灰鬃商队主力向霜木镇东口进发",
+        "motivation": "尽快将绕行生铁送达霜木镇以兑现契约",
+        "depth_tier": "associated",
+        "depth_reason": "维持(关联)：ACTIVE_DUE_EVENT_PARTICIPANT、DUE_EVENT_CAUSAL_MOTIVATION（相关性得分 80）",
+        "world_minute": 120,
+        "next_due_minute": 180,
+        "cause_event_ids": [
+          "evt_loran_tariff_01",
+          "evt_caravan_reroute_02"
+        ],
+        "cause_fact_ids": [
+          "fact_garret_tariff_notice"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "details": {
+          "duration_minutes": 60,
+          "task_id": "task_reroute_eastern_valley",
+          "task_title": "灰鬃商队改走东侧白河谷地转运生铁",
+          "task_stage": "全队通过白河谷地水陆交接点驶向霜木镇东口",
+          "task_progress_percent": 100,
+          "task_status": "completed"
+        }
+      }
+    ]
+  }
+}
