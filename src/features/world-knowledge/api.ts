@@ -1,16 +1,17 @@
 /**
- * M3.3 玩家世界消息传输层、纯逻辑格式化函数与独立 Fake 验收替身
+ * M3.3 玩家世界消息传输层、纯逻辑格式化函数、零泄漏清洗与独立 Fake 验收替身
  */
 
-import { request } from '../../api/client';
+import { request } from '../../api/client.ts';
 import type {
   KnowledgeChannel,
   KnowledgeType,
   ListWorldNewsOptions,
+  FakeWorldKnowledgeTransport,
   WorldKnowledgeTransport,
   WorldNewsItem,
   WorldNewsPage,
-} from './types';
+} from './types.ts';
 
 export const KNOWLEDGE_TYPE_LABELS: Record<KnowledgeType, string> = {
   confirmed: '确认事实',
@@ -25,6 +26,38 @@ export const CHANNEL_LABELS: Record<KnowledgeChannel, string> = {
   conversation: '当面交谈',
   rumor: '道听途说',
 };
+
+/**
+ * 清洗单条玩家消息，剥离任何可能越界混入的隐藏事件 ID、未来时刻或内部字段
+ */
+export function sanitizeWorldNewsItem(raw: WorldNewsItem): WorldNewsItem {
+  const safe: WorldNewsItem = {
+    fact_id: String(raw.fact_id),
+    holder_id: 'player',
+    knowledge_type: raw.knowledge_type,
+    title: String(raw.title ?? '').replace(/【(?:隐藏|绝密)[^】]*】/g, '').trim() || '已知消息',
+    content: String(raw.content ?? '').trim(),
+    channel: raw.channel,
+    source_person_id: raw.source_person_id ?? null,
+    source_label: String(raw.source_label || CHANNEL_LABELS[raw.channel] || '未知渠道'),
+    learned_minute: Math.max(0, Math.floor(Number(raw.learned_minute) || 0)),
+    confidence: Math.max(0, Math.min(1, Number(raw.confidence) || 0)),
+    status: raw.status ?? 'active',
+    revision: Math.max(1, Math.floor(Number(raw.revision) || 1)),
+  };
+  return safe;
+}
+
+/**
+ * 清洗分页结果，确保绝不暴露 total / hidden_count / source_event_id 等全知信息
+ */
+export function sanitizeWorldNewsPage(raw: WorldNewsPage): WorldNewsPage {
+  const items = Array.isArray(raw?.items) ? raw.items.map(sanitizeWorldNewsItem) : [];
+  const next_before = typeof raw?.next_before === 'string' && raw.next_before.trim()
+    ? raw.next_before.trim()
+    : null;
+  return { items, next_before };
+}
 
 export function formatConfidencePercent(confidence: number): string {
   const clamped = Math.max(0, Math.min(1, Number.isFinite(confidence) ? confidence : 0));
@@ -78,7 +111,7 @@ export function mergeNewsItems(
   for (const item of [...existing, ...incoming]) {
     if (!seen.has(item.fact_id)) {
       seen.add(item.fact_id);
-      merged.push(item);
+      merged.push(sanitizeWorldNewsItem(item));
     }
   }
   return merged;
@@ -86,14 +119,14 @@ export function mergeNewsItems(
 
 /**
  * 默认 HTTP 传输实现：调用 GET /api/v1/adventures/{id}/world-news
- * 客户端不传 holder_id，由服务端根据当前旅程绑定实例与 player 身份
+ * 客户端不传 holder_id，由服务端根据当前旅程绑定实例与 player 身份；读取消息不会续期活动租约
  */
 export const worldKnowledgeApi: WorldKnowledgeTransport = {
-  listWorldNews(
+  async listWorldNews(
     adventureId: string,
     options?: ListWorldNewsOptions,
   ): Promise<WorldNewsPage> {
-    return request<WorldNewsPage>(
+    const raw = await request<WorldNewsPage>(
       'GET',
       `/adventures/${encodeURIComponent(adventureId)}/world-news`,
       {
@@ -104,6 +137,7 @@ export const worldKnowledgeApi: WorldKnowledgeTransport = {
         signal: options?.signal,
       },
     );
+    return sanitizeWorldNewsPage(raw);
   },
 };
 
@@ -126,15 +160,10 @@ function decodeFakeOpaqueCursor(cursor?: string | null): number | null {
  */
 export function createFakeWorldKnowledgeTransport(
   initialByAdventure: Record<string, WorldNewsItem[]> = {},
-): WorldKnowledgeTransport & {
-  setAdventureNews(adventureId: string, items: WorldNewsItem[]): void;
-  appendAdventureNews(adventureId: string, item: WorldNewsItem): void;
-  snapshotAdventureNews(adventureId: string): WorldNewsItem[];
-  restoreAdventureNews(targetAdventureId: string, snapshotItems: readonly WorldNewsItem[]): void;
-} {
+): FakeWorldKnowledgeTransport {
   const store = new Map<string, WorldNewsItem[]>();
   for (const [advId, items] of Object.entries(initialByAdventure)) {
-    store.set(advId, items.map(item => ({ ...item })));
+    store.set(advId, items.map(item => sanitizeWorldNewsItem(item)));
   }
 
   return {
@@ -153,23 +182,91 @@ export function createFakeWorldKnowledgeTransport(
       const slice = all.slice(startIndex, startIndex + limit);
       const nextIndex = startIndex + slice.length;
       const next_before = nextIndex < all.length ? encodeFakeOpaqueCursor(nextIndex) : null;
-      return {
+      return sanitizeWorldNewsPage({
         items: slice.map(item => ({ ...item })),
         next_before,
-      };
+      });
     },
     setAdventureNews(adventureId: string, items: WorldNewsItem[]) {
-      store.set(adventureId, items.map(item => ({ ...item })));
+      store.set(adventureId, items.map(item => sanitizeWorldNewsItem(item)));
     },
     appendAdventureNews(adventureId: string, item: WorldNewsItem) {
       const current = store.get(adventureId) ?? [];
-      store.set(adventureId, [{ ...item }, ...current.filter(x => x.fact_id !== item.fact_id)]);
+      const clean = sanitizeWorldNewsItem(item);
+      store.set(adventureId, [clean, ...current.filter(x => x.fact_id !== clean.fact_id)]);
     },
     snapshotAdventureNews(adventureId: string): WorldNewsItem[] {
       return (store.get(adventureId) ?? []).map(item => ({ ...item }));
     },
     restoreAdventureNews(targetAdventureId: string, snapshotItems: readonly WorldNewsItem[]) {
-      store.set(targetAdventureId, snapshotItems.map(item => ({ ...item })));
+      store.set(targetAdventureId, snapshotItems.map(item => sanitizeWorldNewsItem(item)));
+    },
+  };
+}
+
+/**
+ * M3 Wave 2 端到端前端多跳传播替身：「商队首领先得知改道 → 店主转述 → 玩家才看见」
+ */
+export function createNorthTownMultiHopKnowledgeScenario(adventureId = 'adv_north_01') {
+  const transport = createFakeWorldKnowledgeTransport({ [adventureId]: [] });
+  let stage: 1 | 2 | 3 = 1;
+
+  const leaderFact = {
+    holder_id: 'npc:caravan_leader',
+    knowledge_type: 'confirmed' as const,
+    title: '商队改走东谷山道',
+    content: '因邻国关卡加征生铁关税，我带灰羽商队改走东谷山道，预计晚三日到北境小镇。',
+    channel: 'observed' as const,
+    learned_minute: 20,
+    confidence: 1.0,
+  };
+
+  const innkeeperFact = {
+    holder_id: 'npc:innkeeper',
+    knowledge_type: 'confirmed' as const,
+    title: '灰羽商队捎信将晚三日抵镇',
+    content: '商队首领林策托先遣伙计带话，因邻国加税改走东谷山道，这批生铁要晚三天才能运到。',
+    channel: 'conversation' as const,
+    source_person_id: 'npc:caravan_leader',
+    learned_minute: 35,
+    confidence: 0.85,
+  };
+
+  const playerFact: WorldNewsItem = {
+    fact_id: 'fact_player_from_innkeeper',
+    holder_id: 'player',
+    knowledge_type: 'confirmed',
+    title: '掌柜告知灰羽商队改道东谷',
+    content: '酒馆掌柜老周告诉你，灰羽商队首领林策捎来消息：因邻国加征关税，商队改走东谷山道，生铁原料将推迟三天运抵小镇。',
+    channel: 'conversation',
+    source_person_id: 'npc:innkeeper',
+    source_label: '当面交谈 · 酒馆掌柜老周',
+    learned_minute: 50,
+    confidence: 0.85,
+    status: 'active',
+    revision: 1,
+  };
+
+  return {
+    transport,
+    getStage: () => stage,
+    /** 跳 1：商队首领先得知改道（玩家此时看不到） */
+    step1CaravanLeaderLearns() {
+      stage = 1;
+      transport.setAdventureNews(adventureId, []);
+      return { leaderFact, playerVisibleCount: 0 };
+    },
+    /** 跳 2：商队首领转述给酒馆店主（玩家此时仍看不到） */
+    step2InnkeeperRelayed() {
+      stage = 2;
+      transport.setAdventureNews(adventureId, []);
+      return { innkeeperFact, playerVisibleCount: 0 };
+    },
+    /** 跳 3：酒馆店主转述给玩家（玩家此时才看见） */
+    step3PlayerTalksToInnkeeper() {
+      stage = 3;
+      transport.setAdventureNews(adventureId, [playerFact]);
+      return { playerFact, playerVisibleCount: 1 };
     },
   };
 }

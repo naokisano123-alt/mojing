@@ -1,24 +1,33 @@
-"""M3.1 / M3.5 世界事件账本、AI 初始局势生成、事件版本与因果校验模块公共入口。
+"""M3.1 / M3.5 世界事件账本、AI 初始局势生成、真实模型推演与权威校验模块公共入口（M3 Wave 2）。
 
-本模块遵循 `docs/contracts/M3_WAVE1_API.md` 与 `docs/collaboration/M3_WAVE1_GEMINI_MARCIN.md` 契约，
+本模块遵循 `docs/contracts/M3_WAVE1_API.md`、`docs/contracts/M3_WAVE2_API.md` 与 `docs/collaboration/M3_WAVE2_GEMINI_MARCIN.md` 契约，
 提供以下核心接口供 DeepSeekHarness、Gemini Li 与 Gemini Ma 集成调用：
-- `validate_proposal(payload, context)`：纯函数结构、时间、版本、来源、跨实例、因果环与账本保护校验器；
-- `apply_proposal(conn, instance_id, proposal, ...)`：`SAVEPOINT` 原子应用的事件账本写入入口；
+- `read_snapshot(conn, instance_id, job=None, ...)`（别名 `read_pulse_snapshot`）：只读快照回调，完成 `kind`/`mode`、`revision`/`world_revision` 映射，按稳定顺序与预算挑选 Canon，返回到期活跃事件与最小因果邻域；
+- `validate_proposal(payload, context)`（别名 `validate_pulse_proposal`）：纯函数结构、时间、版本、来源、跨实例、因果环与账本保护校验器；
+- `apply_proposal(conn, instance_id, proposal, job=None, ...)`（别名 `apply_pulse_proposal`）：`SAVEPOINT` 原子应用的事件账本写入入口，实时复核实例版本与数据库状态；
+- `select_canon_sources(conn, world_id, ...)`：按可解释稳定顺序与字符预算挑选有效 Canon 设定条目与分块节选；
+- `build_pulse_event_prompts`, `PULSE_EVENT_OUTPUT_SCHEMA`, `PROMPT_EXAMPLES`, `build_fake_pulse_generator`：严格输出结构、提示词构建器与测试生成回调；
 - `snapshot(conn, instance_id)` / `restore(conn, target_instance_id, snapshot, ...)`：可移植事件快照导出与分支恢复；
 - `list_due_events(conn, instance_id, ...)`：到期事件稳定分页读取；
 - `get_event`, `list_events`, `list_event_revisions`, `list_consequences`, `trace_causality`：权威事件、版本历史与因果追溯查询；
 - `register_precondition`, `list_preconditions`：重大历史转折（战争、政权更替等）前置条件登记与查询；
 - `FakeEventModelClient`, `OpenAIEventModelClient`, `generate_initial_situation`, `generate_event_advancement`：受限模型输入与测试替身；
-- `run_northern_trade_causal_chain`, `get_northern_trade_integration_bundle`：北境贸易端到端因果链 Fixture。
+- `run_northern_trade_causal_chain`, `run_wave2_mock_causal_chain`, `get_northern_trade_integration_bundle`, `get_wave2_mock_causal_chain_bundle`：北境贸易端到端因果链与 Mock 回包重放包。
 """
 
 from __future__ import annotations
 
 from .ai import (
+    PROMPT_EXAMPLES,
+    PULSE_EVENT_OUTPUT_SCHEMA,
     EventModelClient,
     FakeEventModelClient,
     OpenAIEventModelClient,
     build_advance_request_from_db,
+    build_advance_request_from_snapshot,
+    build_fake_pulse_generator,
+    build_pulse_event_prompts,
+    build_seed_request_from_snapshot,
     generate_event_advancement,
     generate_initial_situation,
     validate_advance_request,
@@ -34,9 +43,11 @@ from .errors import (
     EventValidationError,
     InstanceNotFoundError,
     PlayerLedgerProtectedError,
+    PulseSourceRequiredError,
     SnapshotRestoreError,
     SourceFabricatedError,
     TurnpointValidationError,
+    WorldRevisionConflictError,
 )
 from .fixtures import (
     NORTHERN_TRADE_ALLOWED_SOURCE_IDS,
@@ -45,12 +56,17 @@ from .fixtures import (
     NORTHERN_TRADE_NPCS,
     NORTHERN_TRADE_WORLD_ID,
     build_northern_trade_seed_proposal,
+    build_wave2_mock_model_responses,
     get_northern_trade_integration_bundle,
+    get_wave2_mock_causal_chain_bundle,
     run_northern_trade_causal_chain,
+    run_wave2_mock_causal_chain,
+    seed_northern_trade_world_canon,
 )
 from .schema import EVENTS_SCHEMA, EVENTS_SCHEMA_VERSION, ensure_events_schema
 from .service import (
     apply_proposal,
+    apply_pulse_proposal,
     ensure_instance_exists,
     get_event,
     list_consequences,
@@ -58,21 +74,37 @@ from .service import (
     list_event_revisions,
     list_events,
     list_preconditions,
+    read_pulse_snapshot,
+    read_snapshot,
     register_precondition,
     restore,
+    select_canon_sources,
     snapshot,
     trace_causality,
 )
 from .types import (
     CONSEQUENCE_DOMAINS,
+    DEFAULT_ADVANCE_CHAR_BUDGET,
+    DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS,
+    DEFAULT_ADVANCE_MAX_CHUNK_CHARS,
+    DEFAULT_ADVANCE_MAX_CHUNKS,
+    DEFAULT_ADVANCE_MAX_DUE_EVENTS,
+    DEFAULT_ADVANCE_MAX_ENTRIES,
+    DEFAULT_ADVANCE_MAX_ENTRY_CHARS,
     DEFAULT_MAX_ACTIVE_INCIDENTS,
     DEFAULT_MAX_INITIAL_THREADS,
     DEFAULT_MIN_INITIAL_THREADS,
+    DEFAULT_SEED_CHAR_BUDGET,
+    DEFAULT_SEED_MAX_CHUNK_CHARS,
+    DEFAULT_SEED_MAX_CHUNKS,
+    DEFAULT_SEED_MAX_ENTRIES,
+    DEFAULT_SEED_MAX_ENTRY_CHARS,
     EVENT_KINDS,
     EVENT_SCOPES,
     EVENT_STATUSES,
     FORBIDDEN_PATH_KEYS,
     IMPACT_TYPES,
+    LORE_ENTRY_TYPE_PRIORITY,
     MAJOR_TURNPOINT_STAGES,
     MAJOR_TURNPOINT_TYPES,
     PROPOSAL_MODES,
@@ -96,12 +128,25 @@ from .validator import validate_proposal
 
 # 兼容别名
 get_due_events = list_due_events
+validate_pulse_proposal = validate_proposal
 
 __all__ = [
     "CONSEQUENCE_DOMAINS",
+    "DEFAULT_ADVANCE_CHAR_BUDGET",
+    "DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS",
+    "DEFAULT_ADVANCE_MAX_CHUNKS",
+    "DEFAULT_ADVANCE_MAX_CHUNK_CHARS",
+    "DEFAULT_ADVANCE_MAX_DUE_EVENTS",
+    "DEFAULT_ADVANCE_MAX_ENTRIES",
+    "DEFAULT_ADVANCE_MAX_ENTRY_CHARS",
     "DEFAULT_MAX_ACTIVE_INCIDENTS",
     "DEFAULT_MAX_INITIAL_THREADS",
     "DEFAULT_MIN_INITIAL_THREADS",
+    "DEFAULT_SEED_CHAR_BUDGET",
+    "DEFAULT_SEED_MAX_CHUNKS",
+    "DEFAULT_SEED_MAX_CHUNK_CHARS",
+    "DEFAULT_SEED_MAX_ENTRIES",
+    "DEFAULT_SEED_MAX_ENTRY_CHARS",
     "EVENTS_SCHEMA",
     "EVENTS_SCHEMA_VERSION",
     "EVENT_KINDS",
@@ -109,6 +154,7 @@ __all__ = [
     "EVENT_STATUSES",
     "FORBIDDEN_PATH_KEYS",
     "IMPACT_TYPES",
+    "LORE_ENTRY_TYPE_PRIORITY",
     "MAJOR_TURNPOINT_STAGES",
     "MAJOR_TURNPOINT_TYPES",
     "NORTHERN_TRADE_ALLOWED_SOURCE_IDS",
@@ -116,8 +162,10 @@ __all__ = [
     "NORTHERN_TRADE_INSTANCE_ID",
     "NORTHERN_TRADE_NPCS",
     "NORTHERN_TRADE_WORLD_ID",
+    "PROMPT_EXAMPLES",
     "PROPOSAL_MODES",
     "PROTECTED_PLAYER_KEYS",
+    "PULSE_EVENT_OUTPUT_SCHEMA",
     "SNAPSHOT_FORMAT_VERSION",
     "TERMINAL_EVENT_STATUSES",
     "ArbitraryPathForbiddenError",
@@ -141,15 +189,23 @@ __all__ = [
     "PlayerLedgerProtectedError",
     "ProposalMode",
     "ProposalValidationContext",
+    "PulseSourceRequiredError",
     "SnapshotRestoreError",
     "SourceFabricatedError",
     "TurnpointValidationError",
     "ValidatedConsequence",
     "ValidatedEventOp",
     "ValidatedEventProposal",
+    "WorldRevisionConflictError",
     "apply_proposal",
+    "apply_pulse_proposal",
     "build_advance_request_from_db",
+    "build_advance_request_from_snapshot",
+    "build_fake_pulse_generator",
     "build_northern_trade_seed_proposal",
+    "build_pulse_event_prompts",
+    "build_seed_request_from_snapshot",
+    "build_wave2_mock_model_responses",
     "ensure_events_schema",
     "ensure_instance_exists",
     "generate_event_advancement",
@@ -157,17 +213,24 @@ __all__ = [
     "get_due_events",
     "get_event",
     "get_northern_trade_integration_bundle",
+    "get_wave2_mock_causal_chain_bundle",
     "list_consequences",
     "list_due_events",
     "list_event_revisions",
     "list_events",
     "list_preconditions",
+    "read_pulse_snapshot",
+    "read_snapshot",
     "register_precondition",
     "restore",
     "run_northern_trade_causal_chain",
+    "run_wave2_mock_causal_chain",
+    "seed_northern_trade_world_canon",
+    "select_canon_sources",
     "snapshot",
     "trace_causality",
     "validate_advance_request",
     "validate_proposal",
+    "validate_pulse_proposal",
     "validate_seed_request",
 ]

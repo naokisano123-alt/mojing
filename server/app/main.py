@@ -312,6 +312,7 @@ def create_app(
     narration_store=None,
     context_builder=None,
     model_profile=None,
+    pulse_transport=None,
 ) -> FastAPI:
     cfg = settings or load_settings()
     hosted = bool(cfg.public_origin)
@@ -329,7 +330,11 @@ def create_app(
     from .m3.core import pulse_preview
     from .m3.pulse.worker import pulse_worker_lifespan
 
-    pulse_worker = pulse_preview.create_worker(cfg.db_path)
+    pulse_worker = pulse_preview.create_worker(
+        cfg.db_path, narration_store=narration_store, http_transport=pulse_transport,
+        allowed_base_urls=allowed_model_urls if hosted else None,
+        require_https=hosted or cfg.https_model_only,
+    )
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -1082,7 +1087,7 @@ def create_app(
 
     from .adventures.routes import register_routes
     register_routes(app, cfg, _store, _context_builder, pulse_worker)
-    pulse_preview.register_routes(app, cfg.db_path, pulse_worker)
+    pulse_preview.register_routes(app, cfg.db_path, pulse_worker, _store)
 
     from .adventures.service import get_adventure
     from .m3.core import adapters as m3_adapters

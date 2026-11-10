@@ -39,7 +39,10 @@ def test_preview_clock_messages_checkpoint_and_cross_device_transfer(tmp_path):
         }).json()
         adventure = f"/api/v1/adventures/{run['id']}"
         switch = f"{adventure}/world-pulse"
-        assert client.get(switch).json() == {"available": True, "enabled": False}
+        # 集成修正：状态字段可加性扩展（mode/state/model），断言改为子集
+        initial_status = client.get(switch).json()
+        assert initial_status["available"] is True
+        assert initial_status["enabled"] is False
         assert client.put(switch, json={"enabled": True}).json()["error"]["code"] == "PULSE_SOURCE_REQUIRED"
         assert upload(client, world_id, "驿路.txt", "北境小镇设有公告栏。".encode()).status_code == 201
         assert client.put(switch, json={"enabled": True}).json()["enabled"]

@@ -1,7 +1,8 @@
-"""M3.1 / M3.5 世界事件账本、初始局势与因果校验数据类型与常量定义。"""
+"""M3.1 / M3.5 世界事件账本、初始局势与因果校验数据类型与常量定义（M3 Wave 2 扩展）。"""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -108,6 +109,43 @@ DEFAULT_MIN_INITIAL_THREADS = 3
 DEFAULT_MAX_INITIAL_THREADS = 6
 DEFAULT_MAX_ACTIVE_INCIDENTS = 10
 
+# M3 Wave 2 Canon 选取上限与字符预算常量
+DEFAULT_SEED_MAX_ENTRIES = 6
+DEFAULT_SEED_MAX_CHUNKS = 6
+DEFAULT_SEED_MAX_ENTRY_CHARS = 600
+DEFAULT_SEED_MAX_CHUNK_CHARS = 800
+DEFAULT_SEED_CHAR_BUDGET = 4800
+
+DEFAULT_ADVANCE_MAX_DUE_EVENTS = 6
+DEFAULT_ADVANCE_MAX_CAUSAL_NEIGHBORS = 8
+DEFAULT_ADVANCE_MAX_ENTRIES = 4
+DEFAULT_ADVANCE_MAX_CHUNKS = 4
+DEFAULT_ADVANCE_MAX_ENTRY_CHARS = 500
+DEFAULT_ADVANCE_MAX_CHUNK_CHARS = 600
+DEFAULT_ADVANCE_CHAR_BUDGET = 3200
+
+# 设定条目类型稳定优先级映射（按世界规则 -> 地理/地点 -> 势力/政治 -> 经济/贸易 -> 历史 -> 人物 -> 其他）
+LORE_ENTRY_TYPE_PRIORITY: dict[str, int] = {
+    "world_rule": 1,
+    "rule": 1,
+    "magic": 1,
+    "geography": 2,
+    "location": 2,
+    "region": 2,
+    "faction": 3,
+    "organization": 3,
+    "country": 3,
+    "politics": 3,
+    "economy": 4,
+    "trade": 4,
+    "resource": 4,
+    "history": 5,
+    "culture": 5,
+    "character": 6,
+    "npc": 6,
+    "person": 6,
+}
+
 MAX_TITLE_UNITS = 120
 MAX_DESCRIPTION_UNITS = 2000
 MAX_LOCATION_UNITS = 120
@@ -128,6 +166,51 @@ class CanonSourceItem:
     kind: Literal["chunk", "entry"]
     text: str
     title: str = ""
+    entry_type: str = ""
+    document_id: str = ""
+    chunk_index: int | None = None
+    char_count: int = 0
+    truncated: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        units = self.char_count if self.char_count > 0 else len(self.text.encode("utf-16-le")) // 2
+        data: dict[str, Any] = {
+            "source_id": self.source_id,
+            "kind": self.kind,
+            "title": self.title,
+            "text": self.text,
+            "char_count": units,
+            "truncated": self.truncated,
+        }
+        if self.entry_type:
+            data["entry_type"] = self.entry_type
+        if self.document_id:
+            data["document_id"] = self.document_id
+        if self.chunk_index is not None:
+            data["chunk_index"] = self.chunk_index
+        return data
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any]) -> "CanonSourceItem":
+        raw_kind = str(data.get("kind") or "")
+        raw_sid = str(data.get("source_id") or "")
+        if not raw_kind and raw_sid.startswith("entry:"):
+            raw_kind = "entry"
+        elif not raw_kind and raw_sid.startswith("chunk:"):
+            raw_kind = "chunk"
+        text = str(data.get("text") or "")
+        units = int(data.get("char_count") or (len(text.encode("utf-16-le")) // 2 if text else 0))
+        return cls(
+            source_id=raw_sid,
+            kind=raw_kind,  # type: ignore[arg-type]
+            text=text,
+            title=str(data.get("title") or ""),
+            entry_type=str(data.get("entry_type") or ""),
+            document_id=str(data.get("document_id") or ""),
+            chunk_index=int(data["chunk_index"]) if data.get("chunk_index") is not None else None,
+            char_count=units,
+            truncated=bool(data.get("truncated", False)),
+        )
 
 
 @dataclass(frozen=True)
@@ -175,13 +258,31 @@ class ValidatedEventOp:
 
 @dataclass(frozen=True)
 class ValidatedEventProposal:
-    """经过 `validate_proposal` 完整校验的事件提议对象。"""
+    """经过 `validate_proposal` 完整校验的事件提议对象。
+
+    同时暴露 `mode`/`kind`、`world_minute`/`target_world_minute`、
+    `base_world_revision`/`world_revision` 属性以适配 `PulseWorker` 与公共契约。
+    """
 
     instance_id: str
     mode: ProposalMode
     world_minute: int
     operations: tuple[ValidatedEventOp, ...]
     summary: str = ""
+    base_world_revision: int | None = None
+    transmissions: tuple[dict[str, Any], ...] = ()
+
+    @property
+    def kind(self) -> ProposalMode:
+        return self.mode
+
+    @property
+    def target_world_minute(self) -> int:
+        return self.world_minute
+
+    @property
+    def world_revision(self) -> int | None:
+        return self.base_world_revision
 
 
 @dataclass(frozen=True)
@@ -198,6 +299,22 @@ class ProposalValidationContext:
     min_initial_threads: int = DEFAULT_MIN_INITIAL_THREADS
     max_initial_threads: int = DEFAULT_MAX_INITIAL_THREADS
     max_active_incidents: int = DEFAULT_MAX_ACTIVE_INCIDENTS
+    base_world_revision: int | None = None
+    active_incident_count: int | None = None
+    strict_mode_match: bool = False
+    allowed_event_ids: frozenset[str] = field(default_factory=frozenset)
+
+    @property
+    def kind(self) -> ProposalMode:
+        return self.mode
+
+    @property
+    def target_world_minute(self) -> int:
+        return self.world_minute
+
+    @property
+    def world_revision(self) -> int | None:
+        return self.base_world_revision
 
 
 @dataclass(frozen=True)
@@ -210,11 +327,12 @@ class EventSeedRequest:
     world_intro: str = ""
     min_threads: int = DEFAULT_MIN_INITIAL_THREADS
     max_threads: int = DEFAULT_MAX_INITIAL_THREADS
+    base_world_revision: int = 0
 
 
 @dataclass(frozen=True)
 class EventAdvanceRequest:
-    """AI 到期事件推进受限输入（仅含需处理的到期事件及相关事实）。"""
+    """AI 到期事件推进受限输入（仅含需处理的到期活跃事件及最小因果邻域与授权 Canon 资料）。"""
 
     instance_id: str
     world_minute: int
@@ -224,3 +342,5 @@ class EventAdvanceRequest:
     registered_precondition_ids: tuple[str, ...] = ()
     active_incident_count: int = 0
     max_active_incidents: int = DEFAULT_MAX_ACTIVE_INCIDENTS
+    causal_neighborhood: tuple[dict[str, Any], ...] = ()
+    base_world_revision: int = 0

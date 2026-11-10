@@ -1,0 +1,2839 @@
+{
+  "world_id": "world_northern_frontier_001",
+  "instance_id": "inst_northern_frontier_001",
+  "total_mock_http_calls": 4,
+  "steps": [
+    {
+      "step": 0,
+      "label": "初始五条主线生成",
+      "kind": "seed",
+      "world_minute": 0,
+      "base_world_revision": 0,
+      "new_world_revision": 1,
+      "job": {
+        "job_id": "job_wave2_step_0",
+        "instance_id": "inst_northern_frontier_001",
+        "kind": "seed",
+        "base_world_revision": 0,
+        "target_world_minute": 0
+      },
+      "snapshot": {
+        "status": "ready",
+        "world_minute": 0,
+        "world_revision": 0,
+        "allowed_source_ids": [
+          "chunk:north_geography_01",
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03",
+          "entry:diplomacy_loran_tariff_02",
+          "entry:faction_starlight_guild_01"
+        ],
+        "allowed_event_ids": [],
+        "due_event_ids": [],
+        "causal_neighbor_ids": [],
+        "budget": {
+          "selection_order": "preferred_event_sources -> confirmed_lore_entries(type_priority,id) -> ready_document_chunks(chunk_index,doc_created_at,doc_id,chunk_id)",
+          "max_entries": 6,
+          "max_chunks": 6,
+          "max_entry_chars": 600,
+          "max_chunk_chars": 800,
+          "char_budget": 4800,
+          "used_chars": 378,
+          "selected_entry_count": 3,
+          "selected_chunk_count": 2,
+          "total_available_entries": 3,
+          "total_available_chunks": 2
+        }
+      },
+      "prompt_preview": {
+        "system_prompt_length": 741,
+        "user_prompt_length": 1115
+      },
+      "mock_model_response": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "seed",
+        "summary": "北境小镇（霜木镇）开局初始五条主要事件线。",
+        "operations": [
+          {
+            "op": "create",
+            "kind": "thread",
+            "title": "霜木镇本地商业竞争",
+            "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+            "location": "霜木镇",
+            "scope": "local",
+            "participants": [
+              "韩掌柜",
+              "霍克铁匠",
+              "林恩特使"
+            ],
+            "stage": "local_bidding",
+            "status": "active",
+            "next_update_minute": 180,
+            "cause_event_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01",
+              "entry:faction_starlight_guild_01"
+            ],
+            "reason": "开局初始化：本地工坊与商会分号的商业竞争主线。"
+          },
+          {
+            "op": "create",
+            "kind": "thread",
+            "title": "北境区域贸易路线变化",
+            "description": "灰鬃商队正在评估北境主商道与白河谷地绕行线的运输成本与通关风险。",
+            "location": "北境主商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜",
+              "玛塔老板娘"
+            ],
+            "stage": "route_evaluation",
+            "status": "active",
+            "next_update_minute": 120,
+            "cause_event_ids": [],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "reason": "开局初始化：区域贸易路线变化主线。"
+          },
+          {
+            "op": "create",
+            "kind": "thread",
+            "title": "寒铁城与白河城矿脉资源争夺",
+            "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+            "location": "寒铁山脉交界",
+            "scope": "regional",
+            "participants": [
+              "维克多矿监",
+              "瑟蕾娜议员"
+            ],
+            "stage": "mining_standoff",
+            "status": "active",
+            "next_update_minute": 240,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:conflict_iron_vein_03"
+            ],
+            "reason": "开局初始化：邻近城市资源争夺主线。"
+          },
+          {
+            "op": "create",
+            "kind": "thread",
+            "title": "北境王国与洛兰公国边贸外交问题",
+            "description": "洛兰公国灰岩边关税务署酝酿在新季度大幅上调进口商品与过境生铁税率。",
+            "location": "灰岩边关",
+            "scope": "international",
+            "participants": [
+              "克劳德专员",
+              "艾琳镇长"
+            ],
+            "stage": "tariff_review",
+            "status": "active",
+            "next_update_minute": 120,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:diplomacy_loran_tariff_02"
+            ],
+            "reason": "开局初始化：两国边贸关税外交主线。"
+          },
+          {
+            "op": "create",
+            "kind": "thread",
+            "title": "星辉大商会跨国仓储扩张计划",
+            "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+            "location": "寒铁城·星辉总栈",
+            "scope": "national",
+            "participants": [
+              "林恩特使",
+              "瑟蕾娜议员"
+            ],
+            "stage": "depot_expansion",
+            "status": "active",
+            "next_update_minute": 300,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:faction_starlight_guild_01"
+            ],
+            "reason": "开局初始化：跨国商会扩张计划主线。"
+          }
+        ],
+        "kind": "seed",
+        "world_minute": 0,
+        "target_world_minute": 0,
+        "base_world_revision": 0,
+        "world_revision": 0
+      },
+      "usage": {
+        "prompt_tokens": 420,
+        "completion_tokens": 215,
+        "total_tokens": 635
+      },
+      "applied_output": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "seed",
+        "kind": "seed",
+        "world_minute": 0,
+        "target_world_minute": 0,
+        "world_revision": 0,
+        "base_world_revision": 0,
+        "applied_operations": 5,
+        "created_event_ids": [
+          "evt_north_thread_1",
+          "evt_north_thread_2",
+          "evt_north_thread_3",
+          "evt_north_thread_4",
+          "evt_north_thread_5"
+        ],
+        "updated_event_ids": [],
+        "events": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_1",
+            "kind": "thread",
+            "title": "霜木镇本地商业竞争",
+            "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+            "location": "霜木镇",
+            "scope": "local",
+            "participants": [
+              "韩掌柜",
+              "霍克铁匠",
+              "林恩特使"
+            ],
+            "stage": "local_bidding",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 0,
+            "next_update_minute": 180,
+            "cause_event_ids": [],
+            "source_ids": [
+              "chunk:north_geography_01",
+              "entry:faction_starlight_guild_01"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [],
+            "revision": 1
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_2",
+            "kind": "thread",
+            "title": "北境区域贸易路线变化",
+            "description": "灰鬃商队正在评估北境主商道与白河谷地绕行线的运输成本与通关风险。",
+            "location": "北境主商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜",
+              "玛塔老板娘"
+            ],
+            "stage": "route_evaluation",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 0,
+            "next_update_minute": 120,
+            "cause_event_ids": [],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [],
+            "revision": 1
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_3",
+            "kind": "thread",
+            "title": "寒铁城与白河城矿脉资源争夺",
+            "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+            "location": "寒铁山脉交界",
+            "scope": "regional",
+            "participants": [
+              "维克多矿监",
+              "瑟蕾娜议员"
+            ],
+            "stage": "mining_standoff",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 0,
+            "next_update_minute": 240,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:conflict_iron_vein_03"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [],
+            "revision": 1
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_4",
+            "kind": "thread",
+            "title": "北境王国与洛兰公国边贸外交问题",
+            "description": "洛兰公国灰岩边关税务署酝酿在新季度大幅上调进口商品与过境生铁税率。",
+            "location": "灰岩边关",
+            "scope": "international",
+            "participants": [
+              "克劳德专员",
+              "艾琳镇长"
+            ],
+            "stage": "tariff_review",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 0,
+            "next_update_minute": 120,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:diplomacy_loran_tariff_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [],
+            "revision": 1
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_5",
+            "kind": "thread",
+            "title": "星辉大商会跨国仓储扩张计划",
+            "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+            "location": "寒铁城·星辉总栈",
+            "scope": "national",
+            "participants": [
+              "林恩特使",
+              "瑟蕾娜议员"
+            ],
+            "stage": "depot_expansion",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 0,
+            "next_update_minute": 300,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:faction_starlight_guild_01"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [],
+            "revision": 1
+          }
+        ],
+        "consequences": [],
+        "revisions": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_1",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 0,
+            "reason": "开局初始化：本地工坊与商会分号的商业竞争主线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_1",
+              "kind": "thread",
+              "title": "霜木镇本地商业竞争",
+              "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+              "location": "霜木镇",
+              "scope": "local",
+              "participants": [
+                "韩掌柜",
+                "霍克铁匠",
+                "林恩特使"
+              ],
+              "stage": "local_bidding",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 0,
+              "next_update_minute": 180,
+              "cause_event_ids": [],
+              "source_ids": [
+                "chunk:north_geography_01",
+                "entry:faction_starlight_guild_01"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [],
+              "revision": 1
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_2",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 0,
+            "reason": "开局初始化：区域贸易路线变化主线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_2",
+              "kind": "thread",
+              "title": "北境区域贸易路线变化",
+              "description": "灰鬃商队正在评估北境主商道与白河谷地绕行线的运输成本与通关风险。",
+              "location": "北境主商道",
+              "scope": "regional",
+              "participants": [
+                "加雷特首领",
+                "韩掌柜",
+                "玛塔老板娘"
+              ],
+              "stage": "route_evaluation",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 0,
+              "next_update_minute": 120,
+              "cause_event_ids": [],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [],
+              "revision": 1
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_3",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 0,
+            "reason": "开局初始化：邻近城市资源争夺主线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_3",
+              "kind": "thread",
+              "title": "寒铁城与白河城矿脉资源争夺",
+              "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+              "location": "寒铁山脉交界",
+              "scope": "regional",
+              "participants": [
+                "维克多矿监",
+                "瑟蕾娜议员"
+              ],
+              "stage": "mining_standoff",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 0,
+              "next_update_minute": 240,
+              "cause_event_ids": [],
+              "source_ids": [
+                "entry:conflict_iron_vein_03"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [],
+              "revision": 1
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_4",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 0,
+            "reason": "开局初始化：两国边贸关税外交主线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_4",
+              "kind": "thread",
+              "title": "北境王国与洛兰公国边贸外交问题",
+              "description": "洛兰公国灰岩边关税务署酝酿在新季度大幅上调进口商品与过境生铁税率。",
+              "location": "灰岩边关",
+              "scope": "international",
+              "participants": [
+                "克劳德专员",
+                "艾琳镇长"
+              ],
+              "stage": "tariff_review",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 0,
+              "next_update_minute": 120,
+              "cause_event_ids": [],
+              "source_ids": [
+                "entry:diplomacy_loran_tariff_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [],
+              "revision": 1
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_5",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 0,
+            "reason": "开局初始化：跨国商会扩张计划主线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_5",
+              "kind": "thread",
+              "title": "星辉大商会跨国仓储扩张计划",
+              "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+              "location": "寒铁城·星辉总栈",
+              "scope": "national",
+              "participants": [
+                "林恩特使",
+                "瑟蕾娜议员"
+              ],
+              "stage": "depot_expansion",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 0,
+              "next_update_minute": 300,
+              "cause_event_ids": [],
+              "source_ids": [
+                "entry:faction_starlight_guild_01"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [],
+              "revision": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": 1,
+      "label": "邻国加税",
+      "kind": "advance",
+      "world_minute": 120,
+      "base_world_revision": 1,
+      "new_world_revision": 2,
+      "job": {
+        "job_id": "job_wave2_step_1",
+        "instance_id": "inst_northern_frontier_001",
+        "kind": "advance",
+        "base_world_revision": 1,
+        "target_world_minute": 120
+      },
+      "snapshot": {
+        "status": "ready",
+        "world_minute": 120,
+        "world_revision": 1,
+        "allowed_source_ids": [
+          "chunk:north_geography_01",
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03",
+          "entry:diplomacy_loran_tariff_02",
+          "entry:faction_starlight_guild_01"
+        ],
+        "allowed_event_ids": [
+          "evt_north_thread_2",
+          "evt_north_thread_4"
+        ],
+        "due_event_ids": [
+          "evt_north_thread_2",
+          "evt_north_thread_4"
+        ],
+        "causal_neighbor_ids": [],
+        "budget": {
+          "selection_order": "preferred_event_sources -> confirmed_lore_entries(type_priority,id) -> ready_document_chunks(chunk_index,doc_created_at,doc_id,chunk_id)",
+          "max_entries": 4,
+          "max_chunks": 4,
+          "max_entry_chars": 500,
+          "max_chunk_chars": 600,
+          "char_budget": 3200,
+          "used_chars": 378,
+          "selected_entry_count": 3,
+          "selected_chunk_count": 2,
+          "total_available_entries": 3,
+          "total_available_chunks": 2
+        }
+      },
+      "prompt_preview": {
+        "system_prompt_length": 1114,
+        "user_prompt_length": 2077
+      },
+      "mock_model_response": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 120,
+        "target_world_minute": 120,
+        "base_world_revision": 1,
+        "world_revision": 1,
+        "summary": "洛兰公国正式实施灰岩边关新关税令，提高北境进口商品与生铁过境税率。",
+        "operations": [
+          {
+            "op": "update",
+            "event_id": "evt_north_thread_4",
+            "expected_event_revision": 1,
+            "stage": "tariff_enforced",
+            "status": "active",
+            "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+            "next_update_minute": 300,
+            "consequences": [
+              {
+                "domain": "politics",
+                "target": "灰岩边关·进口关税",
+                "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+                "impact_type": "direct"
+              }
+            ],
+            "reason": "邻国提高进口商品税率生效。"
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 440,
+        "completion_tokens": 230,
+        "total_tokens": 670
+      },
+      "applied_output": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 120,
+        "target_world_minute": 120,
+        "world_revision": 1,
+        "base_world_revision": 1,
+        "applied_operations": 1,
+        "created_event_ids": [],
+        "updated_event_ids": [
+          "evt_north_thread_4"
+        ],
+        "events": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_4",
+            "kind": "thread",
+            "title": "北境王国与洛兰公国边贸外交问题",
+            "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+            "location": "灰岩边关",
+            "scope": "international",
+            "participants": [
+              "克劳德专员",
+              "艾琳镇长"
+            ],
+            "stage": "tariff_enforced",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 120,
+            "next_update_minute": 300,
+            "cause_event_ids": [],
+            "source_ids": [
+              "entry:diplomacy_loran_tariff_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_01_tariff",
+                "source_event_id": "evt_north_thread_4",
+                "source_event_revision": 2,
+                "impact_type": "direct",
+                "domain": "politics",
+                "target": "灰岩边关·进口关税",
+                "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+                "effective_minute": 120
+              }
+            ],
+            "revision": 2
+          }
+        ],
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_01_tariff",
+            "source_event_id": "evt_north_thread_4",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "politics",
+            "target": "灰岩边关·进口关税",
+            "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+            "effective_minute": 120
+          }
+        ],
+        "revisions": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_4",
+            "revision": 2,
+            "operation": "update",
+            "world_minute": 120,
+            "reason": "邻国提高进口商品税率生效。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_4",
+              "kind": "thread",
+              "title": "北境王国与洛兰公国边贸外交问题",
+              "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+              "location": "灰岩边关",
+              "scope": "international",
+              "participants": [
+                "克劳德专员",
+                "艾琳镇长"
+              ],
+              "stage": "tariff_enforced",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 120,
+              "next_update_minute": 300,
+              "cause_event_ids": [],
+              "source_ids": [
+                "entry:diplomacy_loran_tariff_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_01_tariff",
+                  "source_event_id": "evt_north_thread_4",
+                  "source_event_revision": 2,
+                  "impact_type": "direct",
+                  "domain": "politics",
+                  "target": "灰岩边关·进口关税",
+                  "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+                  "effective_minute": 120
+                }
+              ],
+              "revision": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": 2,
+      "label": "商队改道",
+      "kind": "advance",
+      "world_minute": 240,
+      "base_world_revision": 2,
+      "new_world_revision": 3,
+      "job": {
+        "job_id": "job_wave2_step_2",
+        "instance_id": "inst_northern_frontier_001",
+        "kind": "advance",
+        "base_world_revision": 2,
+        "target_world_minute": 240
+      },
+      "snapshot": {
+        "status": "ready",
+        "world_minute": 240,
+        "world_revision": 2,
+        "allowed_source_ids": [
+          "chunk:north_geography_01",
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03",
+          "entry:diplomacy_loran_tariff_02",
+          "entry:faction_starlight_guild_01"
+        ],
+        "allowed_event_ids": [
+          "evt_north_thread_1",
+          "evt_north_thread_2",
+          "evt_north_thread_3",
+          "evt_north_thread_4"
+        ],
+        "due_event_ids": [
+          "evt_north_thread_2",
+          "evt_north_thread_1",
+          "evt_north_thread_3"
+        ],
+        "causal_neighbor_ids": [
+          "evt_north_thread_4"
+        ],
+        "budget": {
+          "selection_order": "preferred_event_sources -> confirmed_lore_entries(type_priority,id) -> ready_document_chunks(chunk_index,doc_created_at,doc_id,chunk_id)",
+          "max_entries": 4,
+          "max_chunks": 4,
+          "max_entry_chars": 500,
+          "max_chunk_chars": 600,
+          "char_budget": 3200,
+          "used_chars": 378,
+          "selected_entry_count": 3,
+          "selected_chunk_count": 2,
+          "total_available_entries": 3,
+          "total_available_chunks": 2
+        }
+      },
+      "prompt_preview": {
+        "system_prompt_length": 1114,
+        "user_prompt_length": 3527
+      },
+      "mock_model_response": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 240,
+        "target_world_minute": 240,
+        "base_world_revision": 2,
+        "world_revision": 2,
+        "summary": "受灰岩边关加税影响，灰鬃商队避开主商道改走白河谷地绕行线。",
+        "operations": [
+          {
+            "op": "update",
+            "event_id": "evt_north_thread_2",
+            "expected_event_revision": 1,
+            "stage": "caravan_rerouted",
+            "status": "active",
+            "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+            "next_update_minute": 420,
+            "cause_event_ids": [
+              "evt_north_thread_4"
+            ],
+            "consequences": [
+              {
+                "domain": "trade_route",
+                "target": "北境主商道",
+                "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+                "impact_type": "direct"
+              }
+            ],
+            "reason": "因邻国上调关税，商队改变运输路线。"
+          },
+          {
+            "op": "create",
+            "kind": "incident",
+            "title": "灰鬃商队改走白河绕行线",
+            "description": "加雷特首领率领的本月灰鬃生铁船队改停白河城码头转运，原本发往霜木镇的生铁与精煤批次延误。",
+            "location": "白河谷地商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜"
+            ],
+            "stage": "reroute_in_transit",
+            "status": "active",
+            "next_update_minute": 360,
+            "cause_event_ids": [
+              "evt_north_thread_4",
+              "evt_north_thread_2"
+            ],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "consequences": [
+              {
+                "domain": "trade_route",
+                "target": "霜木镇·月度生铁班车",
+                "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+                "impact_type": "direct"
+              }
+            ],
+            "reason": "由商队改道主线衍生出的短期运输调整临时事件。"
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 460,
+        "completion_tokens": 245,
+        "total_tokens": 705
+      },
+      "applied_output": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 240,
+        "target_world_minute": 240,
+        "world_revision": 2,
+        "base_world_revision": 2,
+        "applied_operations": 2,
+        "created_event_ids": [
+          "evt_north_inc_1"
+        ],
+        "updated_event_ids": [
+          "evt_north_thread_2"
+        ],
+        "events": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_2",
+            "kind": "thread",
+            "title": "北境区域贸易路线变化",
+            "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+            "location": "北境主商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜",
+              "玛塔老板娘"
+            ],
+            "stage": "caravan_rerouted",
+            "status": "active",
+            "created_minute": 0,
+            "updated_minute": 240,
+            "next_update_minute": 420,
+            "cause_event_ids": [
+              "evt_north_thread_4"
+            ],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_02_route",
+                "source_event_id": "evt_north_thread_2",
+                "source_event_revision": 2,
+                "impact_type": "direct",
+                "domain": "trade_route",
+                "target": "北境主商道",
+                "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+                "effective_minute": 240
+              }
+            ],
+            "revision": 2
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_1",
+            "kind": "incident",
+            "title": "灰鬃商队改走白河绕行线",
+            "description": "加雷特首领率领的本月灰鬃生铁船队改停白河城码头转运，原本发往霜木镇的生铁与精煤批次延误。",
+            "location": "白河谷地商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜"
+            ],
+            "stage": "reroute_in_transit",
+            "status": "active",
+            "created_minute": 240,
+            "updated_minute": 240,
+            "next_update_minute": 360,
+            "cause_event_ids": [
+              "evt_north_thread_4",
+              "evt_north_thread_2"
+            ],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_03_caravan",
+                "source_event_id": "evt_north_inc_1",
+                "source_event_revision": 1,
+                "impact_type": "direct",
+                "domain": "trade_route",
+                "target": "霜木镇·月度生铁班车",
+                "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+                "effective_minute": 240
+              }
+            ],
+            "revision": 1
+          }
+        ],
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_02_route",
+            "source_event_id": "evt_north_thread_2",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "北境主商道",
+            "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+            "effective_minute": 240
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_03_caravan",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "霜木镇·月度生铁班车",
+            "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+            "effective_minute": 240
+          }
+        ],
+        "revisions": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_thread_2",
+            "revision": 2,
+            "operation": "update",
+            "world_minute": 240,
+            "reason": "因邻国上调关税，商队改变运输路线。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_thread_2",
+              "kind": "thread",
+              "title": "北境区域贸易路线变化",
+              "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+              "location": "北境主商道",
+              "scope": "regional",
+              "participants": [
+                "加雷特首领",
+                "韩掌柜",
+                "玛塔老板娘"
+              ],
+              "stage": "caravan_rerouted",
+              "status": "active",
+              "created_minute": 0,
+              "updated_minute": 240,
+              "next_update_minute": 420,
+              "cause_event_ids": [
+                "evt_north_thread_4"
+              ],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_02_route",
+                  "source_event_id": "evt_north_thread_2",
+                  "source_event_revision": 2,
+                  "impact_type": "direct",
+                  "domain": "trade_route",
+                  "target": "北境主商道",
+                  "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+                  "effective_minute": 240
+                }
+              ],
+              "revision": 2
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_1",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 240,
+            "reason": "由商队改道主线衍生出的短期运输调整临时事件。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_inc_1",
+              "kind": "incident",
+              "title": "灰鬃商队改走白河绕行线",
+              "description": "加雷特首领率领的本月灰鬃生铁船队改停白河城码头转运，原本发往霜木镇的生铁与精煤批次延误。",
+              "location": "白河谷地商道",
+              "scope": "regional",
+              "participants": [
+                "加雷特首领",
+                "韩掌柜"
+              ],
+              "stage": "reroute_in_transit",
+              "status": "active",
+              "created_minute": 240,
+              "updated_minute": 240,
+              "next_update_minute": 360,
+              "cause_event_ids": [
+                "evt_north_thread_4",
+                "evt_north_thread_2"
+              ],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_03_caravan",
+                  "source_event_id": "evt_north_inc_1",
+                  "source_event_revision": 1,
+                  "impact_type": "direct",
+                  "domain": "trade_route",
+                  "target": "霜木镇·月度生铁班车",
+                  "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+                  "effective_minute": 240
+                }
+              ],
+              "revision": 1
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": 3,
+      "label": "本地供给变化",
+      "kind": "advance",
+      "world_minute": 360,
+      "base_world_revision": 3,
+      "new_world_revision": 4,
+      "job": {
+        "job_id": "job_wave2_step_3",
+        "instance_id": "inst_northern_frontier_001",
+        "kind": "advance",
+        "base_world_revision": 3,
+        "target_world_minute": 360
+      },
+      "snapshot": {
+        "status": "ready",
+        "world_minute": 360,
+        "world_revision": 3,
+        "allowed_source_ids": [
+          "chunk:north_geography_01",
+          "chunk:north_trade_routes_02",
+          "entry:conflict_iron_vein_03",
+          "entry:diplomacy_loran_tariff_02",
+          "entry:faction_starlight_guild_01"
+        ],
+        "allowed_event_ids": [
+          "evt_north_inc_1",
+          "evt_north_thread_1",
+          "evt_north_thread_2",
+          "evt_north_thread_3",
+          "evt_north_thread_4",
+          "evt_north_thread_5"
+        ],
+        "due_event_ids": [
+          "evt_north_thread_1",
+          "evt_north_thread_3",
+          "evt_north_thread_4",
+          "evt_north_thread_5",
+          "evt_north_inc_1"
+        ],
+        "causal_neighbor_ids": [
+          "evt_north_thread_2"
+        ],
+        "budget": {
+          "selection_order": "preferred_event_sources -> confirmed_lore_entries(type_priority,id) -> ready_document_chunks(chunk_index,doc_created_at,doc_id,chunk_id)",
+          "max_entries": 4,
+          "max_chunks": 4,
+          "max_entry_chars": 500,
+          "max_chunk_chars": 600,
+          "char_budget": 3200,
+          "used_chars": 378,
+          "selected_entry_count": 3,
+          "selected_chunk_count": 2,
+          "total_available_entries": 3,
+          "total_available_chunks": 2
+        }
+      },
+      "prompt_preview": {
+        "system_prompt_length": 1114,
+        "user_prompt_length": 5290
+      },
+      "mock_model_response": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 360,
+        "target_world_minute": 360,
+        "base_world_revision": 3,
+        "world_revision": 3,
+        "summary": "改道商队在白河城被截留分销，霜木镇本地原材料供应减少，原料商韩掌柜调整采购计划并上调铁料挂牌价。",
+        "operations": [
+          {
+            "op": "update",
+            "event_id": "evt_north_inc_1",
+            "expected_event_revision": 1,
+            "stage": "reroute_completed",
+            "status": "completed",
+            "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+            "next_update_minute": null,
+            "consequences": [
+              {
+                "domain": "regional_supply",
+                "target": "霜木镇·生铁与焦炭供应",
+                "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+                "impact_type": "direct"
+              }
+            ],
+            "reason": "商队改道运输结算完成，触发本地供应缩减。"
+          },
+          {
+            "op": "create",
+            "kind": "incident",
+            "title": "霜木镇原材料短缺与商人采购调整",
+            "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+            "location": "霜木镇",
+            "scope": "local",
+            "participants": [
+              "韩掌柜",
+              "霍克铁匠"
+            ],
+            "stage": "quota_tightened",
+            "status": "active",
+            "next_update_minute": 540,
+            "cause_event_ids": [
+              "evt_north_inc_1",
+              "evt_north_thread_2"
+            ],
+            "source_ids": [
+              "chunk:north_geography_01"
+            ],
+            "consequences": [
+              {
+                "domain": "npc_inventory",
+                "target": "韩掌柜铁料铺·采购与配额计划",
+                "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+                "impact_type": "direct"
+              },
+              {
+                "domain": "market_price",
+                "target": "霜木镇·生铁与精煤挂牌价",
+                "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+                "impact_type": "direct"
+              }
+            ],
+            "reason": "商队改道事件合法完成后，衍生本地原材料短缺与商人采购计划调整临时事件。"
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 480,
+        "completion_tokens": 260,
+        "total_tokens": 740
+      },
+      "applied_output": {
+        "instance_id": "inst_northern_frontier_001",
+        "mode": "advance",
+        "kind": "advance",
+        "world_minute": 360,
+        "target_world_minute": 360,
+        "world_revision": 3,
+        "base_world_revision": 3,
+        "applied_operations": 2,
+        "created_event_ids": [
+          "evt_north_inc_2"
+        ],
+        "updated_event_ids": [
+          "evt_north_inc_1"
+        ],
+        "events": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_1",
+            "kind": "incident",
+            "title": "灰鬃商队改走白河绕行线",
+            "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+            "location": "白河谷地商道",
+            "scope": "regional",
+            "participants": [
+              "加雷特首领",
+              "韩掌柜"
+            ],
+            "stage": "reroute_completed",
+            "status": "completed",
+            "created_minute": 240,
+            "updated_minute": 360,
+            "next_update_minute": null,
+            "cause_event_ids": [
+              "evt_north_thread_4",
+              "evt_north_thread_2"
+            ],
+            "source_ids": [
+              "chunk:north_trade_routes_02"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_03_caravan",
+                "source_event_id": "evt_north_inc_1",
+                "source_event_revision": 1,
+                "impact_type": "direct",
+                "domain": "trade_route",
+                "target": "霜木镇·月度生铁班车",
+                "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+                "effective_minute": 240
+              },
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_04_supply",
+                "source_event_id": "evt_north_inc_1",
+                "source_event_revision": 2,
+                "impact_type": "direct",
+                "domain": "regional_supply",
+                "target": "霜木镇·生铁与焦炭供应",
+                "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+                "effective_minute": 360
+              }
+            ],
+            "revision": 2
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_2",
+            "kind": "incident",
+            "title": "霜木镇原材料短缺与商人采购调整",
+            "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+            "location": "霜木镇",
+            "scope": "local",
+            "participants": [
+              "韩掌柜",
+              "霍克铁匠"
+            ],
+            "stage": "quota_tightened",
+            "status": "active",
+            "created_minute": 360,
+            "updated_minute": 360,
+            "next_update_minute": 540,
+            "cause_event_ids": [
+              "evt_north_inc_1",
+              "evt_north_thread_2"
+            ],
+            "source_ids": [
+              "chunk:north_geography_01"
+            ],
+            "turnpoint_type": null,
+            "precondition_ids": [],
+            "consequences": [
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_05_merchant",
+                "source_event_id": "evt_north_inc_2",
+                "source_event_revision": 1,
+                "impact_type": "direct",
+                "domain": "npc_inventory",
+                "target": "韩掌柜铁料铺·采购与配额计划",
+                "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+                "effective_minute": 360
+              },
+              {
+                "instance_id": "inst_northern_frontier_001",
+                "consequence_id": "csq_north_06_price",
+                "source_event_id": "evt_north_inc_2",
+                "source_event_revision": 1,
+                "impact_type": "direct",
+                "domain": "market_price",
+                "target": "霜木镇·生铁与精煤挂牌价",
+                "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+                "effective_minute": 360
+              }
+            ],
+            "revision": 1
+          }
+        ],
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_04_supply",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "regional_supply",
+            "target": "霜木镇·生铁与焦炭供应",
+            "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+            "effective_minute": 360
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_05_merchant",
+            "source_event_id": "evt_north_inc_2",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "npc_inventory",
+            "target": "韩掌柜铁料铺·采购与配额计划",
+            "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+            "effective_minute": 360
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_06_price",
+            "source_event_id": "evt_north_inc_2",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "market_price",
+            "target": "霜木镇·生铁与精煤挂牌价",
+            "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+            "effective_minute": 360
+          }
+        ],
+        "revisions": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_1",
+            "revision": 2,
+            "operation": "update",
+            "world_minute": 360,
+            "reason": "商队改道运输结算完成，触发本地供应缩减。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_inc_1",
+              "kind": "incident",
+              "title": "灰鬃商队改走白河绕行线",
+              "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+              "location": "白河谷地商道",
+              "scope": "regional",
+              "participants": [
+                "加雷特首领",
+                "韩掌柜"
+              ],
+              "stage": "reroute_completed",
+              "status": "completed",
+              "created_minute": 240,
+              "updated_minute": 360,
+              "next_update_minute": null,
+              "cause_event_ids": [
+                "evt_north_thread_4",
+                "evt_north_thread_2"
+              ],
+              "source_ids": [
+                "chunk:north_trade_routes_02"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_03_caravan",
+                  "source_event_id": "evt_north_inc_1",
+                  "source_event_revision": 1,
+                  "impact_type": "direct",
+                  "domain": "trade_route",
+                  "target": "霜木镇·月度生铁班车",
+                  "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+                  "effective_minute": 240
+                },
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_04_supply",
+                  "source_event_id": "evt_north_inc_1",
+                  "source_event_revision": 2,
+                  "impact_type": "direct",
+                  "domain": "regional_supply",
+                  "target": "霜木镇·生铁与焦炭供应",
+                  "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+                  "effective_minute": 360
+                }
+              ],
+              "revision": 2
+            }
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "event_id": "evt_north_inc_2",
+            "revision": 1,
+            "operation": "create",
+            "world_minute": 360,
+            "reason": "商队改道事件合法完成后，衍生本地原材料短缺与商人采购计划调整临时事件。",
+            "snapshot": {
+              "instance_id": "inst_northern_frontier_001",
+              "event_id": "evt_north_inc_2",
+              "kind": "incident",
+              "title": "霜木镇原材料短缺与商人采购调整",
+              "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+              "location": "霜木镇",
+              "scope": "local",
+              "participants": [
+                "韩掌柜",
+                "霍克铁匠"
+              ],
+              "stage": "quota_tightened",
+              "status": "active",
+              "created_minute": 360,
+              "updated_minute": 360,
+              "next_update_minute": 540,
+              "cause_event_ids": [
+                "evt_north_inc_1",
+                "evt_north_thread_2"
+              ],
+              "source_ids": [
+                "chunk:north_geography_01"
+              ],
+              "turnpoint_type": null,
+              "precondition_ids": [],
+              "consequences": [
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_05_merchant",
+                  "source_event_id": "evt_north_inc_2",
+                  "source_event_revision": 1,
+                  "impact_type": "direct",
+                  "domain": "npc_inventory",
+                  "target": "韩掌柜铁料铺·采购与配额计划",
+                  "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+                  "effective_minute": 360
+                },
+                {
+                  "instance_id": "inst_northern_frontier_001",
+                  "consequence_id": "csq_north_06_price",
+                  "source_event_id": "evt_north_inc_2",
+                  "source_event_revision": 1,
+                  "impact_type": "direct",
+                  "domain": "market_price",
+                  "target": "霜木镇·生铁与精煤挂牌价",
+                  "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+                  "effective_minute": 360
+                }
+              ],
+              "revision": 1
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "causal_trace_for_local_shortage": {
+    "instance_id": "inst_northern_frontier_001",
+    "event": {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_inc_2",
+      "kind": "incident",
+      "title": "霜木镇原材料短缺与商人采购调整",
+      "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+      "location": "霜木镇",
+      "scope": "local",
+      "participants": [
+        "韩掌柜",
+        "霍克铁匠"
+      ],
+      "stage": "quota_tightened",
+      "status": "active",
+      "created_minute": 360,
+      "updated_minute": 360,
+      "next_update_minute": 540,
+      "cause_event_ids": [
+        "evt_north_inc_1",
+        "evt_north_thread_2"
+      ],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 1,
+      "consequences": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_05_merchant",
+          "source_event_id": "evt_north_inc_2",
+          "source_event_revision": 1,
+          "impact_type": "direct",
+          "domain": "npc_inventory",
+          "target": "韩掌柜铁料铺·采购与配额计划",
+          "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+          "effective_minute": 360
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_06_price",
+          "source_event_id": "evt_north_inc_2",
+          "source_event_revision": 1,
+          "impact_type": "direct",
+          "domain": "market_price",
+          "target": "霜木镇·生铁与精煤挂牌价",
+          "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+          "effective_minute": 360
+        }
+      ]
+    },
+    "ancestors": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_2",
+        "kind": "thread",
+        "title": "北境区域贸易路线变化",
+        "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+        "location": "北境主商道",
+        "scope": "regional",
+        "participants": [
+          "加雷特首领",
+          "韩掌柜",
+          "玛塔老板娘"
+        ],
+        "stage": "caravan_rerouted",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 240,
+        "next_update_minute": 420,
+        "cause_event_ids": [
+          "evt_north_thread_4"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_02_route",
+            "source_event_id": "evt_north_thread_2",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "北境主商道",
+            "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+            "effective_minute": 240
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_4",
+        "kind": "thread",
+        "title": "北境王国与洛兰公国边贸外交问题",
+        "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+        "location": "灰岩边关",
+        "scope": "international",
+        "participants": [
+          "克劳德专员",
+          "艾琳镇长"
+        ],
+        "stage": "tariff_enforced",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 120,
+        "next_update_minute": 300,
+        "cause_event_ids": [],
+        "source_ids": [
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_01_tariff",
+            "source_event_id": "evt_north_thread_4",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "politics",
+            "target": "灰岩边关·进口关税",
+            "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+            "effective_minute": 120
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_1",
+        "kind": "incident",
+        "title": "灰鬃商队改走白河绕行线",
+        "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+        "location": "白河谷地商道",
+        "scope": "regional",
+        "participants": [
+          "加雷特首领",
+          "韩掌柜"
+        ],
+        "stage": "reroute_completed",
+        "status": "completed",
+        "created_minute": 240,
+        "updated_minute": 360,
+        "next_update_minute": null,
+        "cause_event_ids": [
+          "evt_north_thread_4",
+          "evt_north_thread_2"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_03_caravan",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "霜木镇·月度生铁班车",
+            "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+            "effective_minute": 240
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_04_supply",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "regional_supply",
+            "target": "霜木镇·生铁与焦炭供应",
+            "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+            "effective_minute": 360
+          }
+        ]
+      }
+    ],
+    "descendants": [],
+    "chain_consequences": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_02_route",
+        "source_event_id": "evt_north_thread_2",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "trade_route",
+        "target": "北境主商道",
+        "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+        "effective_minute": 240
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_01_tariff",
+        "source_event_id": "evt_north_thread_4",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "politics",
+        "target": "灰岩边关·进口关税",
+        "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+        "effective_minute": 120
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_03_caravan",
+        "source_event_id": "evt_north_inc_1",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "trade_route",
+        "target": "霜木镇·月度生铁班车",
+        "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+        "effective_minute": 240
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_04_supply",
+        "source_event_id": "evt_north_inc_1",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "regional_supply",
+        "target": "霜木镇·生铁与焦炭供应",
+        "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+        "effective_minute": 360
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_05_merchant",
+        "source_event_id": "evt_north_inc_2",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "npc_inventory",
+        "target": "韩掌柜铁料铺·采购与配额计划",
+        "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+        "effective_minute": 360
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_06_price",
+        "source_event_id": "evt_north_inc_2",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "market_price",
+        "target": "霜木镇·生铁与精煤挂牌价",
+        "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+        "effective_minute": 360
+      }
+    ]
+  },
+  "final_consequences": [
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_01_tariff",
+      "source_event_id": "evt_north_thread_4",
+      "source_event_revision": 2,
+      "impact_type": "direct",
+      "domain": "politics",
+      "target": "灰岩边关·进口关税",
+      "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+      "effective_minute": 120
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_02_route",
+      "source_event_id": "evt_north_thread_2",
+      "source_event_revision": 2,
+      "impact_type": "direct",
+      "domain": "trade_route",
+      "target": "北境主商道",
+      "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+      "effective_minute": 240
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_03_caravan",
+      "source_event_id": "evt_north_inc_1",
+      "source_event_revision": 1,
+      "impact_type": "direct",
+      "domain": "trade_route",
+      "target": "霜木镇·月度生铁班车",
+      "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+      "effective_minute": 240
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_04_supply",
+      "source_event_id": "evt_north_inc_1",
+      "source_event_revision": 2,
+      "impact_type": "direct",
+      "domain": "regional_supply",
+      "target": "霜木镇·生铁与焦炭供应",
+      "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+      "effective_minute": 360
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_05_merchant",
+      "source_event_id": "evt_north_inc_2",
+      "source_event_revision": 1,
+      "impact_type": "direct",
+      "domain": "npc_inventory",
+      "target": "韩掌柜铁料铺·采购与配额计划",
+      "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+      "effective_minute": 360
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "consequence_id": "csq_north_06_price",
+      "source_event_id": "evt_north_inc_2",
+      "source_event_revision": 1,
+      "impact_type": "direct",
+      "domain": "market_price",
+      "target": "霜木镇·生铁与精煤挂牌价",
+      "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+      "effective_minute": 360
+    }
+  ],
+  "final_events": [
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_thread_1",
+      "kind": "thread",
+      "title": "霜木镇本地商业竞争",
+      "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+      "location": "霜木镇",
+      "scope": "local",
+      "participants": [
+        "韩掌柜",
+        "霍克铁匠",
+        "林恩特使"
+      ],
+      "stage": "local_bidding",
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "next_update_minute": 180,
+      "cause_event_ids": [],
+      "source_ids": [
+        "chunk:north_geography_01",
+        "entry:faction_starlight_guild_01"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 1,
+      "consequences": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_thread_2",
+      "kind": "thread",
+      "title": "北境区域贸易路线变化",
+      "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+      "location": "北境主商道",
+      "scope": "regional",
+      "participants": [
+        "加雷特首领",
+        "韩掌柜",
+        "玛塔老板娘"
+      ],
+      "stage": "caravan_rerouted",
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 240,
+      "next_update_minute": 420,
+      "cause_event_ids": [
+        "evt_north_thread_4"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 2,
+      "consequences": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_02_route",
+          "source_event_id": "evt_north_thread_2",
+          "source_event_revision": 2,
+          "impact_type": "direct",
+          "domain": "trade_route",
+          "target": "北境主商道",
+          "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+          "effective_minute": 240
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_thread_3",
+      "kind": "thread",
+      "title": "寒铁城与白河城矿脉资源争夺",
+      "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+      "location": "寒铁山脉交界",
+      "scope": "regional",
+      "participants": [
+        "维克多矿监",
+        "瑟蕾娜议员"
+      ],
+      "stage": "mining_standoff",
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "next_update_minute": 240,
+      "cause_event_ids": [],
+      "source_ids": [
+        "entry:conflict_iron_vein_03"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 1,
+      "consequences": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_thread_4",
+      "kind": "thread",
+      "title": "北境王国与洛兰公国边贸外交问题",
+      "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+      "location": "灰岩边关",
+      "scope": "international",
+      "participants": [
+        "克劳德专员",
+        "艾琳镇长"
+      ],
+      "stage": "tariff_enforced",
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 120,
+      "next_update_minute": 300,
+      "cause_event_ids": [],
+      "source_ids": [
+        "entry:diplomacy_loran_tariff_02"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 2,
+      "consequences": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_01_tariff",
+          "source_event_id": "evt_north_thread_4",
+          "source_event_revision": 2,
+          "impact_type": "direct",
+          "domain": "politics",
+          "target": "灰岩边关·进口关税",
+          "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+          "effective_minute": 120
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_thread_5",
+      "kind": "thread",
+      "title": "星辉大商会跨国仓储扩张计划",
+      "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+      "location": "寒铁城·星辉总栈",
+      "scope": "national",
+      "participants": [
+        "林恩特使",
+        "瑟蕾娜议员"
+      ],
+      "stage": "depot_expansion",
+      "status": "active",
+      "created_minute": 0,
+      "updated_minute": 0,
+      "next_update_minute": 300,
+      "cause_event_ids": [],
+      "source_ids": [
+        "entry:faction_starlight_guild_01"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 1,
+      "consequences": []
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_inc_1",
+      "kind": "incident",
+      "title": "灰鬃商队改走白河绕行线",
+      "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+      "location": "白河谷地商道",
+      "scope": "regional",
+      "participants": [
+        "加雷特首领",
+        "韩掌柜"
+      ],
+      "stage": "reroute_completed",
+      "status": "completed",
+      "created_minute": 240,
+      "updated_minute": 360,
+      "next_update_minute": null,
+      "cause_event_ids": [
+        "evt_north_thread_4",
+        "evt_north_thread_2"
+      ],
+      "source_ids": [
+        "chunk:north_trade_routes_02"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 2,
+      "consequences": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_03_caravan",
+          "source_event_id": "evt_north_inc_1",
+          "source_event_revision": 1,
+          "impact_type": "direct",
+          "domain": "trade_route",
+          "target": "霜木镇·月度生铁班车",
+          "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+          "effective_minute": 240
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_04_supply",
+          "source_event_id": "evt_north_inc_1",
+          "source_event_revision": 2,
+          "impact_type": "direct",
+          "domain": "regional_supply",
+          "target": "霜木镇·生铁与焦炭供应",
+          "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+          "effective_minute": 360
+        }
+      ]
+    },
+    {
+      "instance_id": "inst_northern_frontier_001",
+      "event_id": "evt_north_inc_2",
+      "kind": "incident",
+      "title": "霜木镇原材料短缺与商人采购调整",
+      "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+      "location": "霜木镇",
+      "scope": "local",
+      "participants": [
+        "韩掌柜",
+        "霍克铁匠"
+      ],
+      "stage": "quota_tightened",
+      "status": "active",
+      "created_minute": 360,
+      "updated_minute": 360,
+      "next_update_minute": 540,
+      "cause_event_ids": [
+        "evt_north_inc_1",
+        "evt_north_thread_2"
+      ],
+      "source_ids": [
+        "chunk:north_geography_01"
+      ],
+      "turnpoint_type": null,
+      "precondition_ids": [],
+      "revision": 1,
+      "consequences": [
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_05_merchant",
+          "source_event_id": "evt_north_inc_2",
+          "source_event_revision": 1,
+          "impact_type": "direct",
+          "domain": "npc_inventory",
+          "target": "韩掌柜铁料铺·采购与配额计划",
+          "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+          "effective_minute": 360
+        },
+        {
+          "instance_id": "inst_northern_frontier_001",
+          "consequence_id": "csq_north_06_price",
+          "source_event_id": "evt_north_inc_2",
+          "source_event_revision": 1,
+          "impact_type": "direct",
+          "domain": "market_price",
+          "target": "霜木镇·生铁与精煤挂牌价",
+          "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+          "effective_minute": 360
+        }
+      ]
+    }
+  ],
+  "final_snapshot": {
+    "format_version": "m3.events.v1",
+    "instance_id": "inst_northern_frontier_001",
+    "world_minute": 360,
+    "world_revision": 4,
+    "events": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_1",
+        "kind": "thread",
+        "title": "霜木镇本地商业竞争",
+        "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+        "location": "霜木镇",
+        "scope": "local",
+        "participants": [
+          "韩掌柜",
+          "霍克铁匠",
+          "林恩特使"
+        ],
+        "stage": "local_bidding",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "next_update_minute": 180,
+        "cause_event_ids": [],
+        "source_ids": [
+          "chunk:north_geography_01",
+          "entry:faction_starlight_guild_01"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 1,
+        "consequences": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_2",
+        "kind": "thread",
+        "title": "北境区域贸易路线变化",
+        "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+        "location": "北境主商道",
+        "scope": "regional",
+        "participants": [
+          "加雷特首领",
+          "韩掌柜",
+          "玛塔老板娘"
+        ],
+        "stage": "caravan_rerouted",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 240,
+        "next_update_minute": 420,
+        "cause_event_ids": [
+          "evt_north_thread_4"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_02_route",
+            "source_event_id": "evt_north_thread_2",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "北境主商道",
+            "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+            "effective_minute": 240
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_3",
+        "kind": "thread",
+        "title": "寒铁城与白河城矿脉资源争夺",
+        "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+        "location": "寒铁山脉交界",
+        "scope": "regional",
+        "participants": [
+          "维克多矿监",
+          "瑟蕾娜议员"
+        ],
+        "stage": "mining_standoff",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "next_update_minute": 240,
+        "cause_event_ids": [],
+        "source_ids": [
+          "entry:conflict_iron_vein_03"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 1,
+        "consequences": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_4",
+        "kind": "thread",
+        "title": "北境王国与洛兰公国边贸外交问题",
+        "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+        "location": "灰岩边关",
+        "scope": "international",
+        "participants": [
+          "克劳德专员",
+          "艾琳镇长"
+        ],
+        "stage": "tariff_enforced",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 120,
+        "next_update_minute": 300,
+        "cause_event_ids": [],
+        "source_ids": [
+          "entry:diplomacy_loran_tariff_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_01_tariff",
+            "source_event_id": "evt_north_thread_4",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "politics",
+            "target": "灰岩边关·进口关税",
+            "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+            "effective_minute": 120
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_5",
+        "kind": "thread",
+        "title": "星辉大商会跨国仓储扩张计划",
+        "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+        "location": "寒铁城·星辉总栈",
+        "scope": "national",
+        "participants": [
+          "林恩特使",
+          "瑟蕾娜议员"
+        ],
+        "stage": "depot_expansion",
+        "status": "active",
+        "created_minute": 0,
+        "updated_minute": 0,
+        "next_update_minute": 300,
+        "cause_event_ids": [],
+        "source_ids": [
+          "entry:faction_starlight_guild_01"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 1,
+        "consequences": []
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_1",
+        "kind": "incident",
+        "title": "灰鬃商队改走白河绕行线",
+        "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+        "location": "白河谷地商道",
+        "scope": "regional",
+        "participants": [
+          "加雷特首领",
+          "韩掌柜"
+        ],
+        "stage": "reroute_completed",
+        "status": "completed",
+        "created_minute": 240,
+        "updated_minute": 360,
+        "next_update_minute": null,
+        "cause_event_ids": [
+          "evt_north_thread_4",
+          "evt_north_thread_2"
+        ],
+        "source_ids": [
+          "chunk:north_trade_routes_02"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 2,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_03_caravan",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "trade_route",
+            "target": "霜木镇·月度生铁班车",
+            "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+            "effective_minute": 240
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_04_supply",
+            "source_event_id": "evt_north_inc_1",
+            "source_event_revision": 2,
+            "impact_type": "direct",
+            "domain": "regional_supply",
+            "target": "霜木镇·生铁与焦炭供应",
+            "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+            "effective_minute": 360
+          }
+        ]
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_2",
+        "kind": "incident",
+        "title": "霜木镇原材料短缺与商人采购调整",
+        "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+        "location": "霜木镇",
+        "scope": "local",
+        "participants": [
+          "韩掌柜",
+          "霍克铁匠"
+        ],
+        "stage": "quota_tightened",
+        "status": "active",
+        "created_minute": 360,
+        "updated_minute": 360,
+        "next_update_minute": 540,
+        "cause_event_ids": [
+          "evt_north_inc_1",
+          "evt_north_thread_2"
+        ],
+        "source_ids": [
+          "chunk:north_geography_01"
+        ],
+        "turnpoint_type": null,
+        "precondition_ids": [],
+        "revision": 1,
+        "consequences": [
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_05_merchant",
+            "source_event_id": "evt_north_inc_2",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "npc_inventory",
+            "target": "韩掌柜铁料铺·采购与配额计划",
+            "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+            "effective_minute": 360
+          },
+          {
+            "instance_id": "inst_northern_frontier_001",
+            "consequence_id": "csq_north_06_price",
+            "source_event_id": "evt_north_inc_2",
+            "source_event_revision": 1,
+            "impact_type": "direct",
+            "domain": "market_price",
+            "target": "霜木镇·生铁与精煤挂牌价",
+            "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+            "effective_minute": 360
+          }
+        ]
+      }
+    ],
+    "revisions": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_1",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 240,
+        "reason": "由商队改道主线衍生出的短期运输调整临时事件。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_inc_1",
+          "kind": "incident",
+          "title": "灰鬃商队改走白河绕行线",
+          "description": "加雷特首领率领的本月灰鬃生铁船队改停白河城码头转运，原本发往霜木镇的生铁与精煤批次延误。",
+          "location": "白河谷地商道",
+          "scope": "regional",
+          "participants": [
+            "加雷特首领",
+            "韩掌柜"
+          ],
+          "stage": "reroute_in_transit",
+          "status": "active",
+          "created_minute": 240,
+          "updated_minute": 240,
+          "next_update_minute": 360,
+          "cause_event_ids": [
+            "evt_north_thread_4",
+            "evt_north_thread_2"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_03_caravan",
+              "source_event_id": "evt_north_inc_1",
+              "source_event_revision": 1,
+              "impact_type": "direct",
+              "domain": "trade_route",
+              "target": "霜木镇·月度生铁班车",
+              "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+              "effective_minute": 240
+            }
+          ],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_1",
+        "revision": 2,
+        "operation": "update",
+        "world_minute": 360,
+        "reason": "商队改道运输结算完成，触发本地供应缩减。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_inc_1",
+          "kind": "incident",
+          "title": "灰鬃商队改走白河绕行线",
+          "description": "灰鬃商队在白河城完成转运卸货，仅三成生铁余量继续运往霜木镇。",
+          "location": "白河谷地商道",
+          "scope": "regional",
+          "participants": [
+            "加雷特首领",
+            "韩掌柜"
+          ],
+          "stage": "reroute_completed",
+          "status": "completed",
+          "created_minute": 240,
+          "updated_minute": 360,
+          "next_update_minute": null,
+          "cause_event_ids": [
+            "evt_north_thread_4",
+            "evt_north_thread_2"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_03_caravan",
+              "source_event_id": "evt_north_inc_1",
+              "source_event_revision": 1,
+              "impact_type": "direct",
+              "domain": "trade_route",
+              "target": "霜木镇·月度生铁班车",
+              "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+              "effective_minute": 240
+            },
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_04_supply",
+              "source_event_id": "evt_north_inc_1",
+              "source_event_revision": 2,
+              "impact_type": "direct",
+              "domain": "regional_supply",
+              "target": "霜木镇·生铁与焦炭供应",
+              "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+              "effective_minute": 360
+            }
+          ],
+          "revision": 2
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_inc_2",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 360,
+        "reason": "商队改道事件合法完成后，衍生本地原材料短缺与商人采购计划调整临时事件。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_inc_2",
+          "kind": "incident",
+          "title": "霜木镇原材料短缺与商人采购调整",
+          "description": "因商队改道导致本地生铁供应减少，原料商韩掌柜缩减零散工坊配额、转向寒铁城紧急询价，并上调本地铁料挂牌价。",
+          "location": "霜木镇",
+          "scope": "local",
+          "participants": [
+            "韩掌柜",
+            "霍克铁匠"
+          ],
+          "stage": "quota_tightened",
+          "status": "active",
+          "created_minute": 360,
+          "updated_minute": 360,
+          "next_update_minute": 540,
+          "cause_event_ids": [
+            "evt_north_inc_1",
+            "evt_north_thread_2"
+          ],
+          "source_ids": [
+            "chunk:north_geography_01"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_05_merchant",
+              "source_event_id": "evt_north_inc_2",
+              "source_event_revision": 1,
+              "impact_type": "direct",
+              "domain": "npc_inventory",
+              "target": "韩掌柜铁料铺·采购与配额计划",
+              "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+              "effective_minute": 360
+            },
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_06_price",
+              "source_event_id": "evt_north_inc_2",
+              "source_event_revision": 1,
+              "impact_type": "direct",
+              "domain": "market_price",
+              "target": "霜木镇·生铁与精煤挂牌价",
+              "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+              "effective_minute": 360
+            }
+          ],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_1",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 0,
+        "reason": "开局初始化：本地工坊与商会分号的商业竞争主线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_1",
+          "kind": "thread",
+          "title": "霜木镇本地商业竞争",
+          "description": "星辉大商会霜木镇分号向本地工坊压低铁器收购价，韩掌柜与霍克铁匠商议联合稳价。",
+          "location": "霜木镇",
+          "scope": "local",
+          "participants": [
+            "韩掌柜",
+            "霍克铁匠",
+            "林恩特使"
+          ],
+          "stage": "local_bidding",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 0,
+          "next_update_minute": 180,
+          "cause_event_ids": [],
+          "source_ids": [
+            "chunk:north_geography_01",
+            "entry:faction_starlight_guild_01"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_2",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 0,
+        "reason": "开局初始化：区域贸易路线变化主线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_2",
+          "kind": "thread",
+          "title": "北境区域贸易路线变化",
+          "description": "灰鬃商队正在评估北境主商道与白河谷地绕行线的运输成本与通关风险。",
+          "location": "北境主商道",
+          "scope": "regional",
+          "participants": [
+            "加雷特首领",
+            "韩掌柜",
+            "玛塔老板娘"
+          ],
+          "stage": "route_evaluation",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 0,
+          "next_update_minute": 120,
+          "cause_event_ids": [],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_2",
+        "revision": 2,
+        "operation": "update",
+        "world_minute": 240,
+        "reason": "因邻国上调关税，商队改变运输路线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_2",
+          "kind": "thread",
+          "title": "北境区域贸易路线变化",
+          "description": "为规避灰岩边关高额新税，灰鬃商队宣布暂停直达霜木镇的主商道班次，改道白河谷地。",
+          "location": "北境主商道",
+          "scope": "regional",
+          "participants": [
+            "加雷特首领",
+            "韩掌柜",
+            "玛塔老板娘"
+          ],
+          "stage": "caravan_rerouted",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 240,
+          "next_update_minute": 420,
+          "cause_event_ids": [
+            "evt_north_thread_4"
+          ],
+          "source_ids": [
+            "chunk:north_trade_routes_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_02_route",
+              "source_event_id": "evt_north_thread_2",
+              "source_event_revision": 2,
+              "impact_type": "direct",
+              "domain": "trade_route",
+              "target": "北境主商道",
+              "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+              "effective_minute": 240
+            }
+          ],
+          "revision": 2
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_3",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 0,
+        "reason": "开局初始化：邻近城市资源争夺主线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_3",
+          "kind": "thread",
+          "title": "寒铁城与白河城矿脉资源争夺",
+          "description": "两座邻近城市围绕交界富铁矿脉的采掘特许权僵持不下，矿石外运审批放缓。",
+          "location": "寒铁山脉交界",
+          "scope": "regional",
+          "participants": [
+            "维克多矿监",
+            "瑟蕾娜议员"
+          ],
+          "stage": "mining_standoff",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 0,
+          "next_update_minute": 240,
+          "cause_event_ids": [],
+          "source_ids": [
+            "entry:conflict_iron_vein_03"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_4",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 0,
+        "reason": "开局初始化：两国边贸关税外交主线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_4",
+          "kind": "thread",
+          "title": "北境王国与洛兰公国边贸外交问题",
+          "description": "洛兰公国灰岩边关税务署酝酿在新季度大幅上调进口商品与过境生铁税率。",
+          "location": "灰岩边关",
+          "scope": "international",
+          "participants": [
+            "克劳德专员",
+            "艾琳镇长"
+          ],
+          "stage": "tariff_review",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 0,
+          "next_update_minute": 120,
+          "cause_event_ids": [],
+          "source_ids": [
+            "entry:diplomacy_loran_tariff_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [],
+          "revision": 1
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_4",
+        "revision": 2,
+        "operation": "update",
+        "world_minute": 120,
+        "reason": "邻国提高进口商品税率生效。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_4",
+          "kind": "thread",
+          "title": "北境王国与洛兰公国边贸外交问题",
+          "description": "洛兰公国灰岩边关正式将生铁、焦炭与器具进口税率上调三成，过境商队通关成本陡增。",
+          "location": "灰岩边关",
+          "scope": "international",
+          "participants": [
+            "克劳德专员",
+            "艾琳镇长"
+          ],
+          "stage": "tariff_enforced",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 120,
+          "next_update_minute": 300,
+          "cause_event_ids": [],
+          "source_ids": [
+            "entry:diplomacy_loran_tariff_02"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [
+            {
+              "instance_id": "inst_northern_frontier_001",
+              "consequence_id": "csq_north_01_tariff",
+              "source_event_id": "evt_north_thread_4",
+              "source_event_revision": 2,
+              "impact_type": "direct",
+              "domain": "politics",
+              "target": "灰岩边关·进口关税",
+              "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+              "effective_minute": 120
+            }
+          ],
+          "revision": 2
+        }
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "event_id": "evt_north_thread_5",
+        "revision": 1,
+        "operation": "create",
+        "world_minute": 0,
+        "reason": "开局初始化：跨国商会扩张计划主线。",
+        "snapshot": {
+          "instance_id": "inst_northern_frontier_001",
+          "event_id": "evt_north_thread_5",
+          "kind": "thread",
+          "title": "星辉大商会跨国仓储扩张计划",
+          "description": "星辉大商会筹划收购白河城至霜木镇沿线货栈，建立跨国集中配货网络。",
+          "location": "寒铁城·星辉总栈",
+          "scope": "national",
+          "participants": [
+            "林恩特使",
+            "瑟蕾娜议员"
+          ],
+          "stage": "depot_expansion",
+          "status": "active",
+          "created_minute": 0,
+          "updated_minute": 0,
+          "next_update_minute": 300,
+          "cause_event_ids": [],
+          "source_ids": [
+            "entry:faction_starlight_guild_01"
+          ],
+          "turnpoint_type": null,
+          "precondition_ids": [],
+          "consequences": [],
+          "revision": 1
+        }
+      }
+    ],
+    "consequences": [
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_01_tariff",
+        "source_event_id": "evt_north_thread_4",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "politics",
+        "target": "灰岩边关·进口关税",
+        "summary": "洛兰公国对北境生铁与大宗原料加征 30% 进口关税。",
+        "effective_minute": 120
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_02_route",
+        "source_event_id": "evt_north_thread_2",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "trade_route",
+        "target": "北境主商道",
+        "summary": "北境主商道直达货运班次削减，主力商队改走白河谷地水陆线。",
+        "effective_minute": 240
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_03_caravan",
+        "source_event_id": "evt_north_inc_1",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "trade_route",
+        "target": "霜木镇·月度生铁班车",
+        "summary": "发往霜木镇的月度生铁与焦炭车队因改道推迟抵达。",
+        "effective_minute": 240
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_04_supply",
+        "source_event_id": "evt_north_inc_1",
+        "source_event_revision": 2,
+        "impact_type": "direct",
+        "domain": "regional_supply",
+        "target": "霜木镇·生铁与焦炭供应",
+        "summary": "霜木镇本旬到港生铁与精煤供应量锐减七成。",
+        "effective_minute": 360
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_05_merchant",
+        "source_event_id": "evt_north_inc_2",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "npc_inventory",
+        "target": "韩掌柜铁料铺·采购与配额计划",
+        "summary": "韩掌柜暂停大宗赊销，调整采购计划改向寒铁城零批调货。",
+        "effective_minute": 360
+      },
+      {
+        "instance_id": "inst_northern_frontier_001",
+        "consequence_id": "csq_north_06_price",
+        "source_event_id": "evt_north_inc_2",
+        "source_event_revision": 1,
+        "impact_type": "direct",
+        "domain": "market_price",
+        "target": "霜木镇·生铁与精煤挂牌价",
+        "summary": "受供应短缺影响，霜木镇生铁与精煤市场参考挂牌价上浮。",
+        "effective_minute": 360
+      }
+    ],
+    "preconditions": []
+  }
+}

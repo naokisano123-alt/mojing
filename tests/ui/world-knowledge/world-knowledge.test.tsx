@@ -1,13 +1,15 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import {
   WorldKnowledgePanel,
   createFakeWorldKnowledgeTransport,
+  createNorthTownMultiHopKnowledgeScenario,
   filterNewsItems,
   formatConfidenceLevel,
   formatLearnedTime,
   mergeNewsItems,
+  sanitizeWorldNewsPage,
 } from '../../../src/features/world-knowledge';
 import type { WorldNewsItem } from '../../../src/features/world-knowledge';
 
@@ -84,18 +86,14 @@ describe('WorldKnowledgePanel mobile UI & isolation tests', () => {
     const transport = createFakeWorldKnowledgeTransport({
       adv_main: [],
     });
-    // 在玩家获知消息前拍下检查点快照
     const preKnowSnapshot = transport.snapshotAdventureNews('adv_main');
 
-    // 主路线获知消息
     transport.appendAdventureNews('adv_main', SAMPLE_PLAYER_ITEM);
-    // 恢复到新分支 adv_branch_early
     transport.restoreAdventureNews('adv_branch_early', preKnowSnapshot);
 
     const view = render(<WorldKnowledgePanel adventureId="adv_main" transport={transport} />);
     expect(await screen.findByText('掌柜告知灰羽商队改道东谷')).toBeInTheDocument();
 
-    // 切换到从旧检查点恢复的分支
     view.rerender(<WorldKnowledgePanel adventureId="adv_branch_early" transport={transport} />);
     expect(await screen.findByTestId('world-knowledge-empty')).toBeInTheDocument();
     expect(screen.queryByText('掌柜告知灰羽商队改道东谷')).toBeNull();
@@ -108,15 +106,12 @@ describe('WorldKnowledgePanel mobile UI & isolation tests', () => {
 
     render(<WorldKnowledgePanel adventureId="adv_paged" transport={transport} pageSize={1} />);
 
-    // 第 1 页只显示最新的一条（传闻）
     expect(await screen.findByText('东谷山道近期多雾难行')).toBeInTheDocument();
     expect(screen.queryByText('掌柜告知灰羽商队改道东谷')).toBeNull();
 
-    // 点击加载更早消息（使用不透明游标 kcur1_p1）
     fireEvent.click(screen.getByRole('button', { name: '加载更早消息' }));
     expect(await screen.findByText('掌柜告知灰羽商队改道东谷')).toBeInTheDocument();
 
-    // 按“确认事实”筛选
     fireEvent.click(screen.getByRole('button', { name: '确认事实' }));
     expect(screen.getByText('掌柜告知灰羽商队改道东谷')).toBeInTheDocument();
     expect(screen.queryByText('东谷山道近期多雾难行')).toBeNull();
@@ -144,25 +139,79 @@ describe('WorldKnowledgePanel mobile UI & isolation tests', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
     expect(await screen.findByText('掌柜告知灰羽商队改道东谷')).toBeInTheDocument();
 
-    // 切换到 adv_slow（挂起），再迅速切换到 adv_clean（空）
     view.rerender(<WorldKnowledgePanel adventureId="adv_slow" transport={{ listWorldNews }} />);
     view.rerender(<WorldKnowledgePanel adventureId="adv_clean" transport={{ listWorldNews }} />);
 
     expect(await screen.findByTestId('world-knowledge-empty')).toBeInTheDocument();
 
-    // adv_slow 的迟到数据返回，不得污染 adv_clean
     await act(async () => {
       resolveDelayed({ items: [SAMPLE_RUMOR_ITEM], next_before: null });
     });
     expect(screen.queryByText('东谷山道近期多雾难行')).toBeNull();
   });
 
-  it('6. 纯逻辑格式化与去重合并函数在窄屏与边界输入下稳定工作', () => {
+  it('6. 纯逻辑格式化、零泄漏清洗与去重合并函数在窄屏与边界输入下稳定工作', () => {
     expect(formatConfidenceLevel(0.85, 'confirmed')).toBe('可信度 85% · 渠道确凿');
     expect(formatConfidenceLevel(0.4, 'rumor')).toBe('可信度 40% · 传闻待核');
     expect(formatLearnedTime(1505)).toBe('第 2 天 01:05（1505 分钟）');
     const merged = mergeNewsItems([SAMPLE_PLAYER_ITEM], [SAMPLE_PLAYER_ITEM, SAMPLE_RUMOR_ITEM]);
     expect(merged).toHaveLength(2);
     expect(filterNewsItems(merged, 'rumor')).toEqual([SAMPLE_RUMOR_ITEM]);
+
+    const dirtyPage = {
+      items: [
+        {
+          ...SAMPLE_PLAYER_ITEM,
+          title: '【隐藏权威标题】掌柜告知灰羽商队改道东谷',
+          source_event_id: 'evt_secret_01',
+        } as unknown as WorldNewsItem,
+      ],
+      next_before: 'kcur1_p1',
+      total: 99,
+      hidden_count: 42,
+    } as unknown as { items: WorldNewsItem[]; next_before: string | null };
+
+    const cleanPage = sanitizeWorldNewsPage(dirtyPage);
+    expect(cleanPage.items[0].title).toBe('掌柜告知灰羽商队改道东谷');
+    expect('source_event_id' in (cleanPage.items[0] as unknown as Record<string, unknown>)).toBe(false);
+    expect('total' in (cleanPage as unknown as Record<string, unknown>)).toBe(false);
+  });
+
+  it('7. Wave 2 端到端多跳场景：商队首领先得知改道 -> 店主转述 -> 玩家交谈后才看见', async () => {
+    const scenario = createNorthTownMultiHopKnowledgeScenario('adv_north_w2');
+
+    // 跳 1：商队首领先得知改道，玩家不可见
+    scenario.step1CaravanLeaderLearns();
+    const view = render(
+      <WorldKnowledgePanel
+        adventureId="adv_north_w2"
+        transport={scenario.transport}
+        refreshTrigger={1}
+      />,
+    );
+    expect(await screen.findByTestId('world-knowledge-empty')).toBeInTheDocument();
+
+    // 跳 2：商队首领转述给酒馆店主，玩家仍不可见
+    scenario.step2InnkeeperRelayed();
+    view.rerender(
+      <WorldKnowledgePanel
+        adventureId="adv_north_w2"
+        transport={scenario.transport}
+        refreshTrigger={2}
+      />,
+    );
+    expect(await screen.findByTestId('world-knowledge-empty')).toBeInTheDocument();
+
+    // 跳 3：店主转述给玩家，玩家面板刷新后看见消息
+    scenario.step3PlayerTalksToInnkeeper();
+    view.rerender(
+      <WorldKnowledgePanel
+        adventureId="adv_north_w2"
+        transport={scenario.transport}
+        refreshTrigger={3}
+      />,
+    );
+    expect(await screen.findByText('掌柜告知灰羽商队改道东谷')).toBeInTheDocument();
+    expect(screen.getByText('来源：当面交谈 · 酒馆掌柜老周')).toBeInTheDocument();
   });
 });

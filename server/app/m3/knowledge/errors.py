@@ -10,6 +10,20 @@ from typing import Any
 
 from ...errors import ApiError
 
+_SAFE_DETAIL_KEYS = frozenset({
+    "field",
+    "channel",
+    "expected_revision",
+    "current_revision",
+    "expected_world_revision",
+    "current_world_revision",
+    "expected_world_minute",
+    "current_world_minute",
+    "limit",
+    "max_units",
+    "mode",
+})
+
 
 class KnowledgeError(ApiError):
     """知识与信息传播业务异常。"""
@@ -21,13 +35,13 @@ class KnowledgeError(ApiError):
         message: str,
         details: dict[str, Any] | None = None,
     ) -> None:
-        # 确保 details 不泄露隐藏事件标题或内部跨实例详情
+        # 确保 details 不泄露隐藏事件标题、隐藏事件 ID 或内部跨实例详情
         safe_details: dict[str, Any] | None = None
         if details:
             safe_details = {
                 k: v
                 for k, v in details.items()
-                if k in {"field", "channel", "expected_revision", "current_revision", "limit"}
+                if k in _SAFE_DETAIL_KEYS
             }
             if not safe_details:
                 safe_details = None

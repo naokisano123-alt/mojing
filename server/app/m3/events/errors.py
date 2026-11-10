@@ -1,4 +1,4 @@
-"""M3.1 / M3.5 世界事件账本与因果校验异常体系。
+"""M3.1 / M3.5 世界事件账本与因果校验异常体系（M3 Wave 2 扩展）。
 
 遵循 `server/app/errors.py` 的统一错误格式：
 `{"error": {"code": str, "message": str, "details": dict | None}}`
@@ -79,6 +79,45 @@ class EventRevisionConflictError(EventError):
                 "current_event_revision": current_revision,
             },
         )
+
+
+class WorldRevisionConflictError(EventError):
+    """世界实例版本（world_instances.revision / world_revision）并发冲突（409）。"""
+
+    def __init__(
+        self,
+        instance_id: str,
+        expected_world_revision: int,
+        current_world_revision: int,
+        message: str = "世界实例版本冲突：base_world_revision 与当前已确认版本不一致。",
+    ) -> None:
+        super().__init__(
+            409,
+            "WORLD_REVISION_CONFLICT",
+            message,
+            {
+                "instance_id": instance_id,
+                "expected_world_revision": expected_world_revision,
+                "current_world_revision": current_world_revision,
+            },
+        )
+
+
+class PulseSourceRequiredError(EventError):
+    """世界缺少已确认的设定条目或有效文档分块，阻塞初始局势生成（409/422）。"""
+
+    def __init__(
+        self,
+        world_id: str,
+        instance_id: str = "",
+        message: str = "当前世界没有可用的已确认设定条目或导入资料，无法生成初始事件线。",
+        *,
+        status: int = 409,
+    ) -> None:
+        details: dict[str, Any] = {"world_id": world_id}
+        if instance_id:
+            details["instance_id"] = instance_id
+        super().__init__(status, "PULSE_SOURCE_REQUIRED", message, details)
 
 
 class EventValidationError(EventError):

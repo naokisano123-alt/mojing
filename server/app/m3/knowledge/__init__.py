@@ -1,4 +1,4 @@
-"""M3.3 人物知识、信息传播与玩家视角模块公共入口。"""
+"""M3.3 人物知识、信息传播与玩家视角模块公共入口（含 M3 Wave 2 纯校验、事务应用与叙事上下文）。"""
 
 from __future__ import annotations
 
@@ -6,15 +6,19 @@ from .errors import KnowledgeError
 from .fixtures import (
     advance_player_conversation_with_innkeeper,
     create_instance_fixture,
+    run_wave2_multi_hop_pulse_fixture,
     seed_north_town_multi_hop_fixture,
 )
 from .schema import SCHEMA, ensure_knowledge_schema
 from .service import (
+    apply_proposal,
+    build_adventure_narration_knowledge_context,
     build_narration_knowledge_context,
     correct_knowledge,
     get_world_news,
     list_known,
     project_player_news,
+    read_knowledge_snapshot,
     record_transmission,
     register_event_stub,
     register_holder,
@@ -22,54 +26,80 @@ from .service import (
     resolve_adventure_instance_id,
     restore,
     snapshot,
+    validate_proposal,
 )
 from .types import (
     CHANNELS,
+    DEFAULT_NARRATION_MAX_UNITS,
     KNOWLEDGE_TYPES,
+    MAX_NARRATION_CONTEXT_UNITS,
+    NARRATION_CONTEXT_FORMAT,
     PLAYER_HOLDER_ID,
+    PROPOSAL_KINDS,
     SNAPSHOT_FORMAT,
     SNAPSHOT_VERSION,
     STATUSES,
+    KnowledgeValidationContext,
     KnownPage,
     NarrationKnowledgeBundle,
     TransmissionBatchResult,
+    ValidatedKnowledgeProposal,
+    ValidatedTransmissionOp,
     decode_holder_cursor,
     encode_holder_cursor,
+    is_temporary_event_id,
     sanitize_untrusted_knowledge_text,
 )
 
+encode_knowledge_cursor = encode_holder_cursor
+validate_transmissions = validate_proposal
+apply_transmissions = apply_proposal
+
 __all__ = [
     "CHANNELS",
+    "DEFAULT_NARRATION_MAX_UNITS",
     "KNOWLEDGE_TYPES",
+    "MAX_NARRATION_CONTEXT_UNITS",
+    "NARRATION_CONTEXT_FORMAT",
     "PLAYER_HOLDER_ID",
+    "PROPOSAL_KINDS",
     "SCHEMA",
     "SNAPSHOT_FORMAT",
     "SNAPSHOT_VERSION",
     "STATUSES",
     "KnowledgeError",
+    "KnowledgeValidationContext",
     "KnownPage",
     "NarrationKnowledgeBundle",
     "TransmissionBatchResult",
+    "ValidatedKnowledgeProposal",
+    "ValidatedTransmissionOp",
     "advance_player_conversation_with_innkeeper",
+    "apply_proposal",
+    "apply_transmissions",
+    "build_adventure_narration_knowledge_context",
     "build_narration_knowledge_context",
     "correct_knowledge",
     "create_instance_fixture",
     "decode_holder_cursor",
-    "encode_knowledge_cursor",
     "encode_holder_cursor",
+    "encode_knowledge_cursor",
     "ensure_knowledge_schema",
     "get_world_news",
+    "is_temporary_event_id",
     "list_known",
     "project_player_news",
+    "read_knowledge_snapshot",
     "record_transmission",
     "register_event_stub",
     "register_holder",
     "register_knowledge_routes",
     "resolve_adventure_instance_id",
     "restore",
+    "run_wave2_multi_hop_pulse_fixture",
     "sanitize_untrusted_knowledge_text",
     "seed_north_town_multi_hop_fixture",
     "snapshot",
+    "validate_proposal",
+    "validate_transmissions",
 ]
-
-encode_knowledge_cursor = encode_holder_cursor

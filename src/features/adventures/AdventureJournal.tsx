@@ -16,6 +16,7 @@ import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
+import { WorldPulsePanel } from "../world-pulse";
 import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
@@ -590,6 +591,8 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
+          {run.mode === "live" && <WorldPulsePanel key={run.id} adventureId={run.id}
+            narrationSessionId={sessionId} defaultOpen={false} />}
           <details
             className="journal-sources"
             aria-label="世界消息"

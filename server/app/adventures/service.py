@@ -132,7 +132,7 @@ def fail(conn, adventure_id, id):
     conn.execute("UPDATE adventure_drafts SET status='failed' WHERE adventure_id=? AND id=? AND status='pending'", (adventure_id, id))
 
 
-def commit(conn, adventure_id, id, apply_changes=False):
+def commit(conn, adventure_id, id, apply_changes=False, *, pulse_worker=None):
     if type(apply_changes) is not bool:
         raise ApiError(422, 'VALIDATION_ERROR', 'apply_changes须为布尔值。')
     conn.execute('BEGIN IMMEDIATE')
@@ -190,6 +190,8 @@ def commit(conn, adventure_id, id, apply_changes=False):
         conn, instance_id=updated['id'], adventure_id=adventure_id,
         adventure_revision=run['revision'] + 1, world_revision=updated['world_revision'],
         world_minute=updated['world_minute'],
+        session_router=pulse_worker.session_router if pulse_worker and run['mode'] == 'live' else None,
+        activity_registry=pulse_worker.activity_registry if pulse_worker and run['mode'] == 'live' else None,
     )
     return get_adventure(conn, adventure_id)
 
