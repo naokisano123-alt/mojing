@@ -6,6 +6,7 @@ from fastapi import Query, Request, Response
 from ..db import db
 from ..errors import ApiError
 from ..m3.knowledge import build_adventure_narration_knowledge_context
+from ..m3.npcs import build_adventure_narration_npc_context
 from ..model_gateway.errors import GatewayError
 from ..narration.core import DraftError, FakeModelClient, HistoryTurn, NarrationRequest, generate_draft, validate_request
 from ..narration.lifecycle import await_request_work
@@ -17,7 +18,9 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
     from ..m3.core import pulse_preview, service as instances
     from ..m3.pulse.queue import resume_waiting_jobs
     from .checkpoints import register_checkpoint_routes
+    from .world_start import register_world_start_routes
     register_checkpoint_routes(app, cfg)
+    register_world_start_routes(app, cfg.db_path, get_store)
 
     @app.get('/api/v1/worlds/{world_id}/openings')
     def list_openings(world_id: str):
@@ -174,6 +177,10 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
                     [f"{turn.action} {turn.narrative}" for turn in history], recent[0]['sequence'] if recent else 1,
                 )
                 notes = item_descriptions.for_character(conn, run['world_id'], run['character'])
+                npc_context = build_adventure_narration_npc_context(
+                    conn, adventure_id, player_location=(run['character'] or {}).get('location'),
+                    action=action,
+                )
                 known_news = build_adventure_narration_knowledge_context(
                     conn, adventure_id, action=action, location=(run['character'] or {}).get('location', ''),
                 )
@@ -186,11 +193,13 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
                 client = FakeModelClient()
             state = character(run['character']) if run['character'] is not None else None
             intro = safe_u16_truncate(f"{world['name']}\n{world['description']}", 1300)
+            if npc_context['prompt_block']:
+                intro += '\n当前地点可观察的人物状态：\n' + npc_context['prompt_block']
             requested = reserved['advance_minutes']
             clock = None
             clock_max = None
             if opening:
-                intro += '\n开局：' + safe_u16_truncate(opening['intro'], 1000)
+                intro += '\n开局（历史，人物当前状态以最新观察为准）：' + safe_u16_truncate(opening['intro'], 1000)
                 intro += '\n当前世界时间：' + scenario.world_time(opening, state.elapsed_minutes)
                 if requested is not None:
                     clock = scenario.plan(opening, state.elapsed_minutes, requested)

@@ -78,7 +78,30 @@ def build_pulse_prompts(request: PulseModelRequest) -> tuple[str, str]:
     if not request.snapshot.get("use_event_prompts"):
         return _build_pulse_system_prompt(request.kind), _build_pulse_user_prompt(request)
 
-    from app.m3.events import build_pulse_event_prompts
+    from ..events import build_pulse_event_prompts
+    from ..npcs import build_pulse_npc_prompts
+
+    if request.snapshot.get("use_npc_prompts"):
+        npc_prompts = build_pulse_npc_prompts(request)
+        system = npc_prompts["system_prompt"] + (
+            '\n输出 JSON，operations 数组内的人物行动填写 op="act"、npc_id、'
+            'expected_npc_revision、action_kind、location、availability、current_activity（可观察）、'
+            'motivation（私密）、duration_minutes、next_due_minute 和因果引用。'
+            '出行另填 from_location、to_location，换班另填 from_shift、to_shift，'
+            '交谈安排另填 target_npc_id、meeting_location、conversation_topic，'
+            '事务另填 task_id、task_title、task_stage、task_progress_percent、task_status。'
+            '只处理到期人物，每人至多一项。没有合理变化可以返回空数组。'
+        )
+        if request.snapshot.get("due_events"):
+            system += (
+                '\n可在同一 operations 数组用 op="update" 推进到期事件，填写 event_id、'
+                'expected_event_revision、stage 和新的 next_update_minute（须晚于当前时间）。'
+                '事件内部资料只有在人物自己的知情记录中出现时，才可用于该人物的决定。'
+                '有可信公开传播渠道才可在 transmissions 中加入玩家消息，'
+                '填写 holder_id="player"、knowledge_type="rumor"、channel="notice"、title、content、'
+                'source_event_id、learned_minute。禁止泄露私密动机与隐藏事件。'
+            )
+        return system, npc_prompts["user_prompt"]
 
     prompts = build_pulse_event_prompts(request)
     system = prompts["system_prompt"]

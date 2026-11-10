@@ -1,22 +1,25 @@
-"""M3.4 NPC 自主行动、行程与模拟深度模块公共入口（M3 Wave 3）。
+"""M3.4 NPC 自主行动、已确认时间、模拟深度与世界脉动集成模块公共入口（M3 Wave 4）。
 
-本模块遵循 `docs/collaboration/M3_WAVE3.md` 与 `docs/collaboration/M3_WAVE3_GEMINI_MARCIN.md` 契约，
-提供以下核心能力供 DeepSeekHarness、Gemini Li 与 Gemini Ma 集成调用：
+本模块遵循 `docs/collaboration/M3_WAVE4.md`、`docs/collaboration/M3_WAVE4_GEMINI_LI.md`
+与 `docs/contracts/M3_WAVE4_API.md` 契约，提供以下核心能力供 DeepSeekHarness、Gemini Marcin 与 Gemini Ma 集成调用：
 1. 四个标准核心接口：
    - 只读选取：`read_snapshot(conn, instance_id, job=None, ...)`（别名 `select_npcs_for_pulse`、`read_pulse_snapshot`）与 `evaluate_npc_depths(...)`
    - 纯校验：`validate_proposal(proposal, context)`（别名 `validate_pulse_proposal`）
-   - 调用方事务内应用：`apply_proposal(conn, instance_id, proposal, job=None, ...)`（别名 `apply_pulse_proposal`）
+   - 调用方事务内应用：`apply_proposal(conn, instance_id, proposal, job=None, ..., advance_world_revision=None)`（别名 `apply_pulse_proposal`）
    - 快照与恢复：`snapshot(conn, instance_id)`、`restore(conn, target_instance_id, snapshot, ...)` 及 `NpcsAdapter`
-2. 供 Ma 互动包（`encounters`）注入的 NPC 可接触性与状态查询边界：
-   - `check_npc_accessibility(conn, instance_id, npc_id, *, player_location, world_minute=None)`
-   - `list_contactable_npcs(conn, instance_id, *, player_location, world_minute=None, ...)`
+2. 第四轮新增：从 AI 世界分析/开局确认草案接收人物初始状态：
+   - `seed_npcs_from_initialization(conn, instance_id, init_payload, ...)`（别名 `initialize_npcs_from_draft`）
+   - `normalize_initial_npc_seed_proposal(init_input, ...)`、`normalize_action_kind(...)`
+   - 覆盖出行（`travel`）、留在原处（`stay`）、等待（`wait`）、无变化（`no_change`）、改变计划（`plan_change`）、交谈安排（`conversation_plan`）、换班（`shift_change`）与任务进度（`task_progress`）
+3. 第四轮新增：对接世界脉动（`PulseWorker`）的无冲突单次版本推进签名与回调构建器：
+   - `apply_pulse_proposal_in_worker(conn, instance_id, proposal, job=None, ...)`（强制 `advance_world_revision=False`，由外层 Worker 统一推进一次版本）
+   - `build_npc_pulse_callbacks(...)`（支持独立 NPC 脉动或「事件 + NPC + 知识传播」同事务组合提交）
+   - `NpcPulseModelClientAdapter`（将 `OpenAINpcModelClient` / `FakeNpcModelClient` 适配为 `PulseModelClientProtocol`）
+4. 供查证入口（`encounters`）和下一回合叙事共用同一份人物状态的只读查询边界：
+   - `check_npc_accessibility(conn, instance_id, npc_id, *, player_location=None, world_minute=None)`
+   - `list_contactable_npcs(conn, instance_id, *, player_location=None, world_minute=None, ...)`
+   - `build_adventure_narration_npc_context(conn, adventure_or_instance_id, ...)`
    - `get_npc`, `list_npcs`, `list_due_npcs`, `list_npc_tasks`, `list_npc_action_log`
-3. 供脉动（`PulseWorker`）与离线测试使用的提示词与模型客户端：
-   - `PULSE_NPC_OUTPUT_SCHEMA`, `PROMPT_EXAMPLES`, `build_pulse_npc_prompts`
-   - `FakeNpcModelClient`, `OpenAINpcModelClient`, `build_fake_npc_pulse_generator`
-4. 北境贸易可复现 Fixture 与端到端模拟链路：
-   - `seed_northern_trade_npcs`, `build_northern_trade_npc_seed_proposal`, `build_wave3_mock_npc_responses`
-   - `run_northern_trade_npc_simulation`, `get_wave3_northern_trade_npc_bundle`
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from .ai import (
     PULSE_NPC_OUTPUT_SCHEMA,
     FakeNpcModelClient,
     NpcModelClient,
+    NpcPulseModelClientAdapter,
     OpenAINpcModelClient,
     build_fake_npc_pulse_generator,
     build_pulse_npc_prompts,
@@ -54,8 +58,10 @@ from .fixtures import (
     NORTHERN_TRADE_WORLD_ID,
     build_northern_trade_npc_seed_proposal,
     build_wave3_mock_npc_responses,
+    build_wave4_custom_world_init_payload,
     get_wave3_northern_trade_npc_bundle,
     run_northern_trade_npc_simulation,
+    run_wave4_pulse_lifecycle_simulation,
     seed_northern_trade_npcs,
 )
 from .schema import NPCS_SCHEMA, NPCS_SCHEMA_VERSION, ensure_npcs_schema
@@ -63,9 +69,13 @@ from .service import (
     NpcsAdapter,
     apply_proposal,
     apply_pulse_proposal,
+    apply_pulse_proposal_in_worker,
+    build_adventure_narration_npc_context,
+    build_npc_pulse_callbacks,
     check_npc_accessibility,
     ensure_instance_exists,
     get_npc,
+    initialize_npcs_from_draft,
     list_contactable_npcs,
     list_due_npcs,
     list_npc_action_log,
@@ -76,6 +86,7 @@ from .service import (
     register_event_stub,
     register_knowledge_stub,
     restore,
+    seed_npcs_from_initialization,
     select_npcs_for_pulse,
     snapshot,
 )
@@ -91,11 +102,14 @@ from .types import (
     FORBIDDEN_PATH_KEYS,
     MIN_ACTION_INTERVAL_BY_TIER,
     MIN_DURATION_BY_ACTION_KIND,
+    NPC_ACTION_KIND_ALIASES,
+    NPC_ACTION_KIND_LABELS_ZH,
     NPC_ACTION_KINDS,
     NPC_AVAILABILITY_STATES,
     NPC_DEPTH_TIER_ALIASES,
     NPC_DEPTH_TIER_LABELS_ZH,
     NPC_DEPTH_TIERS,
+    NPC_GROUNDING_ALIASES,
     NPC_STATUSES,
     PROPOSAL_MODES,
     PROTECTED_PLAYER_KNOWLEDGE_KEYS,
@@ -108,6 +122,7 @@ from .types import (
     NpcAvailability,
     NpcDepthEvaluation,
     NpcDepthTier,
+    NpcGroundingKind,
     NpcOperationType,
     NpcStatus,
     NpcValidationContext,
@@ -118,7 +133,9 @@ from .types import (
 )
 from .validator import (
     evaluate_npc_depths,
+    normalize_action_kind,
     normalize_depth_tier,
+    normalize_initial_npc_seed_proposal,
     validate_proposal,
 )
 
@@ -144,10 +161,13 @@ __all__ = [
     "NPCS_SCHEMA",
     "NPCS_SCHEMA_VERSION",
     "NPC_ACTION_KINDS",
+    "NPC_ACTION_KIND_ALIASES",
+    "NPC_ACTION_KIND_LABELS_ZH",
     "NPC_AVAILABILITY_STATES",
     "NPC_DEPTH_TIERS",
     "NPC_DEPTH_TIER_ALIASES",
     "NPC_DEPTH_TIER_LABELS_ZH",
+    "NPC_GROUNDING_ALIASES",
     "NPC_STATUSES",
     "PROMPT_EXAMPLES",
     "PROPOSAL_MODES",
@@ -169,10 +189,12 @@ __all__ = [
     "NpcDepthEvaluation",
     "NpcDepthTier",
     "NpcError",
+    "NpcGroundingKind",
     "NpcModelClient",
     "NpcNotDueError",
     "NpcNotFoundError",
     "NpcOperationType",
+    "NpcPulseModelClientAdapter",
     "NpcRevisionConflictError",
     "NpcStatus",
     "NpcValidationContext",
@@ -190,10 +212,14 @@ __all__ = [
     "WorldRevisionConflictError",
     "apply_proposal",
     "apply_pulse_proposal",
+    "apply_pulse_proposal_in_worker",
+    "build_adventure_narration_npc_context",
     "build_fake_npc_pulse_generator",
     "build_northern_trade_npc_seed_proposal",
+    "build_npc_pulse_callbacks",
     "build_pulse_npc_prompts",
     "build_wave3_mock_npc_responses",
+    "build_wave4_custom_world_init_payload",
     "check_npc_accessibility",
     "ensure_instance_exists",
     "ensure_npcs_schema",
@@ -201,19 +227,24 @@ __all__ = [
     "get_npc",
     "get_npc_contactability",
     "get_wave3_northern_trade_npc_bundle",
+    "initialize_npcs_from_draft",
     "list_contactable_npcs",
     "list_due_npcs",
     "list_npc_action_log",
     "list_npc_tasks",
     "list_npcs",
+    "normalize_action_kind",
     "normalize_depth_tier",
+    "normalize_initial_npc_seed_proposal",
     "read_pulse_snapshot",
     "read_snapshot",
     "register_event_stub",
     "register_knowledge_stub",
     "restore",
     "run_northern_trade_npc_simulation",
+    "run_wave4_pulse_lifecycle_simulation",
     "seed_northern_trade_npcs",
+    "seed_npcs_from_initialization",
     "select_npcs_for_pulse",
     "snapshot",
     "validate_proposal",

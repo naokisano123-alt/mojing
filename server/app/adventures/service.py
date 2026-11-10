@@ -53,13 +53,14 @@ def run_dict(row):
     return value
 
 
-def create_adventure(conn, world_id, name, mode, initial_character=None, opening_id=None):
+def create_adventure(conn, world_id, name, mode, initial_character=None, opening_id=None, *,
+                     opening_snapshot=None, instance_id=None):
     world_active(conn, world_id)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80 or mode not in ('fake', 'live'):
         raise ApiError(422, 'VALIDATION_ERROR', '请填写1–80字的名称并选择生成模式。')
     if opening_id is not None and not isinstance(opening_id, str):
         raise ApiError(422, 'OPENING_INVALID', '开局标识无效。')
-    opening = scenario.get_opening(conn, world_id, opening_id) if opening_id is not None else None
+    opening = scenario.get_opening(conn, world_id, opening_id) if opening_id is not None else opening_snapshot
     if opening:
         initial_character = opening['character']
     try:
@@ -70,7 +71,9 @@ def create_adventure(conn, world_id, name, mode, initial_character=None, opening
     conn.execute('''INSERT INTO adventures(id,world_id,name,mode,created_at,character_json,opening_json)
                  VALUES(?,?,?,?,?,?,?)''', (id, world_id, name.strip(), mode, time.time(),
                   json.dumps(state, ensure_ascii=False), json.dumps(opening, ensure_ascii=False) if opening else None))
-    instance_service.create_instance(conn, world_id, adventure_id=id, world_minute=state['elapsed_minutes'])
+    instance_service.create_instance(
+        conn, world_id, adventure_id=id, world_minute=state['elapsed_minutes'], instance_id=instance_id,
+    )
     return get_adventure(conn, id)
 
 

@@ -1,19 +1,25 @@
-"""M3.4 NPC 自主行动、行程、动态模拟深度与快照/恢复持久层服务（M3 Wave 3）。
+"""M3.4 NPC 自主行动、行程、动态模拟深度与快照/恢复持久层服务（M3 Wave 4）。
 
-契约要求（`docs/collaboration/M3_WAVE3.md` & `docs/collaboration/M3_WAVE3_GEMINI_MARCIN.md`）：
+契约要求（`docs/collaboration/M3_WAVE4_GEMINI_LI.md` & `docs/contracts/M3_WAVE4_API.md`）：
 1. 四个核心接口：
    - 只读选取：`read_snapshot(conn, instance_id, job=None, ...)` 与 `select_npcs_for_pulse(conn, instance_id, ...)`
    - 纯校验：`validate_proposal(proposal, context)`（由 `validator.py` 提供）
-   - 调用方事务内应用：`apply_proposal(conn, instance_id, validated, job=None, ...)`（`SAVEPOINT` 保护，不自行 `commit`）
+   - 调用方事务内应用：`apply_proposal(conn, instance_id, validated, job=None, ..., advance_world_revision=None)`（`SAVEPOINT` 保护，不自行 `commit`）
    - 快照与恢复：`snapshot(conn, instance_id)` / `restore(conn, target_instance_id, snapshot, ...)` 及 `NpcsAdapter`
-2. 时间来自已确认世界分钟（`world_instances.world_minute`），事件影响必须引用实例内已存在的原因。
-3. 复用现有事件、角色、知识的边界，禁止直接记玩家金钱、背包、属性和知情事实。
-4. 提供与脉动（`PulseWorker`）及 Ma 互动包（`check_npc_accessibility` / `list_contactable_npcs`）的最小接线契约。
+2. 从初始化输入接收人物状态（`seed_npcs_from_initialization` / `initialize_npcs_from_draft`），
+   首版覆盖出行（`travel`）、留在原处（`stay`）、等待（`wait`）、无变化（`no_change`）、改变计划（`plan_change`）、
+   交谈安排（`conversation_plan`）、换班（`shift_change`）与任务进度（`task_progress`）。
+3. 解决现有 NPC 应用与 `PulseWorker` 双重更新实例版本的冲突：
+   - 单独调用 `apply_proposal` 时默认 `advance_world_revision=True`，保持既有独立调用语义；
+   - 在 `PulseWorker` 组合提交或传入 `advance_world_revision=False` / 运行期租约任务时，由外层 `PulseWorker` 统一推进一次 `world_instances.revision`；
+   - 提供 `apply_pulse_proposal_in_worker` 与 `build_npc_pulse_callbacks` 供 DeepSeekHarness 直接挂载。
+4. 保留地点、状态和行动历史，提供 `check_npc_accessibility`、`list_contactable_npcs` 与 `build_adventure_narration_npc_context`，
+   让查证入口（`encounters`）和下一回合叙事共用同一份权威人物状态。
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import copy
 import json
 import sqlite3
@@ -36,6 +42,7 @@ from .errors import (
 from .schema import ensure_npcs_schema
 from .types import (
     DepthBudget,
+    NPC_ACTION_KIND_LABELS_ZH,
     NPC_ACTION_KINDS,
     NPC_AVAILABILITY_STATES,
     NPC_DEPTH_TIER_ALIASES,
@@ -51,8 +58,11 @@ from .types import (
 from .validator import (
     _require_non_empty_str,
     _require_strict_int,
+    _safe_u16_truncate,
     evaluate_npc_depths,
+    normalize_action_kind,
     normalize_depth_tier,
+    normalize_initial_npc_seed_proposal,
     validate_proposal,
 )
 
@@ -137,6 +147,36 @@ def _get_instance_row(
     }
 
 
+def _resolve_instance_player_location(
+    conn: sqlite3.Connection,
+    inst_row: Mapping[str, Any],
+    explicit_location: str | None = None,
+) -> str:
+    if explicit_location and str(explicit_location).strip():
+        return str(explicit_location).strip()
+    adv_id = inst_row.get("adventure_id")
+    if adv_id:
+        tables = {
+            str(r[0])
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "adventures" in tables:
+            adv_cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(adventures)").fetchall()}
+            if "character_json" in adv_cols:
+                row = conn.execute(
+                    "SELECT character_json FROM adventures WHERE id = ?",
+                    (str(adv_id),),
+                ).fetchone()
+                if row and row[0]:
+                    try:
+                        c_data = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                        if isinstance(c_data, Mapping) and str(c_data.get("location") or "").strip():
+                            return str(c_data["location"]).strip()
+                    except Exception:
+                        pass
+    return "霜木镇"
+
+
 def _row_to_npc_dict(
     row: sqlite3.Row | tuple[Any, ...],
     tasks_by_npc: dict[str, list[dict[str, Any]]] | None = None,
@@ -212,6 +252,7 @@ def _row_to_npc_dict(
     next_due = int(d["next_due_minute"]) if d["next_due_minute"] is not None else None
     tier = str(d["depth_tier"] or "background")
     npc_id = str(d["npc_id"])
+    action_meta = json.loads(d.get("action_meta_json") or "{}")
     record: dict[str, Any] = {
         "instance_id": str(d["instance_id"]),
         "npc_id": npc_id,
@@ -239,7 +280,7 @@ def _row_to_npc_dict(
         "cause_event_ids": json.loads(d.get("cause_event_ids_json") or "[]"),
         "cause_fact_ids": json.loads(d.get("cause_fact_ids_json") or "[]"),
         "source_ids": json.loads(d.get("source_ids_json") or "[]"),
-        "action_meta": json.loads(d.get("action_meta_json") or "{}"),
+        "action_meta": action_meta,
         "status": str(d.get("status") or "active"),
         "created_minute": int(d["created_minute"]),
         "updated_minute": int(d["updated_minute"]),
@@ -296,7 +337,7 @@ def _discover_instance_events(
     instance_id: str,
     world_minute: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], frozenset[str]]:
-    """从同库 `world_events`、`m3_knowledge_event_stubs` 或 `m3_npc_event_stubs` 读取本实例已存在事件。"""
+    """从同库 `world_events`、`m3_knowledge_event_stubs`、`m3_npc_event_stubs` 或 `m3_pulse_fake_events` 读取本实例已存在事件。"""
     tables = {
         str(r[0])
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -367,6 +408,39 @@ def _discover_instance_events(
                     },
                 )
 
+    if "m3_pulse_fake_events" in tables:
+        rows = conn.execute(
+            """
+            SELECT event_id, kind, title, description, location, scope,
+                   stage, status, created_minute, updated_minute,
+                   next_update_minute, revision
+            FROM m3_pulse_fake_events
+            WHERE instance_id = ?
+            ORDER BY created_minute ASC, event_id ASC
+            """,
+            (instance_id,),
+        ).fetchall()
+        for r in rows:
+            eid = str(r[0])
+            events_by_id.setdefault(
+                eid,
+                {
+                    "event_id": eid,
+                    "kind": str(r[1]),
+                    "title": str(r[2]),
+                    "description": str(r[3]),
+                    "location": str(r[4]),
+                    "scope": str(r[5]),
+                    "participants": [],
+                    "stage": str(r[6]),
+                    "status": str(r[7]),
+                    "created_minute": int(r[8]),
+                    "updated_minute": int(r[9]),
+                    "next_update_minute": int(r[10]) if r[10] is not None else None,
+                    "revision": int(r[11]),
+                },
+            )
+
     all_events = list(events_by_id.values())
     active_events = [ev for ev in all_events if ev.get("status") == "active"]
     due_events = [
@@ -381,7 +455,7 @@ def _discover_instance_facts(
     conn: sqlite3.Connection,
     instance_id: str,
 ) -> tuple[dict[str, frozenset[str]], frozenset[str]]:
-    """读取本实例内各 NPC 已获知的事实 ID（兼容 `m3_knowledge_facts` 与独立 `m3_npc_knowledge_stubs`）。"""
+    """读取本实例内各 NPC 已获知的事实 ID（兼容 `m3_knowledge_facts`、`m3_npc_knowledge_stubs` 与 `m3_encounter_knowledge_stubs`）。"""
     tables = {
         str(r[0])
         for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
@@ -389,7 +463,7 @@ def _discover_instance_facts(
     by_holder: dict[str, set[str]] = {}
     all_facts: set[str] = set()
 
-    for tbl in ("m3_knowledge_facts", "m3_npc_knowledge_stubs"):
+    for tbl in ("m3_knowledge_facts", "m3_npc_knowledge_stubs", "m3_encounter_knowledge_stubs"):
         if tbl in tables:
             rows = conn.execute(
                 f"""
@@ -446,6 +520,13 @@ def _discover_canon_source_ids(conn: sqlite3.Connection, world_id: str) -> froze
         ).fetchall()
         for r in rows:
             allowed.add(f"entry:{r[0]}")
+    if "m3_pulse_fake_sources" in tables:
+        rows = conn.execute(
+            "SELECT source_id FROM m3_pulse_fake_sources WHERE world_id = ?",
+            (world_id,),
+        ).fetchall()
+        for r in rows:
+            allowed.add(str(r[0]))
     return frozenset(allowed)
 
 
@@ -765,14 +846,10 @@ def check_npc_accessibility(
     instance_id: str,
     npc_id: str,
     *,
-    player_location: str,
+    player_location: str | None = None,
     world_minute: int | None = None,
 ) -> dict[str, Any]:
-    """供 Ma 玩家主动查证/交谈模块（`encounters`）调用的只读 NPC 可接触性核验边界。
-
-    核对实例、地点、行程状态（是否途中离开 `in_transit`、是否已前往其它地点、是否下班 `off_duty`）与已确认世界时间，
-    返回结构化可接触性结果（不含隐藏事件或未获知事实）。
-    """
+    """供 Ma 玩家主动查证/交谈模块（`encounters`）及下一回合叙事调用的只读 NPC 可接触性核验边界。"""
     inst = _get_instance_row(conn, instance_id, read_only=True)
     confirmed_min = int(inst["world_minute"])
     if world_minute is not None:
@@ -786,7 +863,8 @@ def check_npc_accessibility(
     else:
         req_min = confirmed_min
 
-    clean_player_loc = _require_non_empty_str(player_location, "player_location", 100)
+    resolved_loc = _resolve_instance_player_location(conn, inst, player_location)
+    clean_player_loc = _require_non_empty_str(resolved_loc, "player_location", 100)
     rows = conn.execute(
         """
         SELECT instance_id, npc_id, name, role, faction, home_location, location,
@@ -823,7 +901,7 @@ def check_npc_accessibility(
         contactable = False
         reason_code = "NPC_INACTIVE"
         reason_msg = f"{npc['name']}当前不在活跃状态。"
-    elif avail == "in_transit" and npc["origin_location"] == clean_player_loc:
+    elif avail == "in_transit" and npc["origin_location"] == clean_player_loc and npc_loc != clean_player_loc:
         contactable = False
         reason_code = "NPC_DEPARTED_IN_TRANSIT"
         reason_msg = f"{npc['name']}已离开{clean_player_loc}，正在前往{npc['destination_location'] or npc_loc}途中。"
@@ -859,6 +937,7 @@ def check_npc_accessibility(
         "accessible": contactable,
         "availability": avail,
         "shift_name": npc["shift_name"],
+        "goal": npc["goal"],
         "current_activity": npc["current_activity"],
         "current_action_kind": npc["current_action_kind"],
         "next_due_minute": npc["next_due_minute"],
@@ -872,14 +951,15 @@ def list_contactable_npcs(
     conn: sqlite3.Connection,
     instance_id: str,
     *,
-    player_location: str,
+    player_location: str | None = None,
     world_minute: int | None = None,
     include_unavailable_at_location: bool = False,
 ) -> dict[str, Any]:
     """供 Ma 玩家主动查证/交谈模块列出当前地点可接触的 NPC 列表。"""
     inst = _get_instance_row(conn, instance_id, read_only=True)
     confirmed_min = int(inst["world_minute"]) if world_minute is None else _require_strict_int(world_minute, "world_minute", min_value=0)
-    clean_loc = _require_non_empty_str(player_location, "player_location", 100)
+    resolved_loc = _resolve_instance_player_location(conn, inst, player_location)
+    clean_loc = _require_non_empty_str(resolved_loc, "player_location", 100)
     all_npcs = list_npcs(conn, instance_id, status="active", limit=100)["items"]
 
     contactable_items: list[dict[str, Any]] = []
@@ -913,23 +993,86 @@ def list_contactable_npcs(
     }
 
 
+def build_adventure_narration_npc_context(
+    conn: sqlite3.Connection,
+    adventure_or_instance_id: str,
+    *,
+    player_location: str | None = None,
+    world_minute: int | None = None,
+    max_chars: int = 600,
+    action: str = "",
+) -> dict[str, Any]:
+    """构建供下一回合自由行动叙事与查证共享的同地 NPC 状态摘要上下文。"""
+    ensure_npcs_schema(conn)
+    target = _require_non_empty_str(adventure_or_instance_id, "adventure_or_instance_id", 120)
+    row = conn.execute(
+        """
+        SELECT id, world_id, adventure_id, world_minute, revision
+        FROM world_instances
+        WHERE id = ? OR adventure_id = ?
+        ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END
+        LIMIT 1
+        """,
+        (target, target, target),
+    ).fetchone()
+    if row is None:
+        return {
+            "instance_id": "",
+            "player_location": player_location or "",
+            "world_minute": 0,
+            "present_npcs": [],
+            "departed_npcs": [],
+            "prompt_block": "",
+        }
+
+    inst_id = str(row[0])
+    contact_bundle = list_contactable_npcs(
+        conn,
+        inst_id,
+        player_location=player_location,
+        world_minute=world_minute,
+        include_unavailable_at_location=True,
+    )
+    loc = contact_bundle["player_location"]
+    present = contact_bundle["items"]
+    unavailable = contact_bundle["unavailable_items"]
+
+    lines: list[str] = []
+    for p in present:
+        kind_zh = NPC_ACTION_KIND_LABELS_ZH.get(p["current_action_kind"], p["current_action_kind"])
+        shift_part = f"（{p['shift_name']}）" if p.get("shift_name") else ""
+        lines.append(f"- 在场：{p['name']}（{p['role']}）{shift_part}正在{p['current_activity']} [{kind_zh}]")
+
+    for u in unavailable:
+        if u["reason_code"] in ("NPC_DEPARTED_IN_TRANSIT", "NPC_AT_DIFFERENT_LOCATION") and u["name"] in action:
+            lines.append(f"- 不在场：{u['name']}（{u['role']}）当前不在{loc}。")
+        elif u["reason_code"] == "NPC_OFF_DUTY":
+            lines.append(f"- 歇业中：{u['name']}（{u['role']}）当前{u.get('shift_name') or '休息中'}，暂不待客。")
+
+    raw_block = "\n".join(lines)
+    prompt_block = _safe_u16_truncate(raw_block, max_chars) if raw_block else ""
+    return {
+        "instance_id": inst_id,
+        "player_location": loc,
+        "world_minute": contact_bundle["world_minute"],
+        "present_npcs": present,
+        "departed_npcs": unavailable,
+        "prompt_block": prompt_block,
+    }
+
+
 def read_snapshot(
     conn: sqlite3.Connection,
     instance_id: str,
     job: Mapping[str, Any] | None = None,
     *,
     mode: str | None = None,
-    player_location: str = "霜木镇",
+    player_location: str | None = None,
     focus_npc_ids: list[str] | tuple[str, ...] = (),
     budget: DepthBudget | None = None,
     fallback_sources: list[Mapping[str, Any]] | tuple[Any, ...] | None = None,
 ) -> dict[str, Any]:
-    """只读选取接口：读取已确认实例时间与版本、按三档模拟深度评估 NPC 并按预算挑选到期 NPC。
-
-    - 若 `job` 指定了超过已确认 `world_minute` 的 `target_world_minute`，返回 `status='skipped', skip=True, reason_code='DUE_TIME_EXCEEDS_CONFIRMED_MINUTE'`；
-    - 若在 `advance` 模式下当前无任何到期活跃 NPC（`due_npcs` 为空），返回 `status='skipped', skip=True, reason_code='NO_DUE_NPCS'`（无到期不变更）；
-    - 绝不修改数据库状态或推进时间。
-    """
+    """只读选取接口：读取已确认实例时间与版本、按三档模拟深度评估 NPC 并按预算挑选到期 NPC。"""
     inst = _get_instance_row(conn, instance_id, read_only=True)
     confirmed_minute = int(inst["world_minute"])
     world_revision = int(inst["revision"])
@@ -970,10 +1113,19 @@ def read_snapshot(
                 "budget": (budget or DepthBudget()).to_dict(),
             }
 
-    if isinstance(job_map.get("player_location"), str) and job_map["player_location"].strip():
-        player_location = job_map["player_location"].strip()
+    payload_map = job_map.get("payload") if isinstance(job_map.get("payload"), Mapping) else {}
+    raw_loc = (
+        player_location
+        or job_map.get("player_location")
+        or payload_map.get("player_location")
+    )
+    resolved_player_location = _resolve_instance_player_location(
+        conn, inst, str(raw_loc).strip() if isinstance(raw_loc, str) and raw_loc.strip() else None
+    )
     if isinstance(job_map.get("focus_npc_ids"), (list, tuple)):
         focus_npc_ids = list(job_map["focus_npc_ids"])
+    elif isinstance(payload_map.get("focus_npc_ids"), (list, tuple)):
+        focus_npc_ids = list(payload_map["focus_npc_ids"])
 
     tasks_by_npc, tasks_by_key = _load_tasks_map(conn, instance_id)
     npc_rows = conn.execute(
@@ -1017,7 +1169,7 @@ def read_snapshot(
     depth_result = evaluate_npc_depths(
         all_npcs,
         world_minute=confirmed_minute,
-        player_location=player_location,
+        player_location=resolved_player_location,
         due_events=due_events,
         active_events=active_events,
         focus_npc_ids=focus_npc_ids,
@@ -1044,7 +1196,7 @@ def read_snapshot(
             "world_revision": world_revision,
             "base_world_revision": world_revision,
             "revision": world_revision,
-            "player_location": player_location,
+            "player_location": resolved_player_location,
             "status": "skipped",
             "skip": True,
             "blocked": False,
@@ -1075,7 +1227,7 @@ def read_snapshot(
         "world_revision": world_revision,
         "base_world_revision": world_revision,
         "revision": world_revision,
-        "player_location": player_location,
+        "player_location": resolved_player_location,
         "status": "ready",
         "skip": False,
         "blocked": False,
@@ -1107,18 +1259,12 @@ def apply_proposal(
     proposal: ValidatedNpcProposal | Mapping[str, Any],
     job: Mapping[str, Any] | None = None,
     *,
-    player_location: str = "霜木镇",
+    player_location: str | None = None,
     allowed_source_ids: list[str] | tuple[str, ...] | set[str] | frozenset[str] | None = None,
     enforce_tier_interval: bool = True,
+    advance_world_revision: bool | None = None,
 ) -> dict[str, Any]:
-    """在调用方事务内（使用 `SAVEPOINT`）原子应用 NPC 提议。
-
-    - 绝不主动调用 `conn.commit()`；
-    - 在 `SAVEPOINT` 内实时复核数据库当前 `world_instances.revision`、已确认 `world_minute`、
-      NPC `revision`、到期时间、实例内因果引用与重复任务；
-    - 任何一步校验失败立即 `ROLLBACK TO SAVEPOINT`，不产生半笔状态；
-    - 支持基于 `job_id` / `idempotency_key` 的幂等重放保护。
-    """
+    """在调用方事务内（使用 `SAVEPOINT`）原子应用 NPC 提议。"""
     ensure_npcs_schema(conn)
     savepoint_name = f"sp_m3_npcs_apply_{uuid4().hex[:10]}"
     conn.execute(f"SAVEPOINT {savepoint_name}")
@@ -1129,10 +1275,42 @@ def apply_proposal(
         world_id = str(inst["world_id"] or "")
 
         job_map = job if isinstance(job, Mapping) else {}
-        if isinstance(job_map.get("player_location"), str) and job_map["player_location"].strip():
-            player_location = job_map["player_location"].strip()
+        payload_map = job_map.get("payload") if isinstance(job_map.get("payload"), Mapping) else {}
+        raw_loc = (
+            player_location
+            or job_map.get("player_location")
+            or payload_map.get("player_location")
+        )
+        resolved_player_location = _resolve_instance_player_location(
+            conn, inst, str(raw_loc).strip() if isinstance(raw_loc, str) and raw_loc.strip() else None
+        )
 
-        # 核对 job 的 base_world_revision 与 target_world_minute
+        # 1. 优先检查任务幂等重放
+        raw_idem_key = ""
+        if isinstance(proposal, ValidatedNpcProposal):
+            raw_idem_key = proposal.idempotency_key
+        elif isinstance(proposal, Mapping):
+            raw_idem_key = str(proposal.get("idempotency_key") or proposal.get("job_id") or "").strip()
+        if not raw_idem_key and job_map.get("job_id"):
+            raw_idem_key = str(job_map["job_id"]).strip()
+        if not raw_idem_key and job_map.get("idempotency_key"):
+            raw_idem_key = str(job_map["idempotency_key"]).strip()
+
+        if raw_idem_key:
+            applied_row = conn.execute(
+                """
+                SELECT result_json FROM m3_npc_applied_jobs
+                WHERE instance_id = ? AND idempotency_key = ?
+                """,
+                (instance_id, raw_idem_key),
+            ).fetchone()
+            if applied_row is not None:
+                cached = json.loads(applied_row[0])
+                cached["idempotent_replay"] = True
+                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+                return cached
+
+        # 2. 核对 job 的 base_world_revision 与 target_world_minute
         job_base_rev = job_map.get("base_world_revision")
         if job_base_rev is not None:
             expected_world_rev = _require_strict_int(job_base_rev, "job.base_world_revision", min_value=0)
@@ -1149,30 +1327,17 @@ def apply_proposal(
                     {"expected_world_minute": confirmed_minute, "job_target_world_minute": expected_min},
                 )
 
-        # 检查任务幂等重放（重复任务 / 重放保护）
-        raw_idem_key = ""
-        if isinstance(proposal, ValidatedNpcProposal):
-            raw_idem_key = proposal.idempotency_key
-        elif isinstance(proposal, Mapping):
-            raw_idem_key = str(proposal.get("idempotency_key") or proposal.get("job_id") or "").strip()
-        if not raw_idem_key and job_map.get("job_id"):
-            raw_idem_key = str(job_map["job_id"]).strip()
+        # 3. 判定是否由本函数直接推进 world_instances.revision
+        if advance_world_revision is not None:
+            should_advance_world_rev = bool(advance_world_revision)
+        elif isinstance(job_map.get("advance_world_revision"), bool):
+            should_advance_world_rev = bool(job_map["advance_world_revision"])
+        elif bool(job_map.get("lease_token")) and str(job_map.get("status") or "") == "running":
+            should_advance_world_rev = False
+        else:
+            should_advance_world_rev = True
 
-        if raw_idem_key:
-            applied_row = conn.execute(
-                """
-                SELECT result_json FROM m3_npc_applied_jobs
-                WHERE instance_id = ? AND idempotency_key = ?
-                """,
-                (instance_id, raw_idem_key),
-            ).fetchone()
-            if applied_row is not None:
-                cached = json.loads(applied_row[0])
-                cached["idempotent_replay"] = True
-                conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
-                return cached
-
-        # 从数据库实时加载最新状态构造校验上下文，执行二次完整核验
+        # 4. 从数据库实时加载最新状态构造校验上下文，执行二次完整核验
         tasks_by_npc, tasks_by_key = _load_tasks_map(conn, instance_id)
         npc_rows = conn.execute(
             """
@@ -1208,7 +1373,7 @@ def apply_proposal(
         depth_eval = evaluate_npc_depths(
             all_npcs,
             world_minute=confirmed_minute,
-            player_location=player_location,
+            player_location=resolved_player_location,
             due_events=due_events,
             active_events=active_events,
         )
@@ -1246,7 +1411,6 @@ def apply_proposal(
         )
 
         if isinstance(proposal, ValidatedNpcProposal):
-            # 将已校验对象转为字典在最新 DB 上下文下二次校验，确保事务外到事务内期间无状态漂移
             raw_recheck: dict[str, Any] = {
                 "instance_id": proposal.instance_id,
                 "mode": proposal.mode,
@@ -1269,6 +1433,8 @@ def apply_proposal(
                         "action_kind": op.action_kind,
                         "motivation": op.motivation,
                         "goal": op.goal,
+                        "previous_plan": op.previous_plan,
+                        "new_plan": op.new_plan,
                         "depth_tier": op.depth_tier,
                         "depth_reason": op.depth_reason,
                         "status": op.status,
@@ -1290,6 +1456,8 @@ def apply_proposal(
                         "cause_fact_ids": list(op.cause_fact_ids),
                         "source_ids": list(op.source_ids),
                         "reason": op.reason,
+                        "grounding": op.grounding,
+                        "relationships": list(op.relationships),
                     }
                     for op in proposal.operations
                 ],
@@ -1300,9 +1468,8 @@ def apply_proposal(
         else:
             validated = validate_proposal(proposal, db_ctx)
 
-        # 若 Advance 模式下无操作（例如无到期 NPC），保持零写入直接返回
         if not validated.operations:
-            empty_res = {
+            empty_res: dict[str, Any] = {
                 "instance_id": instance_id,
                 "world_minute": confirmed_minute,
                 "world_revision": current_world_rev,
@@ -1312,7 +1479,23 @@ def apply_proposal(
                 "updated_task_ids": [],
                 "npcs": [],
                 "idempotent_replay": False,
+                "world_revision_advanced": False,
             }
+            if raw_idem_key:
+                conn.execute(
+                    """
+                    INSERT INTO m3_npc_applied_jobs (
+                        instance_id, idempotency_key, world_minute, world_revision, result_json
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        instance_id,
+                        raw_idem_key,
+                        confirmed_minute,
+                        current_world_rev,
+                        json.dumps(empty_res, ensure_ascii=False),
+                    ),
+                )
             conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
             return empty_res
 
@@ -1339,14 +1522,39 @@ def apply_proposal(
                 else (op.depth_reason or "初始化分级")
             )
 
+            prev_meta: dict[str, Any] = {}
+            if op.op == "act" and op.npc_id in existing_npcs_map:
+                raw_prev_meta = existing_npcs_map[op.npc_id].get("action_meta")
+                if isinstance(raw_prev_meta, Mapping):
+                    prev_meta = dict(raw_prev_meta)
+
             action_meta: dict[str, Any] = {
+                **prev_meta,
                 "duration_minutes": op.duration_minutes,
+                "grounding": op.grounding if op.op == "seed_npc" else prev_meta.get("grounding", op.grounding),
             }
+            if op.relationships:
+                action_meta["relationships"] = list(op.relationships)
+
             if op.action_kind == "travel":
                 action_meta.update(
                     {
                         "from_location": op.from_location,
                         "to_location": op.to_location,
+                    }
+                )
+            elif op.action_kind in ("stay", "wait", "no_change"):
+                action_meta.update(
+                    {
+                        "decision": op.action_kind,
+                        "location": op.location,
+                    }
+                )
+            elif op.action_kind == "plan_change":
+                action_meta.update(
+                    {
+                        "previous_plan": op.previous_plan,
+                        "new_plan": op.new_plan,
                     }
                 )
             elif op.action_kind == "conversation_plan":
@@ -1433,7 +1641,7 @@ def apply_proposal(
             else:
                 prev_npc = existing_npcs_map[op.npc_id]
                 new_rev = int(prev_npc["revision"]) + 1
-                origin_loc = op.from_location if op.action_kind == "travel" else prev_npc["location"]
+                origin_loc = op.from_location if op.action_kind == "travel" else op.location
                 dest_loc = op.to_location if op.action_kind == "travel" else ""
                 cur = conn.execute(
                     """
@@ -1509,8 +1717,7 @@ def apply_proposal(
                     )
                 updated_npc_ids.append(op.npc_id)
 
-            # 若为 task_progress，更新或插入 m3_npc_tasks
-            if op.action_kind == "task_progress" and op.task_id:
+            if op.task_id and op.task_stage:
                 existing_task = tasks_by_key.get((op.npc_id, op.task_id))
                 if existing_task is None:
                     conn.execute(
@@ -1603,7 +1810,6 @@ def apply_proposal(
                 ),
             )
 
-        # 刷新尚未在本次操作列表中但模拟深度发生变化的活跃 NPC 的 depth_tier 与 depth_reason
         touched_ids = set(created_npc_ids) | set(updated_npc_ids)
         for ev_item in depth_eval["evaluations"]:
             if ev_item.npc_id not in touched_ids and ev_item.transition != "unchanged":
@@ -1616,12 +1822,16 @@ def apply_proposal(
                     (ev_item.current_tier, ev_item.reason_summary, instance_id, ev_item.npc_id),
                 )
 
-        # 推进实例世界版本（world_instances.revision）
-        conn.execute(
-            "UPDATE world_instances SET revision = revision + 1 WHERE id = ?",
-            (instance_id,),
-        )
-        new_world_rev = current_world_rev + 1
+        if should_advance_world_rev:
+            cur_w = conn.execute(
+                "UPDATE world_instances SET revision = revision + 1 WHERE id = ? AND revision = ?",
+                (instance_id, current_world_rev),
+            )
+            if cur_w.rowcount != 1:
+                raise WorldRevisionConflictError(instance_id, current_world_rev, current_world_rev + 1)
+            new_world_rev = current_world_rev + 1
+        else:
+            new_world_rev = current_world_rev + 1
 
         updated_npcs = [
             get_npc(conn, instance_id, nid)
@@ -1632,6 +1842,8 @@ def apply_proposal(
             "instance_id": instance_id,
             "world_minute": confirmed_minute,
             "world_revision": new_world_rev,
+            "pre_commit_world_revision": current_world_rev,
+            "world_revision_advanced": should_advance_world_rev,
             "applied_operations": len(validated.operations),
             "created_npc_ids": created_npc_ids,
             "updated_npc_ids": updated_npc_ids,
@@ -1665,6 +1877,428 @@ def apply_proposal(
 
 
 apply_pulse_proposal = apply_proposal
+
+
+def apply_pulse_proposal_in_worker(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    proposal: ValidatedNpcProposal | Mapping[str, Any],
+    job: Mapping[str, Any] | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """供 `PulseWorker` 或组合提交器在 `SAVEPOINT` 内调用的专用入口（强制 `advance_world_revision=False`）。"""
+    kwargs["advance_world_revision"] = False
+    return apply_proposal(conn, instance_id, proposal, job, **kwargs)
+
+
+def seed_npcs_from_initialization(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    init_payload: Any,
+    *,
+    world_minute: int | None = None,
+    allowed_source_ids: list[str] | tuple[str, ...] | set[str] | frozenset[str] | None = None,
+    player_location: str | None = None,
+    advance_world_revision: bool = True,
+    idempotency_key: str = "",
+) -> dict[str, Any]:
+    """从 AI 世界初始化分析（`world_analysis` / 开局确认草案）接收人物状态并写入 NPC 账本。"""
+    ensure_npcs_schema(conn)
+    inst = _get_instance_row(conn, instance_id)
+    confirmed_min = int(inst["world_minute"]) if world_minute is None else _require_strict_int(world_minute, "world_minute", min_value=0)
+    current_rev = int(inst["revision"])
+
+    default_sources = list(allowed_source_ids or _discover_canon_source_ids(conn, str(inst["world_id"] or "")))
+    seed_proposal = normalize_initial_npc_seed_proposal(
+        init_payload,
+        instance_id=instance_id,
+        world_minute=confirmed_min,
+        base_world_revision=current_rev,
+        default_source_ids=default_sources,
+        idempotency_key=idempotency_key,
+    )
+
+    savepoint_name = f"sp_m3_npcs_init_{uuid4().hex[:10]}"
+    conn.execute(f"SAVEPOINT {savepoint_name}")
+    try:
+        if isinstance(init_payload, Mapping):
+            for ev in init_payload.get("initial_events") or ():
+                if isinstance(ev, Mapping) and ev.get("event_id") and ev.get("title"):
+                    register_event_stub(
+                        conn,
+                        instance_id,
+                        str(ev["event_id"]),
+                        title=str(ev["title"]),
+                        description=str(ev.get("description") or ""),
+                        location=str(ev.get("location") or player_location or "霜木镇"),
+                        scope=str(ev.get("scope") or "local"),
+                        kind=str(ev.get("kind") or "thread"),
+                        participants=list(ev.get("participants") or ()),
+                        stage=str(ev.get("stage") or "active"),
+                        status=str(ev.get("status") or "active"),
+                        created_minute=confirmed_min,
+                        updated_minute=confirmed_min,
+                        next_update_minute=ev.get("next_update_minute"),
+                    )
+            for fact in (init_payload.get("initial_facts") or init_payload.get("npc_facts") or ()):
+                if isinstance(fact, Mapping) and fact.get("fact_id") and fact.get("holder_id"):
+                    register_knowledge_stub(
+                        conn,
+                        instance_id,
+                        str(fact["fact_id"]),
+                        holder_id=str(fact["holder_id"]),
+                        title=str(fact.get("title") or ""),
+                        content=str(fact.get("content") or ""),
+                        source_event_id=str(fact.get("source_event_id") or ""),
+                        knowledge_type=str(fact.get("knowledge_type") or "confirmed"),
+                        learned_minute=int(fact.get("learned_minute", confirmed_min)),
+                    )
+
+        applied = apply_proposal(
+            conn,
+            instance_id,
+            seed_proposal,
+            player_location=player_location,
+            allowed_source_ids=allowed_source_ids,
+            advance_world_revision=advance_world_revision,
+        )
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        return applied
+    except Exception:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint_name}")
+        conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
+        raise
+
+
+initialize_npcs_from_draft = seed_npcs_from_initialization
+
+
+def _is_npc_operation(op: Mapping[str, Any]) -> bool:
+    op_kind = str(op.get("op") or "").strip()
+    if op_kind in ("seed_npc", "act"):
+        return True
+    if "npc_id" in op and op_kind not in ("create", "update"):
+        return True
+    return False
+
+
+def _compact_npc_for_pulse_snapshot(npc: Mapping[str, Any]) -> dict[str, Any]:
+    """裁剪供 PulseWorker 快照与纯校验使用的紧凑 NPC 字典，避免冗余大字段挤占单轮 Token 预算预留。"""
+    out: dict[str, Any] = {
+        "npc_id": npc["npc_id"],
+        "name": npc["name"],
+        "role": npc["role"],
+        "location": npc["location"],
+        "current_activity": npc["current_activity"],
+        "current_action_kind": npc["current_action_kind"],
+        "motivation": npc["motivation"],
+        "goal": npc.get("goal", ""),
+        "depth_tier": npc["depth_tier"],
+        "shift_name": npc.get("shift_name", ""),
+        "availability": npc.get("availability", "available"),
+        "status": npc.get("status", "active"),
+        "next_due_minute": npc.get("next_due_minute"),
+        "revision": npc["revision"],
+        "cause_event_ids": list(npc.get("cause_event_ids") or ()),
+        "cause_fact_ids": list(npc.get("cause_fact_ids") or ()),
+        "source_ids": list(npc.get("source_ids") or ()),
+    }
+    if npc.get("prompt_excerpt"):
+        out["prompt_excerpt"] = npc["prompt_excerpt"]
+    if npc.get("tasks"):
+        out["tasks"] = [
+            {
+                "npc_id": t["npc_id"],
+                "task_id": t["task_id"],
+                "title": t["title"],
+                "stage": t["stage"],
+                "progress_percent": t["progress_percent"],
+                "status": t["status"],
+            }
+            for t in npc["tasks"]
+            if isinstance(t, Mapping)
+        ]
+    return out
+
+
+def build_npc_pulse_callbacks(
+    *,
+    events_snapshot_reader: Callable[[sqlite3.Connection, str, dict[str, Any]], dict[str, Any]] | None = None,
+    events_validator: Callable[[dict[str, Any], dict[str, Any]], Any] | None = None,
+    events_applier: Callable[[sqlite3.Connection, str, Any, dict[str, Any]], dict[str, Any] | None] | None = None,
+    knowledge_validator: Callable[[list[dict[str, Any]], dict[str, Any]], Any] | None = None,
+    knowledge_applier: Callable[[sqlite3.Connection, str, Any, dict[str, Any]], Any] | None = None,
+    player_location_resolver: Callable[[sqlite3.Connection, str], str] | None = None,
+    budget: DepthBudget | None = None,
+) -> tuple[
+    Callable[[sqlite3.Connection, str, dict[str, Any]], dict[str, Any]],
+    Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
+    Callable[[sqlite3.Connection, str, Any, dict[str, Any]], dict[str, Any]],
+]:
+    """构建可供 `PulseWorker` 直接挂载的 `(snapshot_reader, proposal_validator, proposal_applier)` 三阶段回调。"""
+
+    def _snapshot_reader(
+        conn: sqlite3.Connection,
+        instance_id: str,
+        job: dict[str, Any],
+    ) -> dict[str, Any]:
+        player_loc = (
+            player_location_resolver(conn, instance_id)
+            if player_location_resolver is not None
+            else None
+        )
+        npc_snap = read_snapshot(
+            conn,
+            instance_id,
+            job,
+            player_location=player_loc,
+            budget=budget,
+        )
+        compact_due_npcs = [_compact_npc_for_pulse_snapshot(n) for n in (npc_snap.get("due_npcs") or ())]
+        due_npc_ids = {n["npc_id"] for n in compact_due_npcs}
+        compact_other_npcs = {
+            nid: _compact_npc_for_pulse_snapshot(n)
+            for nid, n in (npc_snap.get("existing_npcs") or {}).items()
+            if nid not in due_npc_ids
+        }
+        compact_tasks = {
+            k: {
+                "npc_id": v["npc_id"],
+                "task_id": v["task_id"],
+                "title": v["title"],
+                "stage": v["stage"],
+                "progress_percent": v["progress_percent"],
+                "status": v["status"],
+            }
+            for k, v in (npc_snap.get("existing_tasks") or {}).items()
+            if isinstance(v, Mapping)
+        }
+
+        if events_snapshot_reader is None:
+            if npc_snap.get("skip"):
+                return {
+                    "instance_id": instance_id,
+                    "world_id": npc_snap["world_id"],
+                    "mode": npc_snap["mode"],
+                    "kind": npc_snap["kind"],
+                    "world_minute": npc_snap["world_minute"],
+                    "target_world_minute": npc_snap["target_world_minute"],
+                    "world_revision": npc_snap["world_revision"],
+                    "base_world_revision": npc_snap["base_world_revision"],
+                    "player_location": npc_snap.get("player_location", ""),
+                    "status": "skipped",
+                    "skip": True,
+                    "reason_code": npc_snap.get("reason_code", "NO_DUE_NPCS"),
+                    "due_npcs": [],
+                }
+            return {
+                "instance_id": instance_id,
+                "world_id": npc_snap["world_id"],
+                "mode": npc_snap["mode"],
+                "kind": npc_snap["kind"],
+                "world_minute": npc_snap["world_minute"],
+                "target_world_minute": npc_snap["target_world_minute"],
+                "world_revision": npc_snap["world_revision"],
+                "base_world_revision": npc_snap["base_world_revision"],
+                "player_location": npc_snap.get("player_location", ""),
+                "status": "ready",
+                "skip": False,
+                "reason_code": "OK",
+                "due_npcs": compact_due_npcs,
+                "existing_npcs": compact_other_npcs,
+                "existing_tasks": compact_tasks,
+                "due_events": [
+                    {
+                        "event_id": ev["event_id"],
+                        "title": ev["title"],
+                        "location": ev["location"],
+                        "stage": ev["stage"],
+                        "status": ev["status"],
+                    }
+                    for ev in (npc_snap.get("due_events") or npc_snap.get("active_events") or ())[:4]
+                    if isinstance(ev, Mapping)
+                ],
+                "allowed_event_ids": npc_snap.get("allowed_event_ids", []),
+                "allowed_fact_ids_by_npc": npc_snap.get("allowed_fact_ids_by_npc", {}),
+                "allowed_fact_ids": npc_snap.get("allowed_fact_ids", []),
+                "allowed_source_ids": npc_snap.get("allowed_source_ids", []),
+                "other_instance_ids": npc_snap.get("other_instance_ids", []),
+            }
+
+        ev_snap = dict(events_snapshot_reader(conn, instance_id, job) or {})
+        ev_blocked = bool(ev_snap.get("blocked") or ev_snap.get("status") == "blocked")
+        if ev_blocked:
+            return ev_snap
+
+        ev_skip = bool(
+            ev_snap.get("skip")
+            or ev_snap.get("skipped")
+            or ev_snap.get("status") in ("skip", "skipped")
+            or (job.get("kind") == "advance" and "due_events" in ev_snap and len(ev_snap.get("due_events") or ()) == 0)
+        )
+        npc_skip = bool(npc_snap.get("skip"))
+
+        merged_sources = sorted(
+            set(ev_snap.get("allowed_source_ids") or ())
+            | set(npc_snap.get("allowed_source_ids") or ())
+        )
+        merged_events = sorted(
+            set(ev_snap.get("allowed_event_ids") or ())
+            | set(npc_snap.get("allowed_event_ids") or ())
+            | {
+                str(e["event_id"])
+                for e in (ev_snap.get("due_events") or ())
+                if isinstance(e, Mapping) and e.get("event_id")
+            }
+        )
+
+        # 移除冗余的大体积字段以保持 PulseWorker 预算估算在标准上限以内
+        slim_ev_snap = {
+            k: v
+            for k, v in ev_snap.items()
+            if k not in ("active_events", "all_events", "tier_evaluations")
+        }
+
+        merged = {
+            **slim_ev_snap,
+            "instance_id": instance_id,
+            "job_kind": job.get("kind", "advance"),
+            "mode": job.get("kind", "advance"),
+            "kind": job.get("kind", "advance"),
+            "world_minute": npc_snap["world_minute"],
+            "target_world_minute": npc_snap["target_world_minute"],
+            "world_revision": npc_snap["world_revision"],
+            "base_world_revision": npc_snap["base_world_revision"],
+            "player_location": npc_snap.get("player_location", ""),
+            "due_npcs": compact_due_npcs,
+            "existing_npcs": compact_other_npcs,
+            "existing_tasks": compact_tasks,
+            "allowed_fact_ids_by_npc": npc_snap.get("allowed_fact_ids_by_npc", {}),
+            "allowed_fact_ids": npc_snap.get("allowed_fact_ids", []),
+            "allowed_source_ids": merged_sources,
+            "allowed_event_ids": merged_events,
+            "other_instance_ids": npc_snap.get("other_instance_ids", []),
+        }
+        if ev_skip and npc_skip:
+            merged["skip"] = True
+            merged["status"] = "skipped"
+            merged["reason_code"] = npc_snap.get("reason_code") or ev_snap.get("reason_code") or "NO_DUE_EVENTS_OR_NPCS"
+        else:
+            merged["skip"] = False
+            merged["status"] = "ready"
+            merged["reason_code"] = "OK"
+            if not merged.get("due_events"):
+                merged.pop("due_events", None)
+            if not merged.get("existing_events") and npc_snap.get("active_events"):
+                merged["existing_events"] = {
+                    str(ev["event_id"]): dict(ev)
+                    for ev in (npc_snap.get("active_events") or ())
+                    if isinstance(ev, Mapping) and ev.get("event_id")
+                }
+        return merged
+
+    def _proposal_validator(proposal: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+        raw_ops = proposal.get("operations", [])
+        if not isinstance(raw_ops, list):
+            raise NpcValidationError("VALIDATION_ERROR", "operations 必须为数组。")
+        transmissions = proposal.get("transmissions", []) or []
+
+        npc_ops = [op for op in raw_ops if isinstance(op, Mapping) and _is_npc_operation(op)]
+        event_ops = [op for op in raw_ops if not (isinstance(op, Mapping) and _is_npc_operation(op))]
+
+        validated_events: Any = None
+        if events_validator is not None and (event_ops or (context.get("kind") == "seed" and not npc_ops)):
+            ev_payload: dict[str, Any] = {
+                "instance_id": context["instance_id"],
+                "mode": context.get("kind", "advance"),
+                "operations": event_ops,
+            }
+            if proposal.get("summary"):
+                ev_payload["summary"] = proposal["summary"]
+            validated_events = events_validator(ev_payload, context)
+
+        validated_npcs: ValidatedNpcProposal | None = None
+        if npc_ops or (events_validator is None and context.get("kind") == "seed"):
+            npc_payload: dict[str, Any] = {
+                "instance_id": context["instance_id"],
+                "mode": context.get("kind", "advance"),
+                "world_minute": context.get("target_world_minute", context.get("world_minute", 0)),
+                "base_world_revision": context.get("base_world_revision", context.get("world_revision")),
+                "operations": npc_ops,
+            }
+            if proposal.get("summary"):
+                npc_payload["summary"] = proposal["summary"]
+            npc_ctx = dict(context)
+            npc_ctx["allow_transmissions_envelope"] = True
+            validated_npcs = validate_proposal(npc_payload, npc_ctx)
+            known_events = context.get("snapshot", {}).get("known_event_ids_by_npc")
+            if known_events is not None:
+                for op in validated_npcs.operations:
+                    unknown_events = set(op.cause_event_ids) - set(known_events.get(op.npc_id, ()))
+                    if unknown_events:
+                        raise InvalidCausalReferenceError(
+                            op.npc_id, sorted(unknown_events)[0], code="CAUSAL_EVENT_NOT_KNOWN",
+                            message="人物行动引用了该人物尚未获知的事件。",
+                        )
+
+        validated_transmissions: Any = transmissions
+        if transmissions and knowledge_validator is not None:
+            validated_transmissions = knowledge_validator(transmissions, context)
+
+        return {
+            "kind": context.get("kind", "advance"),
+            "validated_events": validated_events,
+            "validated_npcs": validated_npcs,
+            "validated_transmissions": validated_transmissions,
+            "raw_event_operations": event_ops,
+            "raw_npc_operations": npc_ops,
+            "raw_transmissions": transmissions,
+        }
+
+    def _proposal_applier(
+        conn: sqlite3.Connection,
+        instance_id: str,
+        validated: Any,
+        job: dict[str, Any],
+    ) -> dict[str, Any]:
+        if isinstance(validated, ValidatedNpcProposal):
+            npc_res = apply_pulse_proposal_in_worker(conn, instance_id, validated, job)
+            return {
+                "events": None,
+                "npcs": npc_res,
+                "transmissions": None,
+                "applied_operations": npc_res["applied_operations"],
+            }
+
+        val_dict = validated if isinstance(validated, Mapping) else {}
+        val_events = val_dict.get("validated_events")
+        val_npcs = val_dict.get("validated_npcs")
+        val_trans = val_dict.get("validated_transmissions")
+
+        events_result: dict[str, Any] | None = None
+        if val_events is not None and events_applier is not None:
+            events_result = events_applier(conn, instance_id, val_events, job)
+
+        npcs_result: dict[str, Any] | None = None
+        if val_npcs is not None:
+            npcs_result = apply_pulse_proposal_in_worker(conn, instance_id, val_npcs, job)
+
+        trans_result: Any = None
+        if val_trans and knowledge_applier is not None:
+            trans_result = knowledge_applier(conn, instance_id, val_trans, job)
+
+        total_ops = int((npcs_result or {}).get("applied_operations", 0))
+        if isinstance(events_result, Mapping):
+            total_ops += int(events_result.get("applied_operations") or len(events_result.get("events") or ()))
+
+        return {
+            "events": events_result,
+            "npcs": npcs_result,
+            "transmissions": trans_result,
+            "applied_operations": total_ops,
+        }
+
+    return _snapshot_reader, _proposal_validator, _proposal_applier
 
 
 def snapshot(conn: sqlite3.Connection, instance_id: str) -> dict[str, Any]:
@@ -1736,11 +2370,7 @@ def restore(
     world_id: str | None = None,
     source_id_map: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """将 NPC 快照原子恢复到目标世界实例（同时兼容位置参数 `(conn, target_instance_id, snapshot)`
-    与 `DomainAdapter` 关键字参数 `(conn, snapshot, *, new_instance_id=..., world_id=...)`）。
-
-    全程运行在 `SAVEPOINT` 内，任何损坏或非法数据均完整回滚，不留半个实例。
-    """
+    """将 NPC 快照原子恢复到目标世界实例。"""
     ensure_npcs_schema(conn)
     if isinstance(target_instance_id_or_snapshot, str):
         target_id = target_instance_id_or_snapshot
@@ -1796,7 +2426,6 @@ def restore(
                     "目标实例所属世界与恢复请求不一致。",
                 )
 
-        # 清空目标实例下可能残留的旧 NPC 数据
         conn.execute("DELETE FROM m3_npc_action_log WHERE instance_id = ?", (target_id,))
         conn.execute("DELETE FROM m3_npc_tasks WHERE instance_id = ?", (target_id,))
         conn.execute("DELETE FROM m3_npcs WHERE instance_id = ?", (target_id,))
@@ -1817,13 +2446,16 @@ def restore(
             role = _require_non_empty_str(item.get("role") or item.get("identity"), f"npcs[{idx}].role", 160)
             location = _require_non_empty_str(item.get("location"), f"npcs[{idx}].location", 100)
             activity = _require_non_empty_str(item.get("current_activity"), f"npcs[{idx}].current_activity", 300)
-            action_kind = _require_non_empty_str(
+            raw_act_kind = _require_non_empty_str(
                 item.get("current_action_kind") or item.get("action_kind"),
                 f"npcs[{idx}].current_action_kind",
                 40,
             )
-            if action_kind not in NPC_ACTION_KINDS:
-                raise SnapshotRestoreError("SNAPSHOT_INVALID_ACTION_KIND", f"非法动作类型: {action_kind!r}。")
+            try:
+                action_kind = normalize_action_kind(raw_act_kind, f"npcs[{idx}].current_action_kind")
+            except NpcValidationError as exc:
+                raise SnapshotRestoreError("SNAPSHOT_INVALID_ACTION_KIND", f"非法动作类型: {raw_act_kind!r}。") from exc
+
             motivation = _require_non_empty_str(item.get("motivation"), f"npcs[{idx}].motivation", 360)
             tier = normalize_depth_tier(item.get("depth_tier", "background"), f"npcs[{idx}].depth_tier")
             avail = str(item.get("availability") or "available")
@@ -1952,6 +2584,10 @@ def restore(
             l_sources = _remap_source_ids(log_item.get("source_ids") or [], source_id_map)
             l_events = [str(e) for e in (log_item.get("cause_event_ids") or []) if str(e).strip()]
             l_facts = [str(f) for f in (log_item.get("cause_fact_ids") or []) if str(f).strip()]
+            log_act_kind = normalize_action_kind(
+                str(log_item.get("action_kind") or "task_progress"),
+                f"action_log[{l_idx}].action_kind",
+            )
             conn.execute(
                 """
                 INSERT INTO m3_npc_action_log (
@@ -1968,7 +2604,7 @@ def restore(
                     log_npc_id,
                     _require_strict_int(log_item.get("npc_revision", 1), "log.npc_revision", min_value=1),
                     str(log_item.get("op") or "restore"),
-                    str(log_item.get("action_kind") or "task_progress"),
+                    log_act_kind,
                     str(log_item.get("from_location") or ""),
                     str(log_item.get("to_location") or ""),
                     str(log_item.get("current_activity") or ""),
