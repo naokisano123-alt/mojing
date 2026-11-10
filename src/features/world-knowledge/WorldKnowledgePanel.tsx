@@ -7,6 +7,7 @@ import {
   formatConfidenceLevel,
   formatLearnedTime,
   mergeNewsItems,
+  sanitizeWorldNewsPage,
   worldKnowledgeApi,
 } from './api';
 import type {
@@ -23,6 +24,7 @@ export interface WorldKnowledgePanelProps {
   disabled?: boolean;
   defaultOpen?: boolean;
   pageSize?: number;
+  refreshTrigger?: number | string;
 }
 
 const FILTER_OPTIONS: ReadonlyArray<{ value: KnowledgeType | 'all'; label: string }> = [
@@ -40,6 +42,7 @@ export function WorldKnowledgePanel({
   disabled = false,
   defaultOpen = true,
   pageSize = 30,
+  refreshTrigger,
 }: WorldKnowledgePanelProps) {
   const [items, setItems] = useState<WorldNewsItem[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
@@ -50,6 +53,7 @@ export function WorldKnowledgePanel({
 
   const epochRef = useRef<number>(0);
   const activeControllerRef = useRef<AbortController | null>(null);
+  const lastAdventureIdRef = useRef<string>(adventureId);
 
   const loadInitial = async (targetAdventureId: string) => {
     const generation = ++epochRef.current;
@@ -62,13 +66,14 @@ export function WorldKnowledgePanel({
     setError('');
 
     try {
-      const page = await transport.listWorldNews(targetAdventureId, {
+      const rawPage = await transport.listWorldNews(targetAdventureId, {
         limit: pageSize,
         signal: controller.signal,
       });
       if (epochRef.current !== generation || controller.signal.aborted) return;
-      setItems(Array.isArray(page.items) ? page.items : []);
-      setNextBefore(page.next_before ?? null);
+      const page = sanitizeWorldNewsPage(rawPage);
+      setItems(page.items);
+      setNextBefore(page.next_before);
     } catch (err: unknown) {
       if (epochRef.current !== generation || controller.signal.aborted) return;
       const message =
@@ -86,10 +91,16 @@ export function WorldKnowledgePanel({
   };
 
   useEffect(() => {
-    setItems([]);
-    setNextBefore(null);
-    setFilter('all');
+    const adventureChanged = lastAdventureIdRef.current !== adventureId;
+    lastAdventureIdRef.current = adventureId;
+    if (adventureChanged) {
+      setItems([]);
+      setNextBefore(null);
+      setFilter('all');
+    }
     if (!adventureId.trim()) {
+      setItems([]);
+      setNextBefore(null);
       setLoading(false);
       return;
     }
@@ -99,7 +110,7 @@ export function WorldKnowledgePanel({
       activeControllerRef.current?.abort();
       activeControllerRef.current = null;
     };
-  }, [adventureId, transport, pageSize]);
+  }, [adventureId, transport, pageSize, refreshTrigger]);
 
   const handleLoadMore = async () => {
     if (!nextBefore || loading || loadingMore || disabled) return;
@@ -110,14 +121,15 @@ export function WorldKnowledgePanel({
     setError('');
 
     try {
-      const page = await transport.listWorldNews(adventureId, {
+      const rawPage = await transport.listWorldNews(adventureId, {
         before: nextBefore,
         limit: pageSize,
         signal: controller.signal,
       });
       if (epochRef.current !== generation || controller.signal.aborted) return;
-      setItems(prev => mergeNewsItems(prev, Array.isArray(page.items) ? page.items : []));
-      setNextBefore(page.next_before ?? null);
+      const page = sanitizeWorldNewsPage(rawPage);
+      setItems(prev => mergeNewsItems(prev, page.items));
+      setNextBefore(page.next_before);
     } catch (err: unknown) {
       if (epochRef.current !== generation || controller.signal.aborted) return;
       const message =
