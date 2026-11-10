@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import secrets
 import sqlite3
 import threading
 import time
 from typing import Any
 
+from app.m3.pulse.client import estimate_tokens
 from app.m3.pulse.errors import PulseError, assert_no_credentials
 from app.m3.pulse.queue import _require_instance, cancel_instance_jobs
 from app.m3.pulse.schema import ensure_pulse_schema
@@ -29,6 +31,37 @@ def game_day_for_minute(world_minute: int) -> int:
     return max(0, int(world_minute)) // 1440
 
 
+def estimate_call_reservation_tokens(
+    snapshot_data: dict[str, Any] | str,
+    *,
+    kind: str = "advance",
+    max_output_tokens: int = 256,
+    max_tokens_per_round: int = 4096,
+) -> tuple[int, int, int]:
+    """按上下文估算及输出上限计算调用前需预留的 Token 额度。
+
+    返回 (estimated_prompt_tokens, effective_max_output_tokens, reserved_total_tokens)。
+    """
+    if isinstance(snapshot_data, str):
+        snap_text = snapshot_data
+    else:
+        try:
+            snap_text = json.dumps(snapshot_data, ensure_ascii=False)
+        except TypeError:
+            snap_text = str(snapshot_data)
+
+    # 加上固定系统提示词与请求信封开销
+    prompt_est = max(32, estimate_tokens(snap_text) + (120 if kind == "seed" else 96))
+    round_cap = max(64, int(max_tokens_per_round))
+    desired_out = max(32, int(max_output_tokens))
+    # 确保单次请求输出上限与提示词合计不超过单轮上限（若提示词本身已超限，则保留原合计以触发预算拦截）
+    if prompt_est < round_cap:
+        effective_out = min(desired_out, max(32, round_cap - prompt_est))
+    else:
+        effective_out = desired_out
+    return prompt_est, effective_out, prompt_est + effective_out
+
+
 @dataclass(frozen=True)
 class BudgetReservation:
     """请求前预留的并发预算凭证。"""
@@ -42,6 +75,9 @@ class BudgetReservation:
     reserved_calls: int
     reserved_tokens: int
     created_at: float
+    estimated_prompt_tokens: int = 0
+    max_output_tokens: int = 0
+    is_paid: bool | None = None
 
 
 class BudgetExhaustedError(PulseError):
@@ -67,7 +103,7 @@ def get_or_init_instance_config(
     *,
     now: float | None = None,
 ) -> dict[str, Any]:
-    """读取或按默认标准复杂度初始化实例脉动配置（默认 enabled=False）。"""
+    """读取或按默认标准复杂度初始化实例脉动配置（默认 enabled=False, generation=1）。"""
     conn.row_factory = sqlite3.Row
     ensure_pulse_schema(conn, ensure_instance_table=False)
     inst = _require_instance(conn, instance_id)
@@ -82,12 +118,12 @@ def get_or_init_instance_config(
         conn.execute(
             """
             INSERT INTO pulse_instance_configs (
-                instance_id, enabled, paused, complexity,
+                instance_id, enabled, paused, generation, complexity,
                 max_calls_per_round, max_tokens_per_round,
                 daily_call_budget, daily_token_budget,
                 cooldown_seconds, min_game_minute_interval, defer_seconds,
                 last_pulsed_minute, resume_anchor_minute, last_call_at, updated_at
-            ) VALUES (?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+            ) VALUES (?, 0, 0, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
             """,
             (
                 instance_id,
@@ -115,7 +151,50 @@ def _config_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     d = dict(row)
     d["enabled"] = bool(d["enabled"])
     d["paused"] = bool(d["paused"])
+    d["generation"] = int(d.get("generation", 1))
     return d
+
+
+def advance_pulse_time_anchor(
+    conn: sqlite3.Connection,
+    instance_id: str,
+    *,
+    world_minute: int | None = None,
+    cancel_pending_advance: bool = True,
+    reason_code: str = "PULSE_INACTIVE_ANCHOR_ADVANCED",
+    reason_summary: str = "离线、暂停或未绑定期间推进已确认时间锚，不积压历史任务。",
+    now: float | None = None,
+) -> dict[str, Any]:
+    """在离线、暂停、关闭或未绑定期间推进已确认游戏时间锚点，并清理过期的待办 advance 任务。"""
+    current = _now(now)
+    cfg = get_or_init_instance_config(conn, instance_id, now=current)
+    inst = _require_instance(conn, instance_id)
+    target_min = int(world_minute) if world_minute is not None else int(inst["world_minute"])
+
+    new_resume = max(int(cfg["resume_anchor_minute"]), target_min)
+    new_pulsed = max(int(cfg["last_pulsed_minute"]), target_min)
+    conn.execute(
+        """
+        UPDATE pulse_instance_configs
+        SET resume_anchor_minute = ?,
+            last_pulsed_minute = ?,
+            updated_at = ?
+        WHERE instance_id = ?
+        """,
+        (new_resume, new_pulsed, current, instance_id),
+    )
+    if cancel_pending_advance:
+        cancel_instance_jobs(
+            conn,
+            instance_id,
+            include_running=False,
+            kinds=("advance",),
+            max_target_world_minute=new_resume,
+            reason_code=reason_code,
+            reason_summary=reason_summary,
+            now=current,
+        )
+    return get_or_init_instance_config(conn, instance_id, now=current)
 
 
 def configure_instance_pulse(
@@ -132,6 +211,7 @@ def configure_instance_pulse(
     cooldown_seconds: float | None = None,
     min_game_minute_interval: int | None = None,
     defer_seconds: float | None = None,
+    bump_generation: bool = False,
     now: float | None = None,
 ) -> dict[str, Any]:
     """更新指定实例的世界脉动开关、暂停状态或预算配置。"""
@@ -182,7 +262,9 @@ def configure_instance_pulse(
             raise PulseError("INVALID_BUDGET", "defer_seconds 必须大于 0。", status=422)
         cfg["defer_seconds"] = float(defer_seconds)
 
-    was_active = bool(cfg["enabled"]) and not bool(cfg["paused"])
+    was_enabled = bool(cfg["enabled"])
+    was_paused = bool(cfg["paused"])
+    was_active = was_enabled and not was_paused
 
     if enabled is not None:
         if type(enabled) is not bool:
@@ -195,8 +277,11 @@ def configure_instance_pulse(
         cfg["paused"] = paused
 
     is_now_active = bool(cfg["enabled"]) and not bool(cfg["paused"])
+    state_toggled = (was_enabled != bool(cfg["enabled"])) or (was_paused != bool(cfg["paused"]))
+    if state_toggled or bump_generation:
+        cfg["generation"] = int(cfg.get("generation", 1)) + 1
 
-    # 从启用变为关闭或暂停时：取消尚未开始执行的排队任务
+    # 从启用变为关闭或暂停时：取消尚未开始执行的排队任务，并推进时间锚点
     if was_active and not is_now_active:
         cancel_instance_jobs(
             conn,
@@ -206,6 +291,8 @@ def configure_instance_pulse(
             reason_summary="世界脉动已暂停或关闭，未执行的排队任务已取消。",
             now=current,
         )
+        cfg["resume_anchor_minute"] = max(int(cfg["resume_anchor_minute"]), current_world_minute)
+        cfg["last_pulsed_minute"] = max(int(cfg["last_pulsed_minute"]), current_world_minute)
 
     # 从关闭或暂停恢复启用时：锚定当前已确认游戏分钟，不补造暂停期间经过的历史时间
     if not was_active and is_now_active:
@@ -225,6 +312,7 @@ def configure_instance_pulse(
         UPDATE pulse_instance_configs
         SET enabled = ?,
             paused = ?,
+            generation = ?,
             complexity = ?,
             max_calls_per_round = ?,
             max_tokens_per_round = ?,
@@ -241,6 +329,7 @@ def configure_instance_pulse(
         (
             1 if cfg["enabled"] else 0,
             1 if cfg["paused"] else 0,
+            int(cfg["generation"]),
             cfg["complexity"],
             cfg["max_calls_per_round"],
             cfg["max_tokens_per_round"],
@@ -279,7 +368,7 @@ def resume_pulse(conn: sqlite3.Connection, instance_id: str, *, now: float | Non
 
 
 class PulseBudgetManager:
-    """世界脉动预算管理器（支持请求前预留、并发扣额、冷却检查与按游戏日归档）。"""
+    """世界脉动预算管理器（支持请求前按上下文+输出上限预留、实测结算、模拟与计费分离、冷却检查与按游戏日归档）。"""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -297,17 +386,28 @@ class PulseBudgetManager:
         purpose: str = "world_pulse_advance",
         world_minute: int = 0,
         estimated_tokens: int = 512,
+        estimated_prompt_tokens: int | None = None,
+        max_output_tokens: int | None = None,
+        is_paid: bool | None = None,
         now: float | None = None,
     ) -> BudgetReservation:
         """在发起模型网络请求前检查并预留预算额度。
 
-        - 检查每轮（单任务）最大调用次数与单次最大 token 预算；
-        - 检查调用冷却时间（cooldown_seconds）；
-        - 检查当前游戏日（world_minute // 1440）已落盘用量 + 并发预留中的额度是否超限；
-        - 超出预算或冷却未到时抛出 BudgetExhaustedError，并附带 retry_after_seconds 供队列延后。
+        - 若传入 estimated_prompt_tokens 与 max_output_tokens，则按二者之和预留额度；
+        - 当 is_paid=True（真实付费会话）时，仅统计 potentially_billed=1 的已落盘用量与付费在途预留，
+          确保 Fake 模拟用量绝不侵占或干扰付费模型预算；
+        - 超出每轮/每游戏日预算或处于冷却窗口时抛出 BudgetExhaustedError，附带 retry_after_seconds 供队列延后。
         """
         current = _now(now)
-        req_tokens = max(1, int(estimated_tokens))
+        if estimated_prompt_tokens is not None or max_output_tokens is not None:
+            p_est = max(0, int(estimated_prompt_tokens or 0))
+            out_cap = max(0, int(max_output_tokens or 0))
+            req_tokens = max(1, p_est + out_cap)
+        else:
+            p_est = max(1, int(estimated_tokens))
+            out_cap = 0
+            req_tokens = max(1, int(estimated_tokens))
+
         game_day = game_day_for_minute(world_minute)
 
         cfg = get_or_init_instance_config(conn, instance_id, now=current)
@@ -318,18 +418,46 @@ class PulseBudgetManager:
         daily_calls_limit = int(cfg["daily_call_budget"])
         daily_tokens_limit = int(cfg["daily_token_budget"])
 
-        # 读取数据库中该实例在当前游戏日已产生的累计用量（含超时可能计费的调用）
-        usage_row = conn.execute(
-            """
-            SELECT
-                COALESCE(SUM(calls), 0) AS used_calls,
-                COALESCE(SUM(total_tokens), 0) AS used_tokens
-            FROM pulse_usage_ledger
-            WHERE instance_id = ?
-              AND game_day = ?
-            """,
-            (instance_id, game_day),
-        ).fetchone()
+        # 按模式分离模拟用量（potentially_billed=0）与可能计费用量（potentially_billed=1）
+        if is_paid is True:
+            usage_row = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(calls), 0) AS used_calls,
+                    COALESCE(SUM(total_tokens), 0) AS used_tokens
+                FROM pulse_usage_ledger
+                WHERE instance_id = ?
+                  AND game_day = ?
+                  AND potentially_billed = 1
+                """,
+                (instance_id, game_day),
+            ).fetchone()
+        elif is_paid is False:
+            usage_row = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(calls), 0) AS used_calls,
+                    COALESCE(SUM(total_tokens), 0) AS used_tokens
+                FROM pulse_usage_ledger
+                WHERE instance_id = ?
+                  AND game_day = ?
+                  AND potentially_billed = 0
+                """,
+                (instance_id, game_day),
+            ).fetchone()
+        else:
+            usage_row = conn.execute(
+                """
+                SELECT
+                    COALESCE(SUM(calls), 0) AS used_calls,
+                    COALESCE(SUM(total_tokens), 0) AS used_tokens
+                FROM pulse_usage_ledger
+                WHERE instance_id = ?
+                  AND game_day = ?
+                """,
+                (instance_id, game_day),
+            ).fetchone()
+
         db_used_calls = int(usage_row["used_calls"]) if usage_row else 0
         db_used_tokens = int(usage_row["used_tokens"]) if usage_row else 0
         db_last_call_at = float(cfg["last_call_at"]) if cfg.get("last_call_at") is not None else None
@@ -352,13 +480,18 @@ class PulseBudgetManager:
                         details={"instance_id": instance_id, "cooldown_seconds": cooldown_sec},
                     )
 
-            # 2. 统计当前实例在途预留额度
+            # 2. 统计当前实例在途预留额度（付费与模拟不互相污染）
             reserved_calls_day = 0
             reserved_tokens_day = 0
             reserved_calls_job = 0
             reserved_tokens_job = 0
             for res in self._active_reservations.values():
-                if res.instance_id == instance_id and res.game_day == game_day:
+                same_billing_tier = (
+                    is_paid is None
+                    or res.is_paid is None
+                    or res.is_paid == is_paid
+                )
+                if res.instance_id == instance_id and res.game_day == game_day and same_billing_tier:
                     reserved_calls_day += res.reserved_calls
                     reserved_tokens_day += res.reserved_tokens
                 if job_id is not None and res.job_id == job_id:
@@ -380,7 +513,11 @@ class PulseBudgetManager:
                     code="PULSE_ROUND_TOKEN_BUDGET_EXCEEDED",
                     message="单次世界脉动 Token 预算不足，已拒绝或延后本次调用。",
                     retry_after_seconds=defer_sec,
-                    details={"max_tokens_per_round": max_tokens_round, "requested_tokens": req_tokens},
+                    details={
+                        "max_tokens_per_round": max_tokens_round,
+                        "settled_round_tokens": settled_job_tokens,
+                        "requested_tokens": req_tokens,
+                    },
                 )
 
             # 4. 游戏日（daily）调用次数与 token 预算检查（含并发在途预留）
@@ -420,6 +557,9 @@ class PulseBudgetManager:
                 reserved_calls=1,
                 reserved_tokens=req_tokens,
                 created_at=current,
+                estimated_prompt_tokens=p_est,
+                max_output_tokens=out_cap,
+                is_paid=is_paid,
             )
             self._active_reservations[reservation.reservation_id] = reservation
             self._in_flight_last_reserved_at[instance_id] = current
@@ -430,7 +570,6 @@ class PulseBudgetManager:
         with self._lock:
             res = self._active_reservations.pop(reservation_id, None)
             if res is not None:
-                # 若该实例无其他在途预留，清理内存冷却时间戳以数据库为准
                 still_in_flight = any(
                     r.instance_id == res.instance_id for r in self._active_reservations.values()
                 )
@@ -445,21 +584,28 @@ class PulseBudgetManager:
         *,
         now: float | None = None,
     ) -> dict[str, Any]:
-        """在短事务内归档模型调用的实际或估算用量，并释放内存预留。"""
+        """在短事务内按实测（优先）或估算结算模型用量，释放预留并以此约束后续调用。"""
         assert_no_credentials(evidence.model, context="evidence.model")
         current = _now(now)
         ensure_pulse_schema(conn, ensure_instance_table=False)
 
+        calls_count = 1 if (evidence.potentially_billed or evidence.outcome == "succeeded") else 0
+        prompt_toks = max(0, int(evidence.prompt_tokens))
+        comp_toks = max(0, int(evidence.completion_tokens))
+        total_toks = max(prompt_toks + comp_toks, int(evidence.total_tokens)) if calls_count > 0 else 0
+        source = "actual" if evidence.usage_source == "actual" else "estimated"
+        billed_flag = int(evidence.potentially_billed)
+
         with self._lock:
             self._active_reservations.pop(reservation.reservation_id, None)
-            if evidence.potentially_billed and reservation.job_id:
+            if calls_count > 0 and reservation.job_id:
                 self._round_calls_by_job[reservation.job_id] = (
                     self._round_calls_by_job.get(reservation.job_id, 0) + 1
                 )
                 self._round_tokens_by_job[reservation.job_id] = (
-                    self._round_tokens_by_job.get(reservation.job_id, 0) + max(0, int(evidence.total_tokens))
+                    self._round_tokens_by_job.get(reservation.job_id, 0) + total_toks
                 )
-            if not evidence.potentially_billed:
+            if not evidence.potentially_billed and calls_count == 0:
                 still_in_flight = any(
                     r.instance_id == reservation.instance_id for r in self._active_reservations.values()
                 )
@@ -467,12 +613,6 @@ class PulseBudgetManager:
                     self._in_flight_last_reserved_at.pop(reservation.instance_id, None)
 
         ledger_id = f"pusg_{secrets.token_hex(10)}"
-        calls_count = 1 if (evidence.potentially_billed or evidence.outcome == "succeeded") else 0
-        prompt_toks = max(0, int(evidence.prompt_tokens))
-        comp_toks = max(0, int(evidence.completion_tokens))
-        total_toks = max(prompt_toks + comp_toks, int(evidence.total_tokens)) if calls_count > 0 else 0
-        source = "actual" if evidence.usage_source == "actual" else "estimated"
-        billed_flag = int(evidence.potentially_billed)
 
         conn.execute(
             """
@@ -521,23 +661,36 @@ class PulseBudgetManager:
             "game_day": reservation.game_day,
             "world_minute": reservation.world_minute,
             "calls": calls_count,
+            "reserved_tokens": reservation.reserved_tokens,
             "prompt_tokens": prompt_toks,
             "completion_tokens": comp_toks,
             "total_tokens": total_toks,
+            "settlement_delta_tokens": total_toks - reservation.reserved_tokens,
             "usage_source": source,
             "potentially_billed": bool(billed_flag),
             "outcome": evidence.outcome,
         }
 
-    def reserved_snapshot(self, instance_id: str, *, game_day: int | None = None) -> dict[str, int]:
+    def reserved_snapshot(
+        self,
+        instance_id: str,
+        *,
+        game_day: int | None = None,
+        is_paid: bool | None = None,
+    ) -> dict[str, int]:
         """查询当前内存中某实例在途预留的调用数与 token 数。"""
         with self._lock:
             calls = 0
             tokens = 0
             for res in self._active_reservations.values():
-                if res.instance_id == instance_id and (game_day is None or res.game_day == game_day):
-                    calls += res.reserved_calls
-                    tokens += res.reserved_tokens
+                if res.instance_id != instance_id:
+                    continue
+                if game_day is not None and res.game_day != game_day:
+                    continue
+                if is_paid is not None and res.is_paid is not None and res.is_paid != is_paid:
+                    continue
+                calls += res.reserved_calls
+                tokens += res.reserved_tokens
             return {"reserved_calls": calls, "reserved_tokens": tokens}
 
     def clear_job_round_counters(self, job_id: str) -> None:
