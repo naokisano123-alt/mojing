@@ -1119,23 +1119,38 @@ def create_app(
     # ---- M3 第三轮：玩家主动查证 / 交谈（Ma） ----
     from .m3 import encounters as m3_encounters
 
+    player_contacts = m3_encounters.SqlNpcContactabilityProvider(player_view=True)
+
     @app.get("/api/v1/adventures/{adventure_id}/world-encounters")
-    def world_encounters(adventure_id: str, location: str | None = None) -> dict[str, Any]:
+    def world_encounters(adventure_id: str) -> dict[str, Any]:
         with db(cfg.db_path) as conn:
             get_adventure(conn, adventure_id)
             instance = m3_instances.for_adventure(conn, adventure_id)
-            return m3_encounters.get_encounter_entrypoint_bundle(
-                conn, instance["id"], player_location=location
+            bundle = m3_encounters.get_encounter_entrypoint_bundle(
+                conn, instance["id"], contactability_provider=player_contacts,
             )
+            for npc in bundle["contactable_npcs"]:
+                npc.pop("response_policy", None)
+                npc.pop("refusal_reason", None)
+            return bundle
 
     @app.post(
         "/api/v1/adventures/{adventure_id}/world-encounters/drafts", status_code=201
     )
     def prepare_world_encounter(adventure_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         with db(cfg.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             get_adventure(conn, adventure_id)
             instance = m3_instances.for_adventure(conn, adventure_id)
-            return m3_encounters.prepare_encounter_draft(conn, instance["id"], payload)
+            draft_payload = {key: value for key, value in payload.items() if key != "player_location"}
+            draft = m3_encounters.prepare_encounter_draft(
+                conn, instance["id"], draft_payload, contactability_provider=player_contacts,
+            )
+            for transmission in draft["proposed_transmissions"]:
+                transmission.pop("source_event_id", None)
+                transmission.pop("source_fact_id", None)
+            draft.pop("conflicting_fact_ids", None)
+            return draft
 
     @app.post(
         "/api/v1/adventures/{adventure_id}/world-encounters/drafts/{draft_id}/commit"
@@ -1143,14 +1158,16 @@ def create_app(
     def commit_world_encounter(
         adventure_id: str, draft_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        minute = payload.get("commit_world_minute")
-        if minute is not None and (type(minute) is not int or minute < 0):
-            raise ApiError(422, "VALIDATION_ERROR", "commit_world_minute 必须是非负整数。")
         with db(cfg.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             get_adventure(conn, adventure_id)
             instance = m3_instances.for_adventure(conn, adventure_id)
+            minute = payload.get("commit_world_minute")
+            if minute is not None and (type(minute) is not int or minute != instance["world_minute"]):
+                raise ApiError(422, "TIMESTAMP_MISMATCH", "查证只能按当前已确认的游戏时间提交。")
             return m3_encounters.commit_encounter_draft(
-                conn, instance["id"], draft_id, commit_world_minute=minute
+                conn, instance["id"], draft_id, require_current_draft=True,
+                contactability_provider=player_contacts,
             )
 
     return app

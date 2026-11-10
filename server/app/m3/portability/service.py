@@ -137,6 +137,13 @@ def _extract_event_snapshot_source_ids(events_snap: Mapping[str, Any] | None) ->
     return found
 
 
+def _npc_snapshot_sources(domains: Mapping[str, Any]) -> set[str]:
+    snapshot = domains.get("npcs") or {}
+    records = [*snapshot.get("npcs", ()), *snapshot.get("action_log", ())]
+    records.extend(task for npc in snapshot.get("npcs", ()) for task in npc.get("tasks", ()))
+    return {source_id for record in records for source_id in record.get("source_ids", ())}
+
+
 def discover_world_source_catalog(
     conn: sqlite3.Connection,
     world_id: str,
@@ -328,16 +335,6 @@ class PortabilitySnapshotAdapter:
         deleted_map: dict[str, HistoricalSourceRef] = catalog["deleted_historical_sources"]
 
         ev_snap = world_events.snapshot(conn, instance_id)
-        referenced_sids = _extract_event_snapshot_source_ids(ev_snap)
-        hist_refs: list[dict[str, Any]] = []
-        for sid in referenced_sids:
-            if sid in deleted_map:
-                hist_refs.append(deleted_map[sid].to_dict())
-
-        if hist_refs:
-            ev_snap = dict(ev_snap)
-            ev_snap["historical_sources"] = hist_refs
-
         domains: dict[str, Any] = {
             "events": ev_snap,
             "knowledge": world_knowledge.snapshot(conn, instance_id),
@@ -348,6 +345,9 @@ class PortabilitySnapshotAdapter:
             if name and name not in domains:
                 domains[name] = adapter.snapshot(conn, instance_id)
 
+        refs = set(_extract_event_snapshot_source_ids(ev_snap)) | _npc_snapshot_sources(domains)
+        if refs & deleted_map.keys():
+            ev_snap["historical_sources"] = [deleted_map[sid].to_dict() for sid in sorted(refs & deleted_map.keys())]
         snap["domains"] = domains
         return snap
 
@@ -361,6 +361,7 @@ class PortabilitySnapshotAdapter:
         active_source_map: Mapping[str, str],
         historical_id_registry: dict[str, str],
         inherited_tombstones: Mapping[str, HistoricalSourceRef] | None = None,
+        extra_source_ids: set[str] | None = None,
     ) -> tuple[dict[str, str], set[str], list[HistoricalSourceRef]]:
         """校验事件快照中引用的全部 `source_ids`：
 
@@ -416,8 +417,8 @@ class PortabilitySnapshotAdapter:
         allowed_for_restore: set[str] = set(active_source_map.values())
         tombstones_to_persist: list[HistoricalSourceRef] = []
 
-        referenced_sids = _extract_event_snapshot_source_ids(events_snap)
-        for sid in referenced_sids:
+        referenced_sids = set(_extract_event_snapshot_source_ids(events_snap)) | (extra_source_ids or set())
+        for sid in sorted(referenced_sids):
             if not (sid.startswith("chunk:") or sid.startswith("entry:")):
                 raise ForgedHistoricalReferenceError(sid)
             if sid in active_source_map:
@@ -621,6 +622,8 @@ def _saved_instances(conn: sqlite3.Connection, world_id: str) -> Any:
             i.revision<>a.revision
             OR EXISTS (SELECT 1 FROM world_events e WHERE e.instance_id=i.id)
             OR EXISTS (SELECT 1 FROM m3_knowledge_facts k WHERE k.instance_id=i.id)
+            OR EXISTS (SELECT 1 FROM m3_npcs n WHERE n.instance_id=i.id)
+            OR EXISTS (SELECT 1 FROM m3_encounter_notices n WHERE n.instance_id=i.id)
         )
         ORDER BY a.rowid
         """,
@@ -657,7 +660,8 @@ def _enrich_checkpoint_snapshot_with_historical_sources(
         for item in (ev_snap.get("historical_sources") or ())
         if isinstance(item, Mapping) and item.get("source_id")
     }
-    for sid in _extract_event_snapshot_source_ids(ev_snap):
+    refs = set(_extract_event_snapshot_source_ids(ev_snap)) | _npc_snapshot_sources(domains)
+    for sid in sorted(refs):
         if sid in deleted_map and sid not in existing_hist:
             existing_hist[sid] = deleted_map[sid].to_dict()
 
@@ -1054,6 +1058,7 @@ def _restore_instance_with_historical_support(
                     active_source_map=active_source_map,
                     historical_id_registry=historical_id_registry,
                     inherited_tombstones=inherited_tombstones,
+                    extra_source_ids=_npc_snapshot_sources(domains),
                 )
             )
             world_events.restore(
@@ -1075,14 +1080,17 @@ def _restore_instance_with_historical_support(
         for domain_name, domain_payload in sorted(domains.items()):
             if domain_name in ("events", "knowledge"):
                 continue
+            if domain_name == "npcs":
+                from ..npcs import restore as restore_npcs
+
+                if _npc_snapshot_sources(domains) - combined_map.keys():
+                    raise TransferInvalidError()
+                restore_npcs(conn, instance_id, domain_payload, world_id=world_id, source_id_map=combined_map)
+                continue
             adapter = core_adapters.get_adapter(domain_name)
-            if adapter is not None:
-                adapter.restore(
-                    conn,
-                    domain_payload,
-                    new_instance_id=instance_id,
-                    world_id=world_id,
-                )
+            if adapter is None:
+                raise TransferInvalidError()
+            adapter.restore(conn, domain_payload, new_instance_id=instance_id, world_id=world_id)
     except PortabilityError:
         raise
     except ApiError as exc:

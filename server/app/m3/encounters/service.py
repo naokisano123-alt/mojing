@@ -419,6 +419,24 @@ def register_holder_fact(
         else f"efact_{uuid4().hex[:12]}"
     )
 
+    if conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='m3_knowledge_facts'"
+    ).fetchone():
+        from ..events import get_event
+        from ..knowledge import record_transmission
+
+        get_event(conn, instance_id, src_event_id)
+        applied = record_transmission(conn, instance_id, {
+            "fact_id": fact_id, "holder_id": holder_id, "knowledge_type": ktype,
+            "channel": channel, "title": title, "content": content,
+            "source_event_id": src_event_id, "source_person_id": src_person_id,
+            "source_fact_id": src_fact_id, "learned_minute": learned_min, "confidence": confidence,
+        })[0]
+        return {
+            **applied, "instance_id": instance_id, "source_event_id": src_event_id,
+            "source_fact_id": src_fact_id,
+        }
+
     max_hseq_row = conn.execute(
         "SELECT COALESCE(MAX(holder_seq), 0) FROM m3_encounter_knowledge_stubs WHERE instance_id = ? AND holder_id = ?",
         (instance_id, holder_id),
@@ -456,57 +474,6 @@ def register_holder_fact(
             confidence,
         ),
     )
-
-    # 若同库已挂载 m3_knowledge_facts 表，同步写入以保持跨包天然兼容
-    tables = {
-        r[0]
-        for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-    }
-    if "m3_knowledge_facts" in tables:
-        existing_kf = conn.execute(
-            "SELECT 1 FROM m3_knowledge_facts WHERE instance_id = ? AND fact_id = ?",
-            (instance_id, fact_id),
-        ).fetchone()
-        if existing_kf is None:
-            kf_hseq = int(
-                conn.execute(
-                    "SELECT COALESCE(MAX(holder_seq), 0) FROM m3_knowledge_facts WHERE instance_id = ? AND holder_id = ?",
-                    (instance_id, holder_id),
-                ).fetchone()[0]
-                or 0
-            ) + 1
-            kf_seq = int(
-                conn.execute(
-                    "SELECT COALESCE(MAX(sequence), 0) FROM m3_knowledge_facts WHERE instance_id = ?",
-                    (instance_id,),
-                ).fetchone()[0]
-                or 0
-            ) + 1
-            conn.execute(
-                """
-                INSERT INTO m3_knowledge_facts (
-                    instance_id, fact_id, holder_id, holder_seq, sequence,
-                    knowledge_type, title, content, source_event_id, source_person_id,
-                    source_fact_id, channel, learned_minute, confidence, status, revision
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1)
-                """,
-                (
-                    instance_id,
-                    fact_id,
-                    holder_id,
-                    kf_hseq,
-                    kf_seq,
-                    ktype,
-                    title,
-                    content,
-                    src_event_id,
-                    src_person_id,
-                    src_fact_id,
-                    channel,
-                    learned_min,
-                    confidence,
-                ),
-            )
 
     return {
         "instance_id": instance_id,
@@ -573,7 +540,10 @@ def register_notice(
 
 
 class SqlNpcContactabilityProvider:
-    """默认 SQLite NPC 可接触性提供器（优先读 `m3_encounter_npc_stubs`，自动兼容 `m3_npcs` 表）。"""
+    """默认 SQLite NPC 可接触性提供器（优先使用 NPC 账本，兼容独立查证场景）。"""
+
+    def __init__(self, *, player_view: bool = False) -> None:
+        self.player_view = player_view
 
     def _load_npc_row(
         self,
@@ -591,6 +561,38 @@ class SqlNpcContactabilityProvider:
             """,
             (instance_id, npc_id),
         ).fetchone()
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        if "m3_npcs" in tables:
+            nrow = conn.execute(
+                """
+                SELECT npc_id, name, role, location, current_activity, current_action_kind,
+                       shift_name, availability, status, updated_minute, next_due_minute, revision
+                FROM m3_npcs
+                WHERE instance_id = ? AND npc_id = ?
+                """,
+                (instance_id, npc_id),
+            ).fetchone()
+            if nrow is not None:
+                is_active = str(nrow[8] or "active") == "active"
+                return {
+                    "npc_id": str(nrow[0]),
+                    "name": str(nrow[1]),
+                    "role": str(nrow[2]),
+                    "location": str(nrow[3]),
+                    "current_activity": str(nrow[4]),
+                    "current_action_kind": str(nrow[5]),
+                    "schedule_slot": str(nrow[6]),
+                    "contactable": nrow[7] == "available" and is_active,
+                    "response_policy": str(row[8]) if row else "cooperative",
+                    "refusal_reason": str(row[9]) if row else "",
+                    "updated_minute": int(nrow[9] or 0),
+                    "next_due_minute": int(nrow[10]) if nrow[10] is not None else None,
+                    "revision": int(nrow[11] or 1),
+                }
+
         if row is not None:
             return {
                 "npc_id": str(row[0]),
@@ -607,38 +609,6 @@ class SqlNpcContactabilityProvider:
                 "next_due_minute": int(row[11]) if row[11] is not None else None,
                 "revision": int(row[12] or 1),
             }
-
-        tables = {
-            r[0]
-            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        }
-        if "m3_npcs" in tables:
-            nrow = conn.execute(
-                """
-                SELECT npc_id, name, role, location, current_activity, current_action_kind,
-                       schedule_slot, contactable, status, updated_minute, next_due_minute, revision
-                FROM m3_npcs
-                WHERE instance_id = ? AND npc_id = ?
-                """,
-                (instance_id, npc_id),
-            ).fetchone()
-            if nrow is not None:
-                is_active = str(nrow[8] or "active") == "active"
-                return {
-                    "npc_id": str(nrow[0]),
-                    "name": str(nrow[1]),
-                    "role": str(nrow[2]),
-                    "location": str(nrow[3]),
-                    "current_activity": str(nrow[4]),
-                    "current_action_kind": str(nrow[5]),
-                    "schedule_slot": str(nrow[6]),
-                    "contactable": bool(int(nrow[7])) and is_active,
-                    "response_policy": "cooperative",
-                    "refusal_reason": "",
-                    "updated_minute": int(nrow[9] or 0),
-                    "next_due_minute": int(nrow[10]) if nrow[10] is not None else None,
-                    "revision": int(nrow[11] or 1),
-                }
 
         # 检查是否属于其他世界实例
         other_stub = conn.execute(
@@ -671,6 +641,12 @@ class SqlNpcContactabilityProvider:
 
         npc_loc = npc["location"]
         same_loc = npc_loc == player_location
+        if self.player_view and not same_loc:
+            return {
+                "npc_id": npc_id, "name": "目标人物", "role": "", "contactable": False,
+                "reason_code": "NPC_AT_DIFFERENT_LOCATION", "reason": "你在这里没找到想询问的人。",
+                "npc_location": "", "player_location": player_location,
+            }
         if not same_loc:
             contactable = False
             if npc["current_action_kind"] == "travel":
@@ -746,7 +722,7 @@ class SqlNpcContactabilityProvider:
                         conn, instance_id, nid, player_location=location, world_minute=world_minute
                     )
 
-        return list(by_id.values())
+        return [status for status in by_id.values() if not self.player_view or status["npc_location"] == location]
 
 
 class SqlHolderKnowledgeProvider:
@@ -761,8 +737,6 @@ class SqlHolderKnowledgeProvider:
         up_to_minute: int,
         source_event_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        facts_by_id: dict[str, dict[str, Any]] = {}
-
         clauses = [
             "instance_id = ?",
             "holder_id = ?",
@@ -775,72 +749,26 @@ class SqlHolderKnowledgeProvider:
             params.append(source_event_id)
         where_sql = " AND ".join(clauses)
 
+        table = "m3_knowledge_facts" if conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='m3_knowledge_facts'"
+        ).fetchone() else "m3_encounter_knowledge_stubs"
         rows = conn.execute(
             f"""
             SELECT fact_id, holder_id, holder_seq, sequence, knowledge_type,
                    title, content, source_event_id, source_person_id, source_fact_id,
                    channel, learned_minute, confidence, status, revision
-            FROM m3_encounter_knowledge_stubs
+            FROM {table}
             WHERE {where_sql}
             ORDER BY holder_seq DESC, learned_minute DESC
             """,
             tuple(params),
         ).fetchall()
-        for r in rows:
-            facts_by_id[str(r[0])] = {
-                "fact_id": str(r[0]),
-                "holder_id": str(r[1]),
-                "holder_seq": int(r[2]),
-                "sequence": int(r[3]),
-                "knowledge_type": str(r[4]),
-                "title": str(r[5]),
-                "content": str(r[6]),
-                "source_event_id": str(r[7]),
-                "source_person_id": r[8],
-                "source_fact_id": r[9],
-                "channel": str(r[10]),
-                "learned_minute": int(r[11]),
-                "confidence": float(r[12]),
-                "status": str(r[13]),
-                "revision": int(r[14]),
-            }
-
-        tables = {
-            r[0]
-            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
-        }
-        if "m3_knowledge_facts" in tables:
-            krows = conn.execute(
-                f"""
-                SELECT fact_id, holder_id, holder_seq, sequence, knowledge_type,
-                       title, content, source_event_id, source_person_id, source_fact_id,
-                       channel, learned_minute, confidence, status, revision
-                FROM m3_knowledge_facts
-                WHERE {where_sql}
-                ORDER BY holder_seq DESC, learned_minute DESC
-                """,
-                tuple(params),
-            ).fetchall()
-            for r in krows:
-                fid = str(r[0])
-                if fid not in facts_by_id:
-                    facts_by_id[fid] = {
-                        "fact_id": fid,
-                        "holder_id": str(r[1]),
-                        "holder_seq": int(r[2]),
-                        "sequence": int(r[3]),
-                        "knowledge_type": str(r[4]),
-                        "title": str(r[5]),
-                        "content": str(r[6]),
-                        "source_event_id": str(r[7]),
-                        "source_person_id": r[8],
-                        "source_fact_id": r[9],
-                        "channel": str(r[10]),
-                        "learned_minute": int(r[11]),
-                        "confidence": float(r[12]),
-                        "status": str(r[13]),
-                        "revision": int(r[14]),
-                    }
+        fields = (
+            "fact_id", "holder_id", "holder_seq", "sequence", "knowledge_type",
+            "title", "content", "source_event_id", "source_person_id", "source_fact_id",
+            "channel", "learned_minute", "confidence", "status", "revision",
+        )
+        facts_by_id = {row[0]: dict(zip(fields, row)) for row in rows}
 
         items = list(facts_by_id.values())
         items.sort(key=lambda item: (item["learned_minute"], item["holder_seq"]), reverse=True)
@@ -1723,6 +1651,7 @@ def commit_encounter_draft(
     *,
     commit_world_minute: int | None = None,
     expected_world_revision: int | None = None,
+    require_current_draft: bool = False,
     contactability_provider: NpcContactabilityProvider | None = None,
     knowledge_provider: HolderKnowledgeProvider | None = None,
     knowledge_applier: Callable[[sqlite3.Connection, str, list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
@@ -1828,6 +1757,13 @@ def commit_encounter_draft(
                         "reason_code": str(live_contact["reason_code"]),
                     },
                 )
+
+        if require_current_draft and (
+            int(row[14]) != db_rev or player_loc != _resolve_player_location(conn, inst)
+        ):
+            raise EncounterError(
+                409, "WORLD_REVISION_CONFLICT", "旅程状态已变化，请重新生成查证草案。",
+            )
 
         # 校验并应用传播提议
         for p in raw_proposals:
