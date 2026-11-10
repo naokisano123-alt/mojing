@@ -15,6 +15,14 @@ JobStatus = Literal[
     "cancelled",
 ]
 SessionMode = Literal["unbound", "fake", "independent", "reuse_narration"]
+PulseControlState = Literal[
+    "off",
+    "ready",
+    "waiting_for_model",
+    "offline",
+    "budget_limited",
+    "working",
+]
 ComplexityMode = Literal["light", "standard", "deep"]
 UsageSource = Literal["actual", "estimated"]
 
@@ -33,6 +41,14 @@ VALID_SESSION_MODES: frozenset[str] = frozenset({
     "fake",
     "independent",
     "reuse_narration",
+})
+VALID_CONTROL_STATES: frozenset[str] = frozenset({
+    "off",
+    "ready",
+    "waiting_for_model",
+    "offline",
+    "budget_limited",
+    "working",
 })
 
 
@@ -100,7 +116,7 @@ class PulseUsageEvidence:
     total_tokens: int
     usage_source: UsageSource  # "actual" | "estimated"
     potentially_billed: bool = True
-    outcome: str = "succeeded"  # "succeeded" | "timeout_maybe_billed" | "upstream_error_maybe_billed" | "aborted_unbilled"
+    outcome: str = "succeeded"  # "succeeded" | "timeout_maybe_billed" | "response_lost_maybe_billed" | "upstream_error_maybe_billed" | "aborted_unbilled"
 
 
 @dataclass(frozen=True)
@@ -121,3 +137,36 @@ class PulseModelResponse:
 
     proposal: dict[str, Any]
     usage: PulseUsageEvidence
+
+
+@dataclass(frozen=True)
+class PulsePublicStatusDTO:
+    """面向手机端与公共路由的安全状态 DTO（严禁包含 Key、会话 ID、隐藏事件或任务负载）。"""
+
+    enabled: bool
+    mode: SessionMode
+    state: PulseControlState
+    model: str | None = None
+    reason_code: str | None = None
+    world_minute: int = 0
+    world_revision: int = 0
+    current_game_day: int = 0
+    usage: dict[str, Any] = field(default_factory=dict)
+    available: bool = True
+    paused: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "enabled": self.enabled,
+            "paused": self.paused,
+            "mode": self.mode,
+            "state": self.state,
+            "model": self.model,
+            "reason_code": self.reason_code,
+            "world_minute": self.world_minute,
+            "world_revision": self.world_revision,
+            "current_game_day": self.current_game_day,
+            "usage": dict(self.usage),
+            "current_day_usage": dict(self.usage),
+        }

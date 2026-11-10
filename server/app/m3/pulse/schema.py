@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-# 兼容独立测试：当底座尚未创建 world_instances 时，按 M3_WAVE1_API.md 契约建表；
+# 兼容独立测试：当底座尚未创建 world_instances 时，按 M3_WAVE1_API.md / M3_WAVE2_API.md 契约建表；
 # 若底座已创建该表，IF NOT EXISTS 保持无副作用。
 WORLD_INSTANCES_COMPAT_SCHEMA = """
 CREATE TABLE IF NOT EXISTS world_instances (
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS pulse_instance_configs (
     instance_id              TEXT PRIMARY KEY REFERENCES world_instances(id),
     enabled                  INTEGER NOT NULL DEFAULT 0,
     paused                   INTEGER NOT NULL DEFAULT 0,
+    generation               INTEGER NOT NULL DEFAULT 1,
     complexity               TEXT NOT NULL DEFAULT 'standard',
     max_calls_per_round      INTEGER NOT NULL DEFAULT 2,
     max_tokens_per_round     INTEGER NOT NULL DEFAULT 4096,
@@ -110,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_pulse_usage_instance_day
 
 
 def ensure_pulse_schema(conn: sqlite3.Connection, *, ensure_instance_table: bool = True) -> None:
-    """幂等初始化世界脉动所需的 SQLite 表结构。
+    """幂等初始化世界脉动所需的 SQLite 表结构与增量列迁移。
 
     注意：按照 M3 集成契约，本函数不自行调用 conn.commit()，事务由调用方控制。
     """
@@ -130,3 +131,10 @@ def ensure_pulse_schema(conn: sqlite3.Connection, *, ensure_instance_table: bool
         stmt = statement.strip()
         if stmt:
             conn.execute(stmt)
+
+    # 幂等迁移：为旧版 pulse_instance_configs 补齐代次列 generation
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(pulse_instance_configs)").fetchall()}
+    if cols and "generation" not in cols:
+        conn.execute(
+            "ALTER TABLE pulse_instance_configs ADD COLUMN generation INTEGER NOT NULL DEFAULT 1"
+        )

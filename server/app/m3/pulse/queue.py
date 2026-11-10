@@ -1,4 +1,4 @@
-"""M3.2 持久化任务队列（登记、幂等、合并、原子领取、带令牌租约、超时回收、重试退避、等待模型与取消）。"""
+"""M3.2 持久化任务队列（登记、幂等、合并、原子领取、带令牌租约、超时回收、重试退避、等待模型、重启恢复与取消）。"""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import secrets
 import sqlite3
 import time
-from typing import Any
+from typing import Any, Callable
 
 from app.m3.pulse.errors import PulseError, assert_no_credentials, sanitize_text
 from app.m3.pulse.schema import ensure_pulse_schema
@@ -346,6 +346,250 @@ def reclaim_expired(conn: sqlite3.Connection, now: float | None = None) -> int:
     return reclaimed
 
 
+def recover_jobs_on_startup(
+    conn: sqlite3.Connection,
+    *,
+    instance_id: str | None = None,
+    session_ready_fn: Callable[[str], bool] | None = None,
+    activity_online_fn: Callable[[str], bool] | None = None,
+    now: float | None = None,
+) -> dict[str, int]:
+    """Worker 重启时恢复安全可重试任务，并先核对当下开关、连接与活动条件。
+
+    - 若实例当前已关闭或暂停：取消遗留的 pending / waiting_for_model / running 任务，推进时间锚；
+    - 若为早于或等于已确认脉动基线的陈旧 advance 任务：直接取消，不补造历史；
+    - 若存在进程重启中断遗留的 running 任务：
+      - 已达 max_attempts 的标记为 failed；
+      - 其余安全可重试任务对齐最新已确认 world_revision 与 world_minute，
+        并核对当前会话连接与在线租约：若未绑定或离线则转入 waiting_for_model（不消耗失败次数），否则恢复为 pending。
+    """
+    conn.row_factory = sqlite3.Row
+    ensure_pulse_schema(conn, ensure_instance_table=False)
+    current = _now(now)
+
+    where_clause = "WHERE status IN ('pending', 'running', 'waiting_for_model')"
+    params: list[Any] = []
+    if instance_id is not None:
+        where_clause += " AND instance_id = ?"
+        params.append(instance_id)
+
+    active_rows = conn.execute(
+        f"SELECT * FROM pulse_jobs {where_clause} ORDER BY created_at ASC, rowid ASC",
+        tuple(params),
+    ).fetchall()
+
+    summary = {
+        "cancelled_disabled": 0,
+        "cancelled_stale": 0,
+        "failed_max_attempts": 0,
+        "waiting_for_model": 0,
+        "recovered_pending": 0,
+    }
+    if not active_rows:
+        return summary
+
+    # 按实例分组处理
+    by_instance: dict[str, list[sqlite3.Row]] = {}
+    for row in active_rows:
+        by_instance.setdefault(str(row["instance_id"]), []).append(row)
+
+    for inst_id, rows in by_instance.items():
+        inst_row = conn.execute(
+            "SELECT id, world_minute, revision FROM world_instances WHERE id = ?",
+            (inst_id,),
+        ).fetchone()
+        if inst_row is None:
+            continue
+        inst_minute = int(inst_row["world_minute"])
+        inst_rev = int(inst_row["revision"])
+
+        cfg_row = conn.execute(
+            "SELECT enabled, paused, last_pulsed_minute, resume_anchor_minute FROM pulse_instance_configs WHERE instance_id = ?",
+            (inst_id,),
+        ).fetchone()
+        enabled = bool(cfg_row["enabled"]) if cfg_row is not None else False
+        paused = bool(cfg_row["paused"]) if cfg_row is not None else False
+        baseline_min = (
+            max(int(cfg_row["last_pulsed_minute"]), int(cfg_row["resume_anchor_minute"]))
+            if cfg_row is not None
+            else inst_minute
+        )
+
+        # 1. 若实例未开启或处于暂停状态：全部取消并推进时间锚
+        if not enabled or paused:
+            cur = conn.execute(
+                """
+                UPDATE pulse_jobs
+                SET status = 'cancelled',
+                    lease_token = NULL,
+                    lease_until = NULL,
+                    next_retry_at = NULL,
+                    error_code = 'PULSE_DISABLED_ON_RECOVERY',
+                    error_summary = '服务重启恢复时世界脉动处于关闭或暂停状态，已清理遗留任务。',
+                    updated_at = ?
+                WHERE instance_id = ? AND status IN ('pending', 'running', 'waiting_for_model')
+                """,
+                (current, inst_id),
+            )
+            summary["cancelled_disabled"] += cur.rowcount
+            if cfg_row is not None:
+                conn.execute(
+                    """
+                    UPDATE pulse_instance_configs
+                    SET resume_anchor_minute = MAX(resume_anchor_minute, ?),
+                        last_pulsed_minute = MAX(last_pulsed_minute, ?),
+                        updated_at = ?
+                    WHERE instance_id = ?
+                    """,
+                    (inst_minute, inst_minute, current, inst_id),
+                )
+            continue
+
+        session_ok = session_ready_fn(inst_id) if session_ready_fn is not None else True
+        online_ok = activity_online_fn(inst_id) if activity_online_fn is not None else True
+
+        for r in rows:
+            job_id = str(r["job_id"])
+            kind = str(r["kind"])
+            status = str(r["status"])
+            attempts = int(r["attempts"])
+            max_attempts = int(r["max_attempts"])
+            target_min = int(r["target_world_minute"])
+
+            # 2. 陈旧 advance 任务直接取消，不补造历史
+            if kind == "advance" and target_min <= baseline_min:
+                conn.execute(
+                    """
+                    UPDATE pulse_jobs
+                    SET status = 'cancelled',
+                        lease_token = NULL,
+                        lease_until = NULL,
+                        next_retry_at = NULL,
+                        error_code = 'STALE_TARGET_MINUTE',
+                        error_summary = '重启恢复时目标游戏时间早于或等于已确认锚点，不重复补演。',
+                        updated_at = ?
+                    WHERE job_id = ?
+                    """,
+                    (current, job_id),
+                )
+                summary["cancelled_stale"] += 1
+                continue
+
+            # 3. 处理进程重启遗留的 running 任务
+            if status == "running":
+                if attempts >= max_attempts:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'failed',
+                            lease_token = NULL,
+                            lease_until = NULL,
+                            next_retry_at = NULL,
+                            error_code = 'LEASE_EXPIRED_MAX_ATTEMPTS',
+                            error_summary = '任务在重启前已达最大尝试次数，停止重试。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (current, job_id),
+                    )
+                    summary["failed_max_attempts"] += 1
+                    continue
+
+                aligned_min = max(inst_minute, target_min)
+                if not session_ok:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'waiting_for_model',
+                            attempts = MAX(0, attempts - 1),
+                            base_world_revision = ?,
+                            target_world_minute = ?,
+                            lease_token = NULL,
+                            lease_until = NULL,
+                            next_retry_at = NULL,
+                            error_code = 'MODEL_SESSION_UNBOUND',
+                            error_summary = '服务重启后等待用户重新连接模型会话。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (inst_rev, aligned_min, current, job_id),
+                    )
+                    summary["waiting_for_model"] += 1
+                elif not online_ok:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'waiting_for_model',
+                            attempts = MAX(0, attempts - 1),
+                            base_world_revision = ?,
+                            target_world_minute = ?,
+                            lease_token = NULL,
+                            lease_until = NULL,
+                            next_retry_at = NULL,
+                            error_code = 'CLIENT_OFFLINE',
+                            error_summary = '服务重启后等待前台在线活动租约恢复。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (inst_rev, aligned_min, current, job_id),
+                    )
+                    summary["waiting_for_model"] += 1
+                else:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'pending',
+                            base_world_revision = ?,
+                            target_world_minute = ?,
+                            lease_token = NULL,
+                            lease_until = NULL,
+                            next_retry_at = ?,
+                            error_code = 'WORKER_RESTART_RECOVERED',
+                            error_summary = '已从服务重启中恢复任务，待重新执行。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (inst_rev, aligned_min, current, current, job_id),
+                    )
+                    summary["recovered_pending"] += 1
+            elif status == "pending":
+                aligned_min = max(inst_minute, target_min)
+                if not session_ok:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'waiting_for_model',
+                            base_world_revision = ?,
+                            target_world_minute = ?,
+                            error_code = 'MODEL_SESSION_UNBOUND',
+                            error_summary = '等待用户连接模型会话。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (inst_rev, aligned_min, current, job_id),
+                    )
+                    summary["waiting_for_model"] += 1
+                elif not online_ok:
+                    conn.execute(
+                        """
+                        UPDATE pulse_jobs
+                        SET status = 'waiting_for_model',
+                            base_world_revision = ?,
+                            target_world_minute = ?,
+                            error_code = 'CLIENT_OFFLINE',
+                            error_summary = '等待玩家回到前台在线状态。',
+                            updated_at = ?
+                        WHERE job_id = ?
+                        """,
+                        (inst_rev, aligned_min, current, job_id),
+                    )
+                    summary["waiting_for_model"] += 1
+                else:
+                    summary["recovered_pending"] += 1
+
+    return summary
+
+
 def claim(
     conn: sqlite3.Connection,
     now: float | None = None,
@@ -680,6 +924,24 @@ def resume_waiting_jobs(
     """当模型会话重连或恢复在线时，将 waiting_for_model 任务唤醒为 pending。"""
     current = _now(now)
     if instance_id is not None:
+        inst_row = conn.execute(
+            "SELECT world_minute, revision FROM world_instances WHERE id = ?",
+            (instance_id,),
+        ).fetchone()
+        if inst_row is not None:
+            cur = conn.execute(
+                """
+                UPDATE pulse_jobs
+                SET status = 'pending',
+                    base_world_revision = MAX(base_world_revision, ?),
+                    target_world_minute = MAX(target_world_minute, ?),
+                    next_retry_at = ?,
+                    updated_at = ?
+                WHERE instance_id = ? AND status = 'waiting_for_model'
+                """,
+                (int(inst_row[1]), int(inst_row[0]), current, current, instance_id),
+            )
+            return cur.rowcount
         cur = conn.execute(
             """
             UPDATE pulse_jobs
@@ -747,6 +1009,8 @@ def cancel_instance_jobs(
     instance_id: str,
     *,
     include_running: bool = False,
+    kinds: tuple[JobKind, ...] | None = None,
+    max_target_world_minute: int | None = None,
     reason_code: str = "PULSE_PAUSED_OR_DISABLED",
     reason_summary: str = "世界脉动已暂停或关闭，待处理任务已取消。",
     now: float | None = None,
@@ -755,8 +1019,25 @@ def cancel_instance_jobs(
     current = _now(now)
     safe_code = sanitize_text(reason_code, max_length=80) or "PULSE_PAUSED_OR_DISABLED"
     safe_summary = sanitize_text(reason_summary, max_length=240)
-    target_statuses = ("pending", "waiting_for_model", "running") if include_running else ("pending", "waiting_for_model")
-    placeholders = ", ".join("?" for _ in target_statuses)
+    target_statuses = (
+        ("pending", "waiting_for_model", "running")
+        if include_running
+        else ("pending", "waiting_for_model")
+    )
+    status_placeholders = ", ".join("?" for _ in target_statuses)
+    clauses = [f"instance_id = ? AND status IN ({status_placeholders})"]
+    params: list[Any] = [safe_code, safe_summary, current, instance_id, *target_statuses]
+
+    if kinds:
+        kind_placeholders = ", ".join("?" for _ in kinds)
+        clauses.append(f"kind IN ({kind_placeholders})")
+        params.extend(kinds)
+
+    if max_target_world_minute is not None:
+        clauses.append("target_world_minute <= ?")
+        params.append(int(max_target_world_minute))
+
+    where_sql = " AND ".join(clauses)
     cur = conn.execute(
         f"""
         UPDATE pulse_jobs
@@ -767,8 +1048,8 @@ def cancel_instance_jobs(
             error_code = ?,
             error_summary = ?,
             updated_at = ?
-        WHERE instance_id = ? AND status IN ({placeholders})
+        WHERE {where_sql}
         """,
-        (safe_code, safe_summary, current, instance_id, *target_statuses),
+        tuple(params),
     )
     return cur.rowcount
