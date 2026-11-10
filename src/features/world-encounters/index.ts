@@ -11,6 +11,11 @@ export {
   sanitizeEncounterNewsItem,
   worldEncountersApi,
 } from './api.ts';
+export type {
+  FakeEncounterAdventureState,
+  FakeEncounterNpcState,
+  FakeNpcKnowledgeRecord,
+} from './api.ts';
 export { WorldEncounterPanel } from './WorldEncounterPanel.tsx';
 export type { WorldEncounterPanelProps } from './WorldEncounterPanel.tsx';
 export type {
@@ -22,9 +27,6 @@ export type {
   EncounterOptionKind,
   EncounterResponseOutcome,
   EncounterTransmissionPreview,
-  FakeEncounterAdventureState,
-  FakeEncounterNpcState,
-  FakeNpcKnowledgeRecord,
   KnowledgeChannel,
   KnowledgeType,
   NpcResponsePolicy,

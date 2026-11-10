@@ -111,6 +111,13 @@ def init_db(path: Path | str) -> None:
         ensure_events_schema(conn)
         ensure_knowledge_schema(conn)
         ensure_pulse_schema(conn, ensure_instance_table=False)
+        from .m3.encounters.schema import ensure_encounters_schema
+        from .m3.npcs.schema import ensure_npcs_schema
+        from .m3.portability import ensure_portability_schema
+
+        ensure_npcs_schema(conn)
+        ensure_encounters_schema(conn)
+        ensure_portability_schema(conn)
         conn.commit()
 
 

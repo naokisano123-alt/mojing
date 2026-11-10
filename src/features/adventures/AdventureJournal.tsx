@@ -17,6 +17,7 @@ import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
 import { WorldPulsePanel } from "../world-pulse";
+import { WorldEncounterPanel } from "../world-encounters";
 import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";

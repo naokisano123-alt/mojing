@@ -486,7 +486,11 @@ def create_app(
 
     @app.get("/api/v1/worlds/{world_id}/transfer")
     def download_world_transfer(world_id: str, part: Literal["world", "saves", "zip"]) -> Response:
-        from .world_transfer import transfer_export
+        try:
+            # M3 第三轮：可移植层支持已删除来源、v5 与历史快照
+            from .m3.portability import transfer_export
+        except ImportError:
+            from .world_transfer import transfer_export
 
         with db(cfg.db_path) as conn:
             conn.execute("BEGIN")
@@ -494,7 +498,10 @@ def create_app(
 
     @app.post("/api/v1/world-transfers", status_code=201)
     def restore_world_transfer(files: list[UploadFile] = File(...)) -> dict[str, Any]:
-        from .world_transfer import import_transfer
+        try:
+            from .m3.portability import import_transfer
+        except ImportError:
+            from .world_transfer import import_transfer
 
         with db(cfg.db_path) as conn:
             world_id = import_transfer(conn, files, cfg.max_documents_per_world)
@@ -1108,6 +1115,44 @@ def create_app(
                 raise ApiError(503, "M3_NOT_READY", "玩家消息投影尚未接入（缺少 knowledge 模块）。")
             result = adapter.list_known(conn, instance["id"], "player", before=before, limit=limit)
             return {"items": result.get("items", []), "next_before": result.get("next_before")}
+
+    # ---- M3 第三轮：玩家主动查证 / 交谈（Ma） ----
+    from .m3 import encounters as m3_encounters
+
+    @app.get("/api/v1/adventures/{adventure_id}/world-encounters")
+    def world_encounters(adventure_id: str, location: str | None = None) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            get_adventure(conn, adventure_id)
+            instance = m3_instances.for_adventure(conn, adventure_id)
+            return m3_encounters.get_encounter_entrypoint_bundle(
+                conn, instance["id"], player_location=location
+            )
+
+    @app.post(
+        "/api/v1/adventures/{adventure_id}/world-encounters/drafts", status_code=201
+    )
+    def prepare_world_encounter(adventure_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with db(cfg.db_path) as conn:
+            get_adventure(conn, adventure_id)
+            instance = m3_instances.for_adventure(conn, adventure_id)
+            return m3_encounters.prepare_encounter_draft(conn, instance["id"], payload)
+
+    @app.post(
+        "/api/v1/adventures/{adventure_id}/world-encounters/drafts/{draft_id}/commit"
+    )
+    def commit_world_encounter(
+        adventure_id: str, draft_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        minute = payload.get("commit_world_minute")
+        if minute is not None and (type(minute) is not int or minute < 0):
+            raise ApiError(422, "VALIDATION_ERROR", "commit_world_minute 必须是非负整数。")
+        with db(cfg.db_path) as conn:
+            get_adventure(conn, adventure_id)
+            instance = m3_instances.for_adventure(conn, adventure_id)
+            return m3_encounters.commit_encounter_draft(
+                conn, instance["id"], draft_id, commit_world_minute=minute
+            )
+
     return app
 
 

@@ -46,4 +46,17 @@ class KnowledgeAdapter:
 
 
 def builtin_adapters() -> list[Any]:
-    return [EventsAdapter(), KnowledgeAdapter()]
+    adapters: list[Any] = [EventsAdapter(), KnowledgeAdapter()]
+    try:
+        from ..encounters import EncountersAdapter
+
+        adapters.append(EncountersAdapter())
+    except Exception:
+        pass
+    try:
+        from ..npcs import NpcsAdapter
+
+        adapters.append(NpcsAdapter())
+    except Exception:
+        pass
+    return adapters
