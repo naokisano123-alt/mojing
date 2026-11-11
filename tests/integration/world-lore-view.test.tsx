@@ -76,30 +76,35 @@ describe('WorldLoreView 装配', () => {
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} modelProfileEnabled />);
 
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '冒险记录' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '冒险' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '导出两份文件' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '导出', exact: true }));
     expect(screen.getByRole('link', { name: '导出两份文件' }))
       .toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip&destination=folder');
-    for (const [label, part] of [['世界观 JSON', 'world'], ['存档 JSON', 'saves'], ['打包为 ZIP', 'zip']]) {
+    for (const [label, part] of [['世界观', 'world'], ['存档', 'saves'], ['完整备份 ZIP', 'zip']]) {
       expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/api/v1/worlds/w1/transfer?part=${part}`);
     }
   });
 
-  it('四个子页签都能真实挂载', async () => {
+  it('三个主栏目和文档内的设定及导入能真实挂载', async () => {
     const user = userEvent.setup();
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
     await screen.findByText('云山纪.md');
 
-    await user.click(screen.getByRole('button', { name: /检索资料/ }));
-    expect(await screen.findByRole('textbox')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: '世界栏目' }).querySelectorAll('button')).toHaveLength(3);
+    expect(screen.getByRole('textbox', { name: '检索关键词' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '检索资料' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '叙事实验' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /人工设定/ }));
     expect(await screen.findByText('新建设定条目')).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: /导入新文档/ }));
+    await user.click(screen.getByRole('button', { name: '返回世界观文档' }));
+    await user.click(screen.getByRole('button', { name: '导入', exact: true }));
     await waitFor(() => expect(document.querySelector('input[type="file"]')).toBeTruthy());
   });
 
-  it('在冒险记录内连接模型，返回后默认创建真实模型旅程', async () => {
+  it('模型连接归入设置，返回冒险后默认创建真实模型旅程', async () => {
     function Play() {
       const [session, setSession] = useState<ModelSessionResponse | null>(null);
       return <WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}}
@@ -107,14 +112,14 @@ describe('WorldLoreView 装配', () => {
     }
     const user = userEvent.setup();
     render(<Play />);
-    await user.click(screen.getByRole('button', { name: '连接模型 API' }));
+    await user.click(screen.getByRole('button', { name: '设置', exact: true }));
     expect(screen.queryByTestId('action-input')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText(/API Key/), 'test-key');
     await user.click(screen.getByRole('button', { name: '连接并建立会话' }));
     await screen.findByText('会话已激活');
-    await user.click(screen.getByRole('button', { name: '返回旅程' }));
+    await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
     expect(await screen.findByLabelText('新冒险模式')).toHaveValue('live');
-    expect(screen.getByRole('button', { name: '管理模型连接' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '管理模型连接' })).not.toBeInTheDocument();
   });
 
   it('切换世界会重新拉取且不残留旧标题', async () => {
@@ -124,4 +129,36 @@ describe('WorldLoreView 装配', () => {
     rerender(<WorldLoreView worldId="w2" worldName="新世界" onBack={() => {}} />);
     await waitFor(() => expect(screen.queryByText('云山纪.md')).toBeNull());
   });
+});
+it('switching to documents and settings preserves the pending adventure action and moves pulse out of the story', async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  const run = { id: 'run1', world_id: 'w1', name: '海港旅程', mode: 'live', revision: 1,
+    turns: [], latest_draft: null, memory: { cursor: 0, items: [], events: [] },
+    character: { name: '旅人', location: '海港', coins: 0, stamina: 100, spirit: 100, elapsed_minutes: 15 } };
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    const path = String(input).split('?')[0];
+    if (path.endsWith('/worlds/w1/adventures')) return json({ items: [run] });
+    if (path.endsWith('/adventures/run1')) return json(run);
+    if (path.endsWith('/world-pulse')) return json({ enabled: false, mode: 'unbound', state: 'off' });
+    if (path.endsWith('/checkpoints')) return json({ items: [] });
+    return original(input, options);
+  });
+  const user = userEvent.setup();
+  render(<WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}}
+    initialTab="journal" modelSession={{ session_id: 'session', model: 'test', expires_at: null }} />);
+  await screen.findByText('旅程尚未落笔。写下第一个行动。');
+  expect(screen.queryByRole('button', { name: '管理模型连接' })).toBeNull();
+  expect(screen.queryByRole('region', { name: '存档与分支' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: '自由编辑行动' }));
+  await user.type(screen.getByLabelText('你的行动'), '我还没有写完的行动');
+  await user.click(screen.getByRole('button', { name: '世界观文档', exact: true }));
+  expect(screen.getByRole('textbox', { name: '检索关键词' })).toBeVisible();
+  await user.click(screen.getByRole('button', { name: '设置', exact: true }));
+  expect(screen.getByText('世界脉动设置')).toBeVisible();
+  expect(screen.queryByRole('button', { name: '发送行动' })).toBeNull();
+  await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
+  expect(screen.getByLabelText('你的行动')).toHaveValue('我还没有写完的行动');
+  expect(screen.getByText('世界脉动设置')).not.toBeVisible();
+  await user.click(screen.getByRole('button', { name: '存档与分支', exact: true }));
+  expect(await screen.findByRole('region', { name: '存档与分支' })).toBeVisible();
 });

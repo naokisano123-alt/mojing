@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Edit2,
+  Eye,
   Trash2,
   ExternalLink,
   RefreshCw,
@@ -1034,6 +1035,8 @@ export function LoreEntriesPanel({
                   {new Date(viewingEntry.updated_at).toLocaleString()}
                 </div>
               </div>
+              <button type="button" className="icon-button" aria-label="编辑条目" title="编辑条目"
+                onClick={() => handleOpenEdit(viewingEntry)}><Edit2 size={20} /></button>
               <button
                 type="button"
                 className="icon-button"
@@ -1149,13 +1152,6 @@ export function LoreEntriesPanel({
               >
                 <Trash2 size={14} /> 删除条目
               </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => handleOpenEdit(viewingEntry)}
-              >
-                <Edit2 size={14} /> 编辑条目
-              </button>
             </div>
           </div>
         </div>
@@ -1179,6 +1175,8 @@ export function LoreEntriesPanel({
                   人工录入与维护，所有分类与确认状态由作者自主决定，不做假 AI 抽取。
                 </p>
               </div>
+              {isEditing && <button type="button" className="icon-button" aria-label="保存并切换只读"
+                title="保存并只读" disabled={submitting} onClick={handleSaveEntry}><Eye size={20} /></button>}
               <button
                 type="button"
                 className="icon-button"

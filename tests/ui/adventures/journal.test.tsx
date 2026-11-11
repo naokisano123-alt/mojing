@@ -219,7 +219,7 @@ it("an expired model session can be replaced without losing the typed action", a
     sessionId={sessionId} onSessionExpired={expired} />;
   const { rerender } = render(journal("old-session"));
   await screen.findByText("旅程尚未落笔。写下第一个行动。");
-  expect(screen.getByText("世界脉动设置").closest("details")).not.toHaveAttribute("open");
+  expect(screen.queryByText("世界脉动设置")).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "自由编辑行动" }));
   fireEvent.change(screen.getByLabelText("你的行动"), { target: { value: "敲门" } });
   fireEvent.click(screen.getByRole("button", { name: "发送行动" }));

@@ -1,3 +1,4 @@
+import { Bookmark } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   adventureApi,
@@ -16,11 +17,9 @@ import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
 import { WorldKnowledgePanel } from "../world-knowledge";
-import { WorldPulsePanel } from "../world-pulse";
 import { WorldStartPanel } from "../world-start";
 import type { WorldStartCommitResultDto } from "../world-start";
 import { WorldEncounterPanel } from "../world-encounters";
-import { PulsePreview } from "./PulsePreview";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
@@ -47,6 +46,7 @@ export function AdventureJournal({
   sessionId,
   onConfigure,
   onImportMaterials,
+  onActiveRunChange,
   onSessionExpired,
   onOpenSource,
   api = adventureApi,
@@ -56,6 +56,7 @@ export function AdventureJournal({
   sessionId?: string;
   onConfigure: () => void;
   onImportMaterials?: () => void;
+  onActiveRunChange?: (run: Run | null) => void;
   onSessionExpired?: () => void;
   onOpenSource: (source: NarrationSource) => void;
   api?: typeof adventureApi;
@@ -73,9 +74,12 @@ export function AdventureJournal({
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [analyzeStart, setAnalyzeStart] = useState(false);
+  const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
   const [runs, setRuns] = useState<Run[]>([]),
     [run, setRun] = useState<Detail | null>(null);
+  useEffect(() => { onActiveRunChange?.(run); }, [run, onActiveRunChange]);
+  useEffect(() => { setShowCheckpoints(false); }, [run?.id]);
   const [name, setName] = useState("新的旅程"),
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
@@ -295,9 +299,6 @@ export function AdventureJournal({
 
   return (
     <section className="adventure-journal" aria-label="冒险记录">
-      <button type="button" className="secondary" disabled={busy} onClick={onConfigure}>
-        {sessionId ? "管理模型连接" : "连接模型 API"}
-      </button>
       {loadingRuns && <p role="status" className="muted">正在读取旅程…</p>}
       {runs.length > 0 && (
         <button type="button" className="text-button" disabled={busy}
@@ -460,6 +461,10 @@ export function AdventureJournal({
         <>
           <div className="journal-heading">
             <h3>{run.name}</h3>
+            <button type="button" className="icon-button" aria-label="存档与分支" title="存档与分支"
+              aria-expanded={showCheckpoints} onClick={() => setShowCheckpoints(value => !value)}>
+              <Bookmark size={19} />
+            </button>
             <span>
               {run.mode === "fake" ? "Fake · 无真实AI" : "Live · 模型叙事"} ·
               已确认 {run.revision} 回合
@@ -484,7 +489,7 @@ export function AdventureJournal({
               当前为存档分支，继承检查点之前的确认历史，原路线保持不变。
             </p>
           )}
-          <CheckpointPanel
+          {showCheckpoints && <CheckpointPanel
             api={checkpointApi}
             run={run}
             disabled={busy}
@@ -499,7 +504,7 @@ export function AdventureJournal({
               }
               await choose(branch.id);
             }}
-          />
+          />}
           {run.character ? (
             <CharacterCard key={`character-${run.id}`} state={run.character} title="当前角色状态"
               descriptions={run.item_descriptions} disabled={busy}
@@ -607,7 +612,8 @@ export function AdventureJournal({
             </article>
           )}
           {run.mode === "live" && !sessionId && (
-            <p className="error">连接模型 API 后，即可继续这段旅程。</p>
+            <p className="muted">连接模型后即可继续。<button type="button" className="text-button"
+              onClick={onConfigure}>前往设置</button></p>
           )}
           {run.opening && draft?.status !== "ready" && draft?.status !== "pending" && <div className="flex flex-wrap gap-2">
             <button type="button" className="secondary" disabled={busy} onClick={() => {
@@ -627,8 +633,6 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
-          {run.mode === "live" && <WorldPulsePanel key={`pulse-${run.id}`} adventureId={run.id}
-            narrationSessionId={sessionId} defaultOpen={false} />}
           <details
             className="journal-sources"
             aria-label="世界消息"
@@ -636,7 +640,6 @@ export function AdventureJournal({
           >
             <summary>世界消息 · 只显示你有渠道得知的消息</summary>
             {newsOpen && <>
-              {run.mode === "fake" && <PulsePreview key={`pulse-preview-${run.id}`} adventureId={run.id} />}
               <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at}
                 refreshTrigger={newsRefresh} />
               <WorldEncounterPanel key={`encounters-${run.id}`} adventureId={run.id} defaultOpen={false}

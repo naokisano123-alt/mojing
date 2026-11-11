@@ -1,16 +1,16 @@
 import { useState } from 'react';
-import { BookOpen, Feather, Monitor, Moon, SlidersHorizontal, Sun } from 'lucide-react';
+import { BookOpen, Feather, Monitor, Moon, Sun } from 'lucide-react';
 import type { State } from '../model';
-import { Back, PageTitle, Tag } from '../components/UI';
+import { Back, PageTitle } from '../components/UI';
 
-type Section = 'reading' | 'narration' | 'model';
-export default function Settings({ state, update, back }: { state: State; update: (s: Partial<State>) => void; back: () => void }) {
+type Section = 'reading' | 'narration';
+export default function Settings({ state, update, back, embedded = false }: { state: State; update: (s: Partial<State>) => void; back: () => void; embedded?: boolean }) {
   const [section, setSection] = useState<Section>('reading');
   return <div className="narrow">
-    <Back onClick={back} label="我的世界" />
-    <PageTitle eyebrow="MAKE THE JOURNEY YOURS" title="以你喜欢的方式" description="阅读、叙事与模型，在这里分别调整。" />
+    {!embedded && <><Back onClick={back} label="我的世界" />
+      <PageTitle eyebrow="MAKE THE JOURNEY YOURS" title="以你喜欢的方式" description="调整阅读外观与叙事偏好。" /></>}
     <div className="tabs settings-tabs" role="tablist" aria-label="设置分类">
-      {([{ id: 'reading', title: '阅读', icon: BookOpen }, { id: 'narration', title: '叙事', icon: Feather }, { id: 'model', title: '模型', icon: SlidersHorizontal }] as const).map(({ id, title, icon: Icon }) =>
+      {([{ id: 'reading', title: '阅读', icon: BookOpen }, { id: 'narration', title: '叙事', icon: Feather }] as const).map(({ id, title, icon: Icon }) =>
         <button key={id} id={`tab-${id}`} role="tab" aria-selected={section === id} aria-controls={`panel-${id}`}
           className={section === id ? 'active' : ''} onClick={() => setSection(id)}><Icon size={17} />{title}</button>)}
     </div>
@@ -37,7 +37,7 @@ export default function Settings({ state, update, back }: { state: State; update
             <option value="mixed">混合叙事</option><option value="novel">小说模式</option>
           </select></div>
         <div className="reading-sample"><small>阅读预览</small><p style={{ fontSize: state.fontSize ?? 16, lineHeight: state.lineHeight ?? 2.2 }}>风穿过旧街，翻动手记的一页。你还没有决定今天的去向，远处的船钟已经响了。</p></div>
-      </> : section === 'narration' ? <>
+      </> : <>
         <h2><Feather size={19} />叙事</h2>
         <p>控制故事如何讲述，不改变阅读外观。</p>
         <div className="setting-row"><div><h3>叙事风格</h3><p>从后续模拟回合生效</p></div>
@@ -45,14 +45,8 @@ export default function Settings({ state, update, back }: { state: State; update
             <option value="literary">文学细腻</option><option value="concise">简洁明快</option>
           </select></div>
         <p className="setting-note">当前演示用预置文本展示篇幅差异，正式叙事控制将在后续阶段接入。</p>
-      </> : <>
-        <h2><SlidersHorizontal size={19} />模型设置</h2>
-        <div className="model-placeholder"><SlidersHorizontal size={32} /><h3>你的模型，你的世界。</h3>
-          <p>目前使用本地演示引擎。这里预留自选服务商与模型的设置入口，暂不连接真实 AI，也无需 API Key。</p>
-          <Tag>接口预留 · 尚未接入</Tag>
-        </div>
       </>}
     </section>
-    <p className="footnote">墨境 M0 · 阅读与叙事偏好会保留在当前浏览器</p>
+    {!embedded && <p className="footnote">阅读与叙事偏好会保留在当前设备</p>}
   </div>;
 }

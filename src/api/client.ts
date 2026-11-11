@@ -485,11 +485,11 @@ export function getCapabilities(signal?: AbortSignal): Promise<CapabilitiesRespo
 /* ================= M1-D 人工条目（M1_R3_API §1.3） ================= */
 
 export function listLoreEntries(
-  params: { worldId: string; type?: string; status?: string; limit?: number; offset?: number },
+  params: { worldId: string; type?: string; status?: string; limit?: number; offset?: number; q?: string },
   signal?: AbortSignal,
 ): Promise<LoreEntryPage> {
   return request<LoreEntryPage>('GET', '/worlds/' + encodeURIComponent(params.worldId) + '/lore-entries', {
-    queryParams: { type: params.type, status: params.status, limit: params.limit, offset: params.offset },
+    queryParams: { type: params.type, status: params.status, limit: params.limit, offset: params.offset, q: params.q },
     signal,
   });
 }
@@ -568,5 +568,14 @@ export function previewNarration(
     body: payload,
     signal,
     timeoutMs: 60000,
+  });
+}
+
+export function updateDocumentText(
+  documentId: string, text: string, expectedContentSha256: string, signal?: AbortSignal,
+): Promise<WorldDocument> {
+  return request("PUT", `/documents/${encodeURIComponent(documentId)}`, {
+    body: { text, expected_content_sha256: expectedContentSha256 }, signal,
+    timeoutMs: DEFAULT_UPLOAD_TIMEOUT_MS,
   });
 }

@@ -65,6 +65,8 @@ export function LoreSearchPanel({
   placeholder = '搜索人物、地点、势力、物品或原文关键词...',
   pageSize = 20,
   className = '',
+  compact = false,
+  onQueryChange,
 }: LoreSearchPanelProps) {
   const [inputValue, setInputValue] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
@@ -86,6 +88,7 @@ export function LoreSearchPanel({
     requestIdRef.current += 1;
     setInputValue('');
     setActiveQuery('');
+    onQueryChange?.('');
     setSearchResult(null);
     setError(null);
     setLoading(false);
@@ -105,6 +108,10 @@ export function LoreSearchPanel({
     async (targetQuery: string, targetOffset: number) => {
       const clean = targetQuery.trim();
       if (!clean) {
+        requestIdRef.current += 1;
+        abortControllerRef.current?.abort();
+        onQueryChange?.('');
+        setActiveQuery('');
         setSearchResult(null);
         setError(null);
         setLoading(false);
@@ -122,6 +129,7 @@ export function LoreSearchPanel({
       setLoading(true);
       setError(null);
       setActiveQuery(clean);
+      onQueryChange?.(clean);
       setOffset(targetOffset);
 
       try {
@@ -163,7 +171,7 @@ export function LoreSearchPanel({
         }
       }
     },
-    [worldId, search, pageSize]
+    [worldId, search, pageSize, onQueryChange]
   );
 
   function handleSubmit(e: React.FormEvent) {
@@ -172,8 +180,11 @@ export function LoreSearchPanel({
   }
 
   function handleClear() {
+    requestIdRef.current += 1;
+    setLoading(false);
     setInputValue('');
     setActiveQuery('');
+    onQueryChange?.('');
     setSearchResult(null);
     setError(null);
     setOffset(0);
@@ -251,7 +262,7 @@ export function LoreSearchPanel({
       </form>
 
       {/* 常用关键词快速推荐 */}
-      {!searchResult && !loading && (
+      {!compact && !searchResult && !loading && (
         <div className="lore-search-quick-bar" aria-label="推荐关键词">
           <span className="lore-search-quick-label">
             <Sparkles size={13} style={{ display: 'inline', marginRight: 4 }} />
@@ -305,7 +316,7 @@ export function LoreSearchPanel({
         <div className="lore-search-status-banner" role="status">
           <AlertCircle size={16} />
           <div>
-            未在当前世界资料中检索到与「<strong>{activeQuery}</strong>」相关的内容。
+            {compact ? '文档中没有匹配的内容。' : <>未在当前世界资料中检索到与「<strong>{activeQuery}</strong>」相关的内容。</>}
             <div style={{ fontSize: '11px', color: 'var(--muted, #8a8279)', marginTop: 4 }}>
               提示：可尝试缩短词长（如搜索单字或双字人名），或确认文档是否已导入。
             </div>

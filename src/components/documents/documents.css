@@ -508,3 +508,63 @@
 
 .world-export { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .world-export a { text-decoration: none; }
+
+.world-workspace [hidden],
+.viewer-modal [hidden] { display: none !important; }
+.workspace-header { margin: 8px 0 18px; }
+.workspace-header .back { margin-bottom: 12px; }
+.workspace-header h1 { font-size: 25px; line-height: 1.4; letter-spacing: 1px; }
+.workspace-header > p { font-size: 13px; margin-top: 6px; }
+.workspace-tabs {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line); margin-bottom: 20px;
+  position: sticky; top: 0; z-index: 10; background: var(--bg);
+}
+.workspace-tabs button {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 48px; padding: 8px 4px; border-bottom: 2px solid transparent;
+  background: transparent; color: var(--muted); font-size: 13px;
+}
+.workspace-tabs button.active { color: var(--text); border-color: var(--green); }
+.document-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 18px; }
+.document-toolbar > span { margin-right: auto; font-size: 12px; }
+.document-toolbar .secondary { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+.document-open {
+  display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1;
+  background: transparent; color: var(--text); text-align: left; padding: 6px 0;
+}
+.document-open > span { display: grid; gap: 6px; min-width: 0; }
+.document-open strong { overflow-wrap: anywhere; font-size: 15px; font-weight: 500; }
+.document-open small { font-size: 11px; }
+.document-menu { position: relative; flex-shrink: 0; }
+.document-menu > summary { display: grid; place-items: center; min-width: 40px; min-height: 40px; cursor: pointer; list-style: none; }
+.document-menu > summary::-webkit-details-marker { display: none; }
+.document-menu > div {
+  position: absolute; right: 0; top: 40px; z-index: 20; min-width: 145px; padding: 6px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px #0002;
+}
+.document-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px; background: transparent; color: var(--text); text-align: left; }
+.workspace-subback { min-height: 44px; margin-bottom: 12px; }
+.document-section-title { margin: 18px 0 10px; }
+.document-entry-matches { display: grid; gap: 10px; }
+.document-entry-result {
+  padding: 14px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--paper); color: var(--text); text-align: left; display: grid; gap: 6px;
+}
+.document-entry-result > span { color: var(--muted); font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.workspace-settings { display: grid; gap: 18px; }
+.workspace-settings h2 { font-size: 17px; line-height: 1.5; }
+.workspace-settings h2 small { font-size: 12px; }
+.workspace-settings .narration-preview { margin-top: 0; }
+.workspace-settings .world-pulse-panel { margin-top: 8px; }
+.viewer-editor { display: flex; flex-direction: column; gap: 10px; flex: 1; padding: 12px 18px; min-height: 0; }
+.viewer-editor p, .viewer-editor > span { font-size: 12px; }
+.viewer-editor textarea {
+  flex: 1; width: 100%; min-height: 40dvh; padding: 14px; resize: vertical;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text);
+  font: inherit; font-size: var(--reading-size, 16px); line-height: var(--reading-leading, 2);
+}
+.viewer-edit-error, .viewer-edit-status { padding: 8px 18px; font-size: 13px; }
+.world-workspace .journal-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.world-workspace .journal-heading > span { grid-column: 1 / -1; font-size: 11px; }
+.world-workspace .raw-text-view { font-size: var(--reading-size, 16px); line-height: var(--reading-leading, 2.2); }
