@@ -46,7 +46,7 @@
         }
       },
       "prompt_preview": {
-        "system_prompt_length": 1622,
+        "system_prompt_length": 1741,
         "user_prompt_length": 1115
       },
       "mock_model_response": {
@@ -548,7 +548,7 @@
         }
       },
       "prompt_preview": {
-        "system_prompt_length": 1977,
+        "system_prompt_length": 2096,
         "user_prompt_length": 2077
       },
       "mock_model_response": {
@@ -756,7 +756,7 @@
         }
       },
       "prompt_preview": {
-        "system_prompt_length": 1977,
+        "system_prompt_length": 2096,
         "user_prompt_length": 3527
       },
       "mock_model_response": {
@@ -1111,7 +1111,7 @@
         }
       },
       "prompt_preview": {
-        "system_prompt_length": 1977,
+        "system_prompt_length": 2096,
         "user_prompt_length": 5290
       },
       "mock_model_response": {

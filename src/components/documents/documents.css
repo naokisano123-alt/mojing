@@ -516,7 +516,7 @@
 .workspace-header h1 { font-size: 25px; line-height: 1.4; letter-spacing: 1px; }
 .workspace-header > p { font-size: 13px; margin-top: 6px; }
 .workspace-tabs {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
   border-bottom: 1px solid var(--line); margin-bottom: 20px;
   position: sticky; top: 0; z-index: 10; background: var(--bg);
 }
@@ -526,6 +526,10 @@
   background: transparent; color: var(--muted); font-size: 13px;
 }
 .workspace-tabs button.active { color: var(--text); border-color: var(--green); }
+.workspace-tabs button { gap: 4px; font-size: 12px; white-space: nowrap; }
+.workspace-tabs svg { flex-shrink: 0; }
+@media (max-width: 370px) { .workspace-tabs button { flex-direction: column; gap: 3px; } }
+.document-toolbar a { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
 .document-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 18px; }
 .document-toolbar > span { margin-right: auto; font-size: 12px; }
 .document-toolbar .secondary { min-height: 38px; padding: 8px 12px; font-size: 12px; }

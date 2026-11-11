@@ -194,6 +194,7 @@ def get_control_status(
         model=full_status["model"],
         reason_code=full_status["reason_code"],
         reason_summary=full_status.get("reason_summary"),
+        simulation=full_status.get("simulation"),
         world_minute=int(full_status["world_minute"]),
         world_revision=int(full_status["world_revision"]),
         current_game_day=int(day_usage["game_day"]),

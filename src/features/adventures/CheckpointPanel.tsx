@@ -150,7 +150,6 @@ export function CheckpointPanel({
               <strong>{item.name}</strong>
               <p className="muted">
                 第{item.revision}回合 ·{" "}
-                {item.mode === "fake" ? "Fake测试" : "Live模型"} ·{" "}
                 {new Date(item.created_at * 1000).toLocaleString()}
               </p>
             </div>
@@ -160,7 +159,7 @@ export function CheckpointPanel({
               onClick={() => restore(item)}
               aria-label={"从" + item.name + "创建分支"}
             >
-              从此处创建分支
+              从此处继续
             </button>
           </li>
         ))}

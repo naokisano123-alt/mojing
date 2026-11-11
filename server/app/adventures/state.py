@@ -54,12 +54,19 @@ class CharacterState:
     elapsed_minutes: int = 0
     location: str = '起点'
     inventory: tuple[InventoryItem, ...] = ()
+    condition: str = ''
 
 
 def character(value):
     if not isinstance(value, dict) or set(value) - set(CharacterState.__dataclass_fields__):
         raise StateError('角色字段无效。')
     state = CharacterState(**{**value, 'inventory': inventory(value.get('inventory', ()))})
+    if not isinstance(state.condition, str) or len(state.condition) > 500 or any(ord(c) < 32 and c != '\n' for c in state.condition):
+        raise StateError('角色近况须为500字以内的文字。')
+    try:
+        state.condition.encode('utf-16-le')
+    except UnicodeEncodeError:
+        raise StateError('角色近况包含不完整字符。') from None
     for name in ('name', 'location'):
         text = getattr(state, name)
         if not isinstance(text, str) or not text.strip() or len(text) > 80:
@@ -76,7 +83,7 @@ def character(value):
 
 
 def project(state, proposal):
-    if not isinstance(proposal, dict) or set(proposal) - {'stamina_delta','spirit_delta','coins_delta','minutes','location','inventory_changes'}:
+    if not isinstance(proposal, dict) or set(proposal) - {'stamina_delta','spirit_delta','coins_delta','minutes','location','inventory_changes','condition'}:
         raise StateError('状态提议含未授权字段。')
     values = asdict(state)
     for key, target, lower, upper in [('stamina_delta','stamina',-100,100),('spirit_delta','spirit',-100,100),
@@ -87,6 +94,8 @@ def project(state, proposal):
         values[target] += amount
     if 'location' in proposal:
         values['location'] = proposal['location']
+    if 'condition' in proposal:
+        values['condition'] = proposal['condition']
     if 'inventory_changes' in proposal:
         changes = proposal['inventory_changes']
         if not isinstance(changes, list) or len(changes) > MAX_ITEMS:

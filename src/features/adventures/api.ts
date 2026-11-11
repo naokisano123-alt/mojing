@@ -13,6 +13,7 @@ export interface CharacterState {
   name: string;
   stamina: number;
   spirit: number;
+  condition?: string;
   coins: number;
   elapsed_minutes: number;
   location: string;

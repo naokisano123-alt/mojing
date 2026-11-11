@@ -123,6 +123,8 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
     """幂等检查并补齐可能缺失的增量列，保证旧库平滑升级。"""
     event_cols = {row[1] for row in conn.execute("PRAGMA table_info(world_events)").fetchall()}
     if event_cols:
+        if "public_label" not in event_cols:
+            conn.execute("ALTER TABLE world_events ADD COLUMN public_label TEXT NOT NULL DEFAULT ''")
         if "turnpoint_type" not in event_cols:
             conn.execute("ALTER TABLE world_events ADD COLUMN turnpoint_type TEXT")
         if "precondition_ids_json" not in event_cols:

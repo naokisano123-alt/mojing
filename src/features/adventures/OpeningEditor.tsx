@@ -87,9 +87,9 @@ export function OpeningEditor({ worldId }: { worldId: string }) {
         <label>角色姓名<input required maxLength={80} value={draft.character.name} onChange={event => patch({ character: { ...draft.character, name: event.target.value } })} /></label>
         <label>起始地点<input required maxLength={80} value={draft.character.location} onChange={event => patch({ character: { ...draft.character, location: event.target.value } })} /></label>
         <label>初始铜币<input required type="number" min={0} max={1000000000} value={draft.character.coins} onChange={event => patch({ character: { ...draft.character, coins: event.target.valueAsNumber } })} /></label>
-        {(["stamina", "spirit"] as const).map((key, index) => <label key={key}>{index === 0 ? "初始体力" : "初始精神"}
-          <input required type="number" min={0} max={100} value={draft.character[key]} onChange={event => patch({ character: { ...draft.character, [key]: event.target.valueAsNumber } })} />
-        </label>)}
+        <label>角色近况<textarea maxLength={500} value={draft.character.condition ?? ""}
+          placeholder="例如：右臂有旧伤，长途跋涉后略感疲惫。"
+          onChange={event => patch({ character: { ...draft.character, condition: event.target.value } })} /></label>
         <InventoryEditor key={id ?? draft.name} items={draft.character.inventory ?? []}
           onChange={inventory => patch({ character: { ...draft.character, inventory } })} />
         <label>剧本预设行动<textarea maxLength={300} value={draft.shortcut} onChange={event => patch({ shortcut: event.target.value })} /></label>

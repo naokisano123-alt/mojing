@@ -96,6 +96,7 @@ def build_pulse_prompts(request: PulseModelRequest) -> tuple[str, str]:
             system += (
                 '\n可在同一 operations 数组用 op="update" 推进到期事件，填写 event_id、'
                 'expected_event_revision、stage 和新的 next_update_minute（须晚于当前时间）。'
+                '待更新事件缺少 public_label 时补充一个不泄露人物、地点或秘密的2至12字意象代称，已有代称沿用。'
                 '事件内部资料只有在人物自己的知情记录中出现时，才可用于该人物的决定。'
                 '有可信公开传播渠道才可在 transmissions 中加入玩家消息，'
                 '填写 holder_id="player"、knowledge_type="rumor"、channel="notice"、title、content、'
@@ -111,6 +112,7 @@ def build_pulse_prompts(request: PulseModelRequest) -> tuple[str, str]:
             'holder_id="player"、knowledge_type="rumor"、channel="notice"、title、content、'
             'source_event_id（已存在的许可事件）、learned_minute（当前确认分钟）。'
             '没有可信传播渠道时省略 transmissions；禁止公开权威记录中的秘密。'
+            '待更新事件缺少 public_label 时补充一个不泄露人物、地点或秘密的2至12字意象代称，已有代称沿用。'
         )
     return system, prompts["user_prompt"]
 

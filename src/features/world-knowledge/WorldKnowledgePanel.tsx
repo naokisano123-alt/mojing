@@ -25,6 +25,7 @@ export interface WorldKnowledgePanelProps {
   defaultOpen?: boolean;
   pageSize?: number;
   refreshTrigger?: number | string;
+  onVerify?: (factId: string) => void;
 }
 
 const FILTER_OPTIONS: ReadonlyArray<{ value: KnowledgeType | 'all'; label: string }> = [
@@ -43,6 +44,7 @@ export function WorldKnowledgePanel({
   defaultOpen = true,
   pageSize = 30,
   refreshTrigger,
+  onVerify,
 }: WorldKnowledgePanelProps) {
   const [items, setItems] = useState<WorldNewsItem[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
@@ -250,6 +252,8 @@ export function WorldKnowledgePanel({
                 </div>
                 <h4 className="world-knowledge-title">{item.title}</h4>
                 <p className="world-knowledge-content">{item.content}</p>
+                {onVerify && <button type="button" className="text-button" disabled={disabled}
+                  aria-label={`查证：${item.title}`} onClick={() => onVerify(item.fact_id)}>查证这条消息</button>}
               </li>
             );
           })}

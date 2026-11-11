@@ -239,6 +239,18 @@ def get_pulse_status(
         "in_flight_budget": reserved,
         "current_day_usage": day_usage,
     }
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='world_events'").fetchone():
+        # 成功必须有已提交的事件。公共状态只投影专用模糊名，绝不使用内部 title。
+        rows = conn.execute(
+            "SELECT kind, public_label, updated_minute FROM world_events WHERE instance_id = ? "
+            "AND status IN ('active', 'stalled') ORDER BY created_minute, event_id LIMIT 30",
+            (instance_id,),
+        ).fetchall()
+        result["simulation"] = {
+            "initialized": conn.execute("SELECT 1 FROM world_events WHERE instance_id = ? LIMIT 1", (instance_id,)).fetchone() is not None,
+            "events": [{"kind": row["kind"], "label": row["public_label"] or "未明的动向"} for row in rows],
+            "updated_minute": max((int(row["updated_minute"]) for row in rows), default=0),
+        }
     if reason_code == "PULSE_JOB_FAILED":
         last_code = sanitized_jobs[0].get("error_code")
         explanation = _JOB_FAILURE_SUMMARIES.get(last_code)

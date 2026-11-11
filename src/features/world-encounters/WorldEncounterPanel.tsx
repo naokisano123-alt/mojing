@@ -33,6 +33,7 @@ export interface WorldEncounterPanelProps {
   onExpandComposer?: (expanded: boolean) => void;
   onTurnCommitted?: (result: EncounterCommitResultDto) => void;
   refreshTrigger?: number | string;
+  focusFactId?: string;
 }
 
 export function WorldEncounterPanel({
@@ -45,6 +46,7 @@ export function WorldEncounterPanel({
   onExpandComposer,
   onTurnCommitted,
   refreshTrigger,
+  focusFactId,
 }: WorldEncounterPanelProps) {
   const [bundle, setBundle] = useState<WorldEncounterEntrypointBundle | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -252,7 +254,7 @@ export function WorldEncounterPanel({
     }
   };
 
-  const newsItems = bundle?.news_items ?? [];
+  const newsItems = (bundle?.news_items ?? []).filter(item => !focusFactId || item.fact_id === focusFactId);
 
   return (
     <details
@@ -304,7 +306,7 @@ export function WorldEncounterPanel({
 
       {!loading && newsItems.length === 0 && (
         <div className="world-encounter-empty" data-testid="encounter-empty-state">
-          <p>当前尚未获知任何可追查的外界传闻或消息。</p>
+          <p>{focusFactId ? '这条消息暂时没有可用的查证入口，可以返回冒险自由编辑行动。' : '当前尚未获知任何可追查的外界传闻或消息。'}</p>
         </div>
       )}
 
