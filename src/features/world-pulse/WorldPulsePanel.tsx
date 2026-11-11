@@ -31,7 +31,7 @@ export interface WorldPulsePanelProps {
 }
 
 const DEFAULT_BASE_URL = 'https://api.deepseek.com';
-const DEFAULT_MODEL_NAME = 'deepseek-chat';
+const DEFAULT_MODEL_NAME = 'deepseek-flash';
 const DEFAULT_HEARTBEAT_MS = 20_000;
 
 export function WorldPulsePanel({

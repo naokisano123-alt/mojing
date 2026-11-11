@@ -31,6 +31,85 @@ def mock_reply(value):
     })
 
 
+@pytest.mark.parametrize("failure,code", [
+    ("missing_scope", "VALIDATION_ERROR"),
+    ("truncated", "MODEL_OUTPUT_TRUNCATED"),
+    ("bad_json", "MODEL_OUTPUT_NOT_JSON"),
+    ("unknown_field", "PROPOSAL_UNKNOWN_ROOT_FIELD"),
+])
+def test_pulse_failure_reason_and_explicit_retry(tmp_path, failure, code):
+    """走正式控制入口、HTTP 客户端、Worker 和领域校验，拒绝结果也须结算且可重试。"""
+    calls = []
+    hidden = "不应出现在手机错误说明中的隐藏事件"
+
+    def provider(request):
+        body = json.loads(request.content)
+        system, prompt = (message["content"] for message in body["messages"])
+        calls.append(body)
+        assert body["model"] == "deepseek-flash"
+        assert "scope 必须填写且仅允许 local/regional/national/international" in system
+        assert "description 不超过 80 字" in system
+        source_ids = next(
+            json.loads(line.split("】", 1)[1])
+            for line in prompt.splitlines() if line.startswith("【允许引用的 source_id")
+        )
+        proposal = {"operations": [{
+            "op": "create", "kind": "thread", "title": title,
+            "description": "行会安排商队轮流进港。", "location": "码头",
+            "scope": "local", "next_update_minute": 60 + index * 30,
+            "source_ids": source_ids[:1],
+        } for index, title in enumerate(("商队进港", "行会调度", "仓库轮班"))]}
+        reason = "stop"
+        if len(calls) == 1:
+            if failure == "missing_scope":
+                # 原提示词未告知 scope；模型照其余要求回复，仍会被整批拒绝。
+                for operation in proposal["operations"]:
+                    operation.pop("scope")
+            elif failure == "truncated":
+                reason = "length"
+            elif failure == "unknown_field":
+                proposal[hidden] = hidden
+        content = '{"operations":[' if len(calls) == 1 and failure == "bad_json" else json.dumps(proposal)
+        return httpx.Response(200, json={
+            "choices": [{"finish_reason": reason, "message": {"content": content}}],
+            "usage": {"prompt_tokens": 2393, "completion_tokens": 1400, "total_tokens": 3793},
+        })
+
+    settings = Settings(db_path=tmp_path / "failure.db")
+    with TestClient(create_app(settings, pulse_transport=httpx.MockTransport(provider))) as client:
+        world = create_world(client)["id"]
+        assert upload(client, world, "码头.txt", "行会管理商队进港和码头仓库轮班。".encode()).status_code == 201
+        run = client.post(f"/api/v1/worlds/{world}/adventures", json={"name": "验收", "mode": "live"}).json()
+        path = f"/api/v1/adventures/{run['id']}/world-pulse"
+        connected = client.post(f"{path}/connect", json={
+            "mode": "independent", "base_url": "https://mock.invalid/v1",
+            "model": "deepseek-flash", "api_key": "sk-only-for-http-mock",
+        })
+        assert connected.status_code == 200, connected.text
+        assert client.post(f"{path}/activity", json={"active": True}).status_code == 200
+        assert client.put(path, json={"enabled": True}).status_code == 200
+        failed = wait_for(lambda: client.get(path).json(), lambda s: s["reason_code"] == "PULSE_JOB_FAILED")
+        assert code in failed["reason_summary"]
+        assert "未写入世界" in failed["reason_summary"]
+        assert hidden not in json.dumps(failed, ensure_ascii=False)
+        assert "sk-only-for-http-mock" not in json.dumps(failed)
+        assert failed["usage"]["billed_calls"] == 1
+        assert failed["usage"]["actual_tokens"] == 3793
+        with db(settings.db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM world_events").fetchone()[0] == 0
+            assert conn.execute("SELECT error_code FROM pulse_jobs").fetchone()[0] == code
+
+        # 不自动重复付费调用，用户主动关闭再开启后可完成初始化。
+        assert len(calls) == 1
+        assert client.put(path, json={"enabled": False}).status_code == 200
+        assert client.put(path, json={"enabled": True}).status_code == 200
+        recovered = wait_for(lambda: client.get(path).json(), lambda s: s["usage"]["billed_calls"] == 2)
+        assert recovered["reason_code"] is None
+        assert not recovered.get("reason_summary")
+        with db(settings.db_path) as conn:
+            assert conn.execute("SELECT COUNT(*) FROM world_events").fetchone()[0] == 3
+
+
 @pytest.mark.parametrize("connection", ["independent", "reuse_narration"])
 def test_live_seed_advance_news_narration_and_offline_gate(tmp_path, monkeypatch, connection):
     path = tmp_path / "live.db"

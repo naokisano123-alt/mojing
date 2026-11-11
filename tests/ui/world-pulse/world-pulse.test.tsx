@@ -47,6 +47,7 @@ describe('WorldPulsePanel mobile UI & lifecycle contract tests (390px mobile wid
     const modelInput = screen.getByTestId('pulse-model-input');
     const keyInput = screen.getByTestId('pulse-api-key-input');
 
+    expect(modelInput).toHaveValue('deepseek-flash');
     fireEvent.change(urlInput, { target: { value: 'https://api.deepseek.com' } });
     fireEvent.change(modelInput, { target: { value: 'deepseek-chat' } });
     fireEvent.change(keyInput, { target: { value: 'sk-pulse-secret-987654' } });
@@ -329,5 +330,26 @@ describe('WorldPulsePanel mobile UI & lifecycle contract tests (390px mobile wid
     );
     expect(formatted.actualTokensText).toContain('1,024');
     expect(formatted.simulatedUsageText).toContain('不计费');
+  });
+
+  it('显示后端提供的失败类别，刷新恢复后清除旧错误说明', async () => {
+    let status = sanitizePulseStatus({
+      enabled: true, mode: 'independent', state: 'ready', model: 'deepseek-flash',
+      reason_code: 'PULSE_JOB_FAILED',
+      reason_summary: '最近一次推演失败：模型回复达到输出长度上限（MODEL_OUTPUT_TRUNCATED）。结果未写入世界。',
+      recent_jobs: [{ error_summary: '隐藏事件正文不应进入界面' }],
+    });
+    const transport: WorldPulseTransport = {
+      getStatus: vi.fn(async () => status),
+      connect: vi.fn(async () => status),
+      setEnabled: vi.fn(async () => status),
+      setActivity: vi.fn(async () => undefined),
+    };
+    render(<WorldPulsePanel adventureId="failure" adventureMode="live" transport={transport} />);
+    expect(await screen.findByText(/MODEL_OUTPUT_TRUNCATED/)).toHaveTextContent('未写入世界');
+    expect(document.body.textContent).not.toContain('隐藏事件正文');
+    status = { ...status, reason_code: null, reason_summary: null };
+    fireEvent.click(screen.getByRole('button', { name: '刷新脉动状态' }));
+    await waitFor(() => expect(screen.queryByText(/MODEL_OUTPUT_TRUNCATED/)).toBeNull());
   });
 });

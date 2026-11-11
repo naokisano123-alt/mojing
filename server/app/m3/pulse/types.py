@@ -154,6 +154,7 @@ class PulsePublicStatusDTO:
     usage: dict[str, Any] = field(default_factory=dict)
     available: bool = True
     paused: bool = False
+    reason_summary: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -164,6 +165,7 @@ class PulsePublicStatusDTO:
             "state": self.state,
             "model": self.model,
             "reason_code": self.reason_code,
+            **({"reason_summary": self.reason_summary} if self.reason_summary else {}),
             "world_minute": self.world_minute,
             "world_revision": self.world_revision,
             "current_game_day": self.current_game_day,

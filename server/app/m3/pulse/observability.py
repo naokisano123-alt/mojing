@@ -38,6 +38,25 @@ _BUDGET_LIMIT_CODES = frozenset({
     "PULSE_COOLDOWN_ACTIVE",
 })
 
+# 仅向手机端说明固定的错误类别，不回显模型正文、隐藏事件或校验器中的动态值。
+_JOB_FAILURE_SUMMARIES = {
+    "MODEL_OUTPUT_TRUNCATED": "模型回复达到输出长度上限，未能完整生成结果",
+    "MODEL_OUTPUT_NOT_JSON": "模型回复不是完整、合法的 JSON",
+    "MODEL_OUTPUT_INVALID": "模型回复结构不符合要求",
+    "MODEL_OUTPUT_INCOMPLETE": "模型未正常完成回复",
+    "MODEL_EMPTY_RESPONSE": "模型没有返回正文",
+    "VALIDATION_ERROR": "模型回复缺少必需字段或字段值不合法",
+    "SEED_THREAD_COUNT_INVALID": "模型生成的初始事件数量不符合要求",
+    "MODEL_HTTP_ERROR": "模型服务拒绝了请求，请检查模型名称与接口配置",
+    "MODEL_UPSTREAM_ERROR": "模型服务暂时出现故障",
+    "MODEL_TIMEOUT": "等待模型回复超时",
+    "MODEL_CONNECTION_FAILED": "未能连接模型服务",
+    "MODEL_RATE_LIMITED": "模型服务限制了请求频率",
+    "PROPOSAL_UNKNOWN_ROOT_FIELD": "模型回复包含未约定的顶层字段",
+    "UNKNOWN_FIELD": "模型回复包含未约定的字段",
+    "SOURCE_FABRICATED": "模型引用了本次未授权的资料来源",
+}
+
 
 def _derive_control_state(
     *,
@@ -220,6 +239,19 @@ def get_pulse_status(
         "in_flight_budget": reserved,
         "current_day_usage": day_usage,
     }
+    if reason_code == "PULSE_JOB_FAILED":
+        last_code = sanitized_jobs[0].get("error_code")
+        explanation = _JOB_FAILURE_SUMMARIES.get(last_code)
+        if explanation:
+            result["reason_summary"] = (
+                f"最近一次推演失败：{explanation}（{last_code}）。"
+                "结果未写入世界，普通冒险可继续；可关闭后重新开启脉动。"
+            )
+        else:
+            result["reason_summary"] = (
+                "最近一次推演结果未通过世界规则校验，未写入世界。"
+                "普通冒险可继续；可关闭后重新开启脉动。"
+            )
     assert_no_credentials(result, context="pulse_status")
     return result
 
