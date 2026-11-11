@@ -102,3 +102,11 @@ def test_an_ordinary_action_reaches_nearby_event_without_skipping_it(client):
     assert result["clock"]["elapsed_minutes"] == 3
     assert result["clock"]["events"][0]["title"] == "急单"
     assert commit(client, run, "small").json()["character"]["elapsed_minutes"] == 3
+
+
+def test_natural_duration_without_separate_fast_forward_fields():
+    from app.adventures.scenario import duration
+    for action, expected in [('等待两个小时', 120), ('休息半天', 720), ('做工三天', 4320), ('睡一夜', 480), ('我先冥想十分钟', 10)]:
+        assert duration(action, None) == expected
+    for action in ['询问三天前发生的事', '不等两小时，现在就出发', '如果等两小时会怎样？']:
+        assert duration(action, None) is None

@@ -40,6 +40,7 @@ from app.errors import ApiError
 from app.m3 import events as world_events, knowledge as world_knowledge
 from app.m3.core import adapters as core_adapters, service as instance_service
 from app.world_export import _write_json
+from app.world_names import imported_world_name
 
 from .errors import (
     PortabilityError,
@@ -931,7 +932,7 @@ def _copy_settings(
     world = _validated(settings["world"], "worlds", WORLD_COLUMNS)
     if not 1 <= len(world["name"].strip()) <= 40:
         raise TransferInvalidError()
-    _insert(conn, "worlds", {**world, "id": world_id})
+    _insert(conn, "worlds", {**world, "id": world_id, "name": imported_world_name(conn, world['name'])})
     texts = {row["id"]: row["text"].encode("utf-16-le") for row in records["documents"]}
     chunks = {row["id"]: row for row in records["chunks"]}
     for table, rows in records.items():

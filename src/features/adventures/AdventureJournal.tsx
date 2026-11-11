@@ -23,18 +23,15 @@ import type { WorldStartCommitResultDto } from "../world-start";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
+import { formatStoryTime, elapsedAt } from "./storyTime.ts";
 
 const WorldKnowledgePanel = lazy(() => import("../world-knowledge/WorldKnowledgePanel").then(module => ({ default: module.WorldKnowledgePanel })));
 const WorldEncounterPanel = lazy(() => import("../world-encounters/WorldEncounterPanel").then(module => ({ default: module.WorldEncounterPanel })));
 
-function worldTime(start: string, minutes: number) {
-  return new Date(Date.parse(start + "Z") + minutes * 60000).toISOString().slice(0, 16).replace("T", " ");
-}
 
-function ClockSummary({ clock, pending }: { clock: ClockResult; pending?: boolean }) {
+function ClockSummary({ clock, pending, start }: { clock: ClockResult; pending?: boolean; start?: string }) {
   return <aside className="journal-character" aria-label={pending ? "待确认时间结算" : "时间结算"}>
-    <strong>{pending ? "待确认 · " : ""}{clock.interrupted ? "遇到需要决定的事件，时间停在" : "世界时间推进至"} {clock.to.replace("T", " ")}</strong>
-    <p>本回合经过 {clock.elapsed_minutes} 分钟{clock.elapsed_minutes < clock.requested_minutes ? `（原计划 ${clock.requested_minutes} 分钟）` : ""}</p>
+    <strong>{pending ? "待确认 · " : ""}{clock.interrupted ? "遇到需要决定的事件，时间停在" : "世界时间推进至"} {formatStoryTime(start, elapsedAt(start, clock.to))}</strong>
     {clock.events.length > 0 && <ul>
       {clock.events.map((event, index) => <li key={index}>
         <strong>{event.title}{event.count > 1 ? ` × ${event.count}` : ""}</strong>
@@ -73,7 +70,6 @@ export function AdventureJournal({
 }) {
   const [openings, setOpenings] = useState<(Opening & { id: string })[]>([]);
   const [openingId, setOpeningId] = useState("");
-  const [advanceHours, setAdvanceHours] = useState<number>();
   const selectedOpening = openings.find(item => item.id === openingId);
   const [characterName, setCharacterName] = useState("旅人");
   const [initialInventory, setInitialInventory] = useState<InventoryItem[]>([]);
@@ -131,7 +127,6 @@ export function AdventureJournal({
     setLoadingRuns(true);
     setOpenings([]);
     setOpeningId("");
-    setAdvanceHours(undefined);
     void api.listOpenings?.(worldId, controller.signal).then(data => {
       if (valid(generation) && Array.isArray(data.items)) setOpenings(data.items);
     }).catch(() => { /* Older endpoints still allow freeform creation. */ });
@@ -221,7 +216,6 @@ export function AdventureJournal({
     setRun(null);
     setDraft(null);
     setExpanded(false);
-    setAdvanceHours(undefined);
     setAction("");
     const generation = epoch.current;
     setError("");
@@ -239,10 +233,6 @@ export function AdventureJournal({
   const generate = (submittedAction: string) =>
     operate(async () => {
       if (!run || !submittedAction.trim()) return;
-      if (advanceHours !== undefined && (!Number.isInteger(advanceHours) || advanceHours < 1 || advanceHours > 168)) {
-        setError("请输入 1 至 168 小时的快进时长。");
-        return;
-      }
       const generation = epoch.current,
         controller = new AbortController();
       active.current = controller;
@@ -256,7 +246,6 @@ export function AdventureJournal({
           action: submittedAction,
           expected_revision: run.revision,
           session_id: run.mode === "live" ? sessionId : undefined,
-          ...(advanceHours === undefined ? {} : { advance_minutes: advanceHours * 60 }),
         },
         controller.signal,
       );
@@ -285,7 +274,7 @@ export function AdventureJournal({
       else await api.commit(run.id, draft.id);
       if (valid(generation)) {
         await refresh(run.id);
-        if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); }
+        if (valid(generation)) { setExpanded(false); setAction(""); }
       }
     });
   const older = () =>
@@ -327,7 +316,6 @@ export function AdventureJournal({
     setDraft(detail.latest_draft);
     setShowCreate(false);
     setAnalyzeStart(false);
-    setAdvanceHours(undefined);
     setAction("");
     setExpanded(false);
     onViewChange?.("adventure");
@@ -352,7 +340,7 @@ export function AdventureJournal({
       {!loadingRuns && (showCreate || runs.length === 0) && (
         <button type="button" className="secondary" disabled={busy}
           aria-expanded={analyzeStart} onClick={() => setAnalyzeStart(value => !value)}>
-          {analyzeStart ? "返回普通开局" : "从世界资料生成开局"}
+          {analyzeStart ? "返回手动开局" : "让 AI 根据资料生成开局"}
         </button>
       )}
       {!loadingRuns && (showCreate || runs.length === 0) && analyzeStart && (
@@ -450,7 +438,7 @@ export function AdventureJournal({
                   runsOffset.current++;
                   setShowCreate(false);
                   await refresh(created.id);
-                  if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); onViewChange?.("adventure"); }
+                  if (valid(generation)) { setExpanded(false); setAction(""); onViewChange?.("adventure"); }
                 }
               })
             }
@@ -532,7 +520,7 @@ export function AdventureJournal({
           <div className="journal-tools" aria-label="冒险工具">
             <div className="journal-scene">
               {run.character?.location && <span><MapPin size={14} />{run.character.location}</span>}
-              {run.opening && run.character && <span><Clock3 size={14} />{worldTime(run.opening.starts_at, run.character.elapsed_minutes)}</span>}
+              {run.opening && run.character && <span><Clock3 size={14} />{formatStoryTime(run.opening.starts_at, run.character.elapsed_minutes)}</span>}
             </div>
             <div className="journal-tool-buttons">
               <button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setPanel("character")}><UserRound size={17} />角色</button>
@@ -557,7 +545,7 @@ export function AdventureJournal({
                 <summary>查看本回合状态</summary>
                 <CharacterCard state={turn.result.state_after} title="本回合确认后的状态" />
               </details>}
-              {turn.result.clock && <ClockSummary clock={turn.result.clock} />}
+              {turn.result.clock && <ClockSummary clock={turn.result.clock} start={run.opening?.starts_at} />}
               <MemoryChanges changes={turn.result.memory_changes} title="本回合日志" />
             </article>
           ))}
@@ -594,7 +582,7 @@ export function AdventureJournal({
               {draft.result.projected_state && <CharacterCard
                 state={draft.result.projected_state} title="模型状态提议 · 尚未生效"
               />}
-              {draft.result.clock && <ClockSummary clock={draft.result.clock} pending />}
+              {draft.result.clock && <ClockSummary clock={draft.result.clock} start={run.opening?.starts_at} pending />}
               <MemoryChanges changes={draft.result.memory_proposal} title="待确认日志提议" />
               {requiredClock && <p className="muted">确认后会一并保存时间、事件和本回合的状态变化。</p>}
               {!requiredClock && (draft.result.projected_state || hasMemoryProposal) && <label className="journal-apply">
@@ -629,15 +617,6 @@ export function AdventureJournal({
             <p className="muted">连接模型后即可继续。<button type="button" className="text-button"
               onClick={onConfigure}>前往设置</button></p>
           )}
-          {run.opening && draft?.status !== "ready" && draft?.status !== "pending" && <div className="flex flex-wrap gap-2">
-            <button type="button" className="secondary" disabled={busy} onClick={() => {
-              setAdvanceHours(value => value === undefined ? 24 : undefined);
-              setExpanded(true);
-            }}>{advanceHours === undefined ? "指定快进时长" : "取消指定时长"}</button>
-            {advanceHours !== undefined && <label>快进小时数 <input type="number" min={1} max={168}
-              value={Number.isNaN(advanceHours) ? "" : advanceHours} disabled={busy}
-              onChange={event => setAdvanceHours(event.target.valueAsNumber)} /></label>}
-          </div>}
           {draft?.status !== "ready" && draft?.status !== "pending" && <ActionComposer id="journal-action-editor" draft={action} setDraft={setAction}
             expanded={expanded} setExpanded={setExpanded}
             suggestions={[...new Set([

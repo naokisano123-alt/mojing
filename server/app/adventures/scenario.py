@@ -23,6 +23,10 @@ CALENDAR_FORMAT = "%Y-%m-%dT%H:%M"
 DURATION = re.compile(r"^(?:快进|接下来|未来)\s*"
                       r"([0-9]{1,4}|[一二两三四五六七八九十])\s*个?\s*(天|小时|分钟)")
 NUMBERS = dict(zip("一二两三四五六七八九十", (1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10)))
+ACTION_DURATION = re.compile(
+    r"^(?:我)?(?:先|继续)?(?:等待|等候|等|休息|睡觉|睡|工作|做工|赶路|旅行|步行|冥想|停留)\s*"
+    r"([0-9]{1,4}|[一二两三四五六七八九十半])\s*个?\s*(天|小时|分钟|夜)"
+)
 
 
 def _text(value, name, limit):
@@ -125,13 +129,12 @@ def save_opening(conn, world_id, payload, opening_id=None):
 
 def duration(action, requested):
     if requested is None:
-        match = DURATION.match(action.strip())
+        match = DURATION.match(action.strip()) or ACTION_DURATION.match(action.strip())
         if not match:
             return None
         quantity, unit = match.groups()
-        requested = (NUMBERS[quantity] if quantity in NUMBERS else int(quantity)) * {
-            "天": 1440, "小时": 60, "分钟": 1,
-        }[unit]
+        count = 0.5 if quantity == '半' else NUMBERS.get(quantity, int(quantity) if quantity.isdigit() else 0)
+        requested = int(count * {"天": 1440, "小时": 60, "分钟": 1, "夜": 480}[unit])
     try:
         return _integer(requested, "快进分钟数", 1, MAX_ADVANCE)
     except StateError as exc:

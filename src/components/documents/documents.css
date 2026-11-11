@@ -508,6 +508,10 @@
 
 .world-export { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
 .world-export a { text-decoration: none; }
+.creation-options { display: flex; gap: 10px; margin: 16px 0; }
+.creation-options button { flex: 1; min-height: 44px; }
+.home-demo-worlds { margin-top: 30px; }
+.home-demo-worlds > summary { color: var(--muted); cursor: pointer; padding: 14px 0; }
 
 .world-workspace [hidden],
 .viewer-modal [hidden] { display: none !important; }

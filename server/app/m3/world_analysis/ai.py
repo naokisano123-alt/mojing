@@ -20,6 +20,8 @@ from typing import Any, Protocol
 import httpx
 
 from ...model_gateway.client import OpenAIModelClient
+from ...model_gateway.errors import GatewayError
+from ...model_gateway.structured import structured_output_options
 
 from .errors import AnalysisSourceRequiredError, AnalysisValidationError
 from .extractor import (
@@ -262,6 +264,8 @@ def build_world_analysis_prompts(
         "6. 严格限制未公开信息：远方阴谋、角色未获知的设定或 NPC 私密动机（`visibility='secret'` 或 `'faction_internal'`）不得标记为 `player_known_at_start=true`。\n"
         "7. 公开消息要单独填写玩家能听见或看见的 player_rumor_content，避免复述后台事件全文。\n"
         "请只输出符合以下结构的 JSON 对象。\n"
+        "仅生成支撑开局所需的1至3处地点、1至3名人物和3条主要事件线。每项描述不超过100字，"
+        "摘要不超过120字，场景概览不超过200字，省略无必要的可选字段，保证整个 JSON 完整。\n"
         + json.dumps(WORLD_ANALYSIS_OUTPUT_SCHEMA, ensure_ascii=False, separators=(",", ":"))
     )
 
@@ -867,6 +871,7 @@ class OpenAIWorldAnalysisModelClient:
             "model": self.model,
             "temperature": 0.2,
             "max_tokens": 8192,
+            **structured_output_options(self.base_url, self.model),
             "messages": [
                 {"role": "system", "content": prompts["system_prompt"]},
                 {"role": "user", "content": prompts["user_prompt"]},
@@ -881,14 +886,24 @@ class OpenAIWorldAnalysisModelClient:
             }
         )
         body = await self._client._post(payload, self._client.timeout_seconds)
+        self.last_usage = body.get("usage") if isinstance(body, Mapping) else None
+        # 保留 GatewayError 的截断/空正文等具体错误，不把它们伪装成 JSON 语法错误。
         try:
             content = self._client._content(body)
-            self.last_usage = body.get("usage")
+        except GatewayError as exc:
+            hints = {
+                'MODEL_OUTPUT_TRUNCATED': '开局回复达到长度上限，尚未生成有效开局。可减少所选资料后重试，或直接开始冒险。',
+                'MODEL_EMPTY_RESPONSE': '模型没有返回开局正文。可稍后重试，或跳过分析直接开始冒险。',
+            }
+            if exc.code in hints:
+                raise AnalysisValidationError(exc.code, hints[exc.code], status=exc.status) from None
+            raise
+        try:
             parsed = json.loads(_strip_markdown_fences(content))
-        except Exception as exc:
+        except json.JSONDecodeError as exc:
             raise AnalysisValidationError(
                 "MODEL_OUTPUT_PARSE_ERROR",
-                "模型返回的初始局势内容不是合法的 JSON 对象。",
+                "模型未按要求返回有效的开局数据。尚未建立旅程，可重试或跳过分析直接开始。",
                 status=502,
             ) from exc
 

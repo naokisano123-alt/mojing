@@ -24,10 +24,6 @@ export function CharacterCard({
           <dd>{state.coins}</dd>
         </div>
         <div>
-          <dt>累计耗时</dt>
-          <dd>{state.elapsed_minutes}分钟</dd>
-        </div>
-        <div>
           <dt>位置</dt>
           <dd>{state.location}</dd>
         </div>

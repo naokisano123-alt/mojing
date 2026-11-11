@@ -21,6 +21,7 @@ from .errors import ApiError
 from .m3 import events as world_events, knowledge as world_knowledge
 from .m3.core import service as instance_service
 from .world_export import _write_json
+from .world_names import imported_world_name
 
 VERSION = 1
 SETTINGS_OPENINGS_VERSION = 2
@@ -268,7 +269,7 @@ def _copy_settings(conn, settings, world_id, records, ids):
     world = _validated(settings["world"], "worlds", WORLD_COLUMNS)
     if not 1 <= len(world["name"].strip()) <= 40:
         raise _invalid()
-    _insert(conn, "worlds", {**world, "id": world_id})
+    _insert(conn, "worlds", {**world, "id": world_id, "name": imported_world_name(conn, world['name'])})
     texts = {row["id"]: row["text"].encode("utf-16-le") for row in records["documents"]}
     chunks = {row["id"]: row for row in records["chunks"]}
     for table, rows in records.items():

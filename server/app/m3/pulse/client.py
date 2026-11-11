@@ -16,6 +16,7 @@ from app.m3.pulse.types import (
 )
 from app.model_gateway.errors import GatewayError
 from app.model_gateway.url import validate_and_normalize_base_url
+from app.model_gateway.structured import structured_output_options
 
 
 def estimate_tokens(text: str) -> int:
@@ -307,6 +308,7 @@ class OpenAIPulseModelClient:
             ],
             "temperature": 0.4,
             "max_tokens": request.max_tokens,
+            **structured_output_options(self.base_url, self.model),
         }
 
         try:
