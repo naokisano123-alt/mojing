@@ -34,6 +34,7 @@ export function MemoryPanel({ memory, disabled, onCorrect }: {
   disabled: boolean;
   onCorrect: (correction: MemoryCorrection) => Promise<void>;
 }) {
+  const [open, setOpen] = useState(false);
   const [editor, setEditor] = useState<{ id?: string; item: MemoryFields; remove?: boolean }>();
   const [reason, setReason] = useState("");
   const [people, setPeople] = useState("");
@@ -71,9 +72,10 @@ export function MemoryPanel({ memory, disabled, onCorrect }: {
     }
   }
 
-  return <details className="journal-sources memory-panel">
+  return <details className="journal-sources memory-panel" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>世界日志与更正（{memory.items.length}）</summary>
-    <p className="muted text-sm">当前事实会随这条分支继续。更正会保留记录，押金日志的手动更正不改动角色余额。</p>
+    {open && <>
+    <p className="muted text-sm">{memory.items.length ? "需要时可更正下列长期记录。" : "暂无长期记录，游戏会随旅程自动整理。"}</p>
     <ul className="grid gap-3 mt-3">
       {memory.items.map(item => <li key={item.id}>
         <strong>{label(item)}</strong>
@@ -117,6 +119,7 @@ export function MemoryPanel({ memory, disabled, onCorrect }: {
           </> : <option value="done">已完成</option>}
         </select></label>}
       </>}
+      {editor.item.kind === "deposit" && <p className="muted text-sm">更正押金记录只调整记忆，角色余额单独结算。</p>}
       <label>更正说明 <input required maxLength={300} value={reason} onChange={event => setReason(event.target.value)} /></label>
       {error && <p role="alert" className="error">{error}</p>}
       <div className="flex flex-wrap gap-2">
@@ -124,5 +127,6 @@ export function MemoryPanel({ memory, disabled, onCorrect }: {
         <button className="secondary" disabled={saving} type="button" onClick={() => setEditor(undefined)}>取消</button>
       </div>
     </form>}
+    </>}
   </details>;
 }

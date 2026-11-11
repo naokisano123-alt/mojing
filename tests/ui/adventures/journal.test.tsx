@@ -287,3 +287,35 @@ it("shows a configured opening and commits an interrupted advance with its clock
   fireEvent.click(screen.getByText("确认并写入回合"));
   await waitFor(() => expect(api.commit).toHaveBeenCalledWith("run", "draft", { apply_changes: true }));
 });
+
+it("refreshing a journey keeps a single current character and memory panel", async () => {
+  const { api } = setup(true);
+  let revision = 0;
+  api.detail.mockImplementation(async () => ({
+    id: "run", world_id: "w", name: "灯塔之旅", mode: "fake", revision,
+    character: { name: "旅人", coins: revision, stamina: 100, spirit: 100,
+      location: "旧街", elapsed_minutes: revision * 15 },
+    memory: { cursor: revision, items: [], events: [] },
+    turns: Array.from({ length: revision }, (_, i) => ({
+      sequence: i + 1, action: "在街上走走",
+      result: {
+        request_id: String(i), mode: "fake", narrative: "灯光亮着。",
+        references: [], sources: [],
+        state_after: { name: "旅人", coins: i, stamina: 100, spirit: 100,
+          location: "旧街", elapsed_minutes: i * 15 },
+      },
+    })),
+    latest_draft: null,
+  }));
+  const messages = vi.spyOn(console, "error").mockImplementation(() => {});
+  render(<AdventureJournal {...props} api={api} />);
+  await screen.findByText("世界日志与更正（0）");
+  for (revision = 1; revision <= 4; revision++) {
+    fireEvent.click(screen.getByRole("button", { name: "刷新记录 / 恢复草案" }));
+    await screen.findByText("第 " + revision + " 回合");
+    expect(screen.getAllByLabelText("当前角色状态")).toHaveLength(1);
+    expect(screen.getAllByText("世界日志与更正（0）")).toHaveLength(1);
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新记录 / 恢复草案" })).toBeEnabled());
+  }
+  expect(messages.mock.calls.some(args => args.some(arg => String(arg).includes("same key")))).toBe(false);
+});

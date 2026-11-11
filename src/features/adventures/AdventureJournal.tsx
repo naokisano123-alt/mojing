@@ -276,16 +276,6 @@ export function AdventureJournal({
   const renderResult = (result: Turn["result"]) => (
     <>
       <div className="journal-prose">{result.narrative}</div>
-      {result.state_after && (
-        <CharacterCard
-          state={result.state_after}
-          title={
-            result.changes_accepted
-              ? "本回合确认后的状态"
-              : "本回合仅记录叙事，状态保持原样"
-          }
-        />
-      )}
       {renderSources(result)}
     </>
   );
@@ -511,7 +501,7 @@ export function AdventureJournal({
             }}
           />
           {run.character ? (
-            <CharacterCard key={run.id} state={run.character} title="当前角色状态"
+            <CharacterCard key={`character-${run.id}`} state={run.character} title="当前角色状态"
               descriptions={run.item_descriptions} disabled={busy}
               onSaveDescription={async (name, description) => {
                 const generation = epoch.current;
@@ -528,7 +518,7 @@ export function AdventureJournal({
               旧旅程未初始化角色，继续仅记录叙事。新建旅程可使用角色状态。
             </p>
           )}
-          {run.memory && <MemoryPanel key={run.id} memory={run.memory} disabled={busy}
+          {run.memory && <MemoryPanel key={`memory-${run.id}`} memory={run.memory} disabled={busy}
             onCorrect={async correction => {
               const generation = epoch.current;
               const memory = await api.correctMemory(run.id, correction);
@@ -544,6 +534,10 @@ export function AdventureJournal({
               <span className="muted">第 {turn.sequence} 回合</span>
               <p className="journal-action">{turn.action}</p>
               {renderResult(turn.result)}
+              {turn.result.state_after && <details className="journal-sources">
+                <summary>查看本回合状态</summary>
+                <CharacterCard state={turn.result.state_after} title="本回合确认后的状态" />
+              </details>}
               {turn.result.clock && <ClockSummary clock={turn.result.clock} />}
               <MemoryChanges changes={turn.result.memory_changes} title="本回合日志" />
             </article>
@@ -633,7 +627,7 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
-          {run.mode === "live" && <WorldPulsePanel key={run.id} adventureId={run.id}
+          {run.mode === "live" && <WorldPulsePanel key={`pulse-${run.id}`} adventureId={run.id}
             narrationSessionId={sessionId} defaultOpen={false} />}
           <details
             className="journal-sources"
@@ -642,10 +636,10 @@ export function AdventureJournal({
           >
             <summary>世界消息 · 只显示你有渠道得知的消息</summary>
             {newsOpen && <>
-              {run.mode === "fake" && <PulsePreview key={run.id} adventureId={run.id} />}
+              {run.mode === "fake" && <PulsePreview key={`pulse-preview-${run.id}`} adventureId={run.id} />}
               <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at}
                 refreshTrigger={newsRefresh} />
-              <WorldEncounterPanel key={run.id} adventureId={run.id} defaultOpen={false}
+              <WorldEncounterPanel key={`encounters-${run.id}`} adventureId={run.id} defaultOpen={false}
                 composerDraft={action} onComposerDraftChange={setAction} onExpandComposer={setExpanded}
                 refreshTrigger={`${run.revision}:${newsRefresh}`}
                 disabled={busy || draft?.status === "ready" || draft?.status === "pending"}

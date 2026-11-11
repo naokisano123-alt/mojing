@@ -281,7 +281,7 @@ export const worldPulseApi: WorldPulseTransport = {
 
     const raw = await request<unknown>(
       'POST',
-      `/adventures/${encodeURIComponent(adventureId)}/world-pulse/session`,
+      `/adventures/${encodeURIComponent(adventureId)}/world-pulse/connect`,
       { body: payload, signal: options?.signal },
     );
     return sanitizePulseStatus(raw);
