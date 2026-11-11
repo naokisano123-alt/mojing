@@ -183,7 +183,8 @@ def create_worker(path, **session_options):
         snapshot_reader=read_dispatch,
         proposal_validator=validate_dispatch,
         proposal_applier=apply_dispatch,
-        default_max_output_tokens=1400,
+        # 为初始化的三条事件预留完整 JSON；仍受每轮/每日总预算约束。
+        default_max_output_tokens=2000,
     )
 
 
