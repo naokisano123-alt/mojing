@@ -136,7 +136,7 @@ describe('LoreEntriesPanel UI & Lifecycle Tests', () => {
     fireEvent.click(card);
 
     // 点击编辑
-    const editBtn = await screen.findByText('编辑条目');
+    const editBtn = await screen.findByRole('button', { name: '编辑条目' });
     fireEvent.click(editBtn);
 
     // 修改摘要
@@ -152,7 +152,7 @@ describe('LoreEntriesPanel UI & Lifecycle Tests', () => {
     // 重新打开编辑
     const remountedCard = await screen.findByText('老水手');
     fireEvent.click(remountedCard);
-    fireEvent.click(screen.getByText('编辑条目'));
+    fireEvent.click(screen.getByRole('button', { name: '编辑条目' }));
 
     // 验证草稿内容及基准 revision 恢复
     await screen.findByText(/已恢复本地修改草稿/);
@@ -224,7 +224,7 @@ describe('LoreEntriesPanel UI & Lifecycle Tests', () => {
     render(<LoreEntriesPanel worldId="w1" api={api} />);
 
     fireEvent.click(await screen.findByText('阿诺船长'));
-    fireEvent.click(screen.getByText('编辑条目'));
+    fireEvent.click(screen.getByRole('button', { name: '编辑条目' }));
 
     // 用户编辑标题
     const titleInput = screen.getByPlaceholderText(/例如：乌木短刀/);
@@ -387,13 +387,13 @@ describe('LoreEntriesPanel UI & Lifecycle Tests', () => {
     render(<LoreEntriesPanel worldId="w1" api={api} />);
 
     fireEvent.click(await screen.findByText('旧姓名'));
-    fireEvent.click(screen.getByText('编辑条目'));
+    fireEvent.click(screen.getByRole('button', { name: '编辑条目' }));
 
     // 仅修改摘要，不修改标题与来源
     const textarea = screen.getByPlaceholderText(/作者手写描述/);
     fireEvent.change(textarea, { target: { value: '全新摘要内容' } });
 
-    fireEvent.click(screen.getByText('保存修改'));
+    fireEvent.click(screen.getByRole('button', { name: '保存并切换只读' }));
 
     await waitFor(() => {
       expect(api.update).toHaveBeenCalledWith(

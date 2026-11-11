@@ -4,11 +4,10 @@ import {
   Trash2,
   Layers,
   BookOpen,
-  Clock,
+  MoreHorizontal,
   AlertTriangle,
 } from 'lucide-react';
 import type { WorldDocument } from '../../api/types';
-import { Tag } from '../UI';
 
 export interface DocumentListProps {
   documents: WorldDocument[];
@@ -59,7 +58,7 @@ export function DocumentList({
         <div className="empty panel" style={{ padding: '40px 20px' }}>
           <BookOpen size={32} style={{ color: 'var(--muted)' }} />
           <h3>尚未导入世界观资料</h3>
-          <p>导入 TXT 或 Markdown 设定集后，系统将自动识别章节与切片。</p>
+          <p>导入你的世界设定，或添加人工设定。</p>
         </div>
       )}
 
@@ -71,59 +70,20 @@ export function DocumentList({
         return (
           <article key={doc.id} className="panel doc-card">
             <div className="doc-card-header">
-              <div className="doc-title-row">
-                <FileText size={20} style={{ color: 'var(--green)' }} />
-                <h3 title={doc.filename}>{doc.filename}</h3>
-              </div>
-              <span
-                className={`doc-status-badge ${
-                  isReady ? 'status-ready' : isProcessing ? 'status-processing' : 'status-failed'
-                }`}
-              >
-                {isReady ? '已入库' : isProcessing ? '解析中' : '解析失败'}
-              </span>
-            </div>
-
-            <div className="doc-meta-row">
-              <Tag>{doc.encoding.toUpperCase()}</Tag>
-              <span>{(doc.byte_size / 1024).toFixed(1)} KB</span>
-              <span>{doc.line_count} 行</span>
-              <span>{doc.chunk_count} 个章节切片</span>
-              <span className="flex items-center gap-1">
-                <Clock size={12} /> {formatTime(doc.created_at)}
-              </span>
-            </div>
-
-            <div className="doc-actions">
-              <button
-                type="button"
-                className="text-button"
-                style={{ fontWeight: 500 }}
-                onClick={() => onSelectDocument(doc, 'chunks')}
-              >
-                <Layers size={14} /> 查看章节切片
+              <button type="button" className="document-open" onClick={() => onSelectDocument(doc, 'raw')}>
+                <FileText size={20} /><span><strong>{doc.filename}</strong>
+                  <small className="muted">{doc.text_length.toLocaleString()} 字符 · {formatTime(doc.updated_at)}</small>
+                </span>
               </button>
-              <button
-                type="button"
-                className="text-button"
-                style={{ color: 'var(--muted)' }}
-                onClick={() => onSelectDocument(doc, 'raw')}
-              >
-                <BookOpen size={14} /> 原文分页
-              </button>
-              <div style={{ marginLeft: 'auto' }}>
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`删除文档 ${doc.filename}`}
-                  title="删除文档"
-                  style={{ minWidth: '34px', minHeight: '34px' }}
-                  onClick={() => setConfirmDeleteDoc(doc)}
-                >
-                  <Trash2 size={15} style={{ color: '#ba6452' }} />
-                </button>
-              </div>
+              <details className="document-menu">
+                <summary aria-label={`文档操作 ${doc.filename}`}><MoreHorizontal size={20} /></summary>
+                <div>
+                  <button type="button" onClick={() => onSelectDocument(doc, 'chunks')}><Layers size={15} />章节索引</button>
+                  <button type="button" onClick={() => setConfirmDeleteDoc(doc)}><Trash2 size={15} />删除文档</button>
+                </div>
+              </details>
             </div>
+            {!isReady && <p className="muted">{isProcessing ? "正在解析…" : isFailed ? "解析失败" : "准备中"}</p>}
           </article>
         );
       })}

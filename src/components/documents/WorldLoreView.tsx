@@ -1,13 +1,7 @@
 import { OpeningEditor } from "../../features/adventures/OpeningEditor";
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Upload,
-  Download,
-  BookOpen,
-  Search,
-  ClipboardList,
-  FlaskConical,
-  AlertCircle,
+  Upload, Download, BookOpen, ClipboardList, Settings as SettingsIcon, ArrowLeft, AlertCircle,
 } from 'lucide-react';
 import type { WorldDetail, WorldDocument } from '../../api/types';
 import {
@@ -18,13 +12,19 @@ import {
   searchLore,
   ApiClientError,
 } from '../../api/client';
-import { Back, PageTitle, Tag } from '../UI';
+import { Back } from '../UI';
 import { DocumentUpload } from './DocumentUpload';
 import { DocumentList } from './DocumentList';
 import { DocumentViewer } from './DocumentViewer';
 import { LoreSearchPanel } from '../../features/lore-search';
 import { LoreEntriesPanel } from '../../features/lore-entries';
 import { AdventureJournal } from '../../features/adventures/AdventureJournal';
+import { WorldPulsePanel } from '../../features/world-pulse';
+import { PulsePreview } from '../../features/adventures/PulsePreview';
+import type { Run } from '../../features/adventures/api';
+import Preferences from '../../pages/Settings';
+import type { State } from '../../model';
+import type { LoreEntryDto } from '../../api/types';
 import type { ModelSessionResponse } from '../../features/narration-preview/types';
 import { NarrationPreview } from '../../features/narration-preview';
 import type { NarrationPreviewApi } from '../../features/narration-preview/types';
@@ -57,9 +57,11 @@ export interface WorldLoreViewProps {
   modelSession?: ModelSessionResponse | null;
   modelProfileEnabled?: boolean;
   onModelSessionChange?: (session: ModelSessionResponse | null) => void;
+  preferences?: State;
+  onPreferencesChange?: (value: Partial<State>) => void;
 }
 
-type Tab = 'list' | 'search' | 'entries' | 'narration' | 'journal' | 'upload' | 'openings';
+type Tab = 'documents' | 'journal' | 'settings';
 
 export function WorldLoreView({
   worldId,
@@ -69,19 +71,24 @@ export function WorldLoreView({
   modelSession = null,
   modelProfileEnabled = false,
   onModelSessionChange,
+  preferences,
+  onPreferencesChange,
 }: WorldLoreViewProps) {
   const [worldDetail, setWorldDetail] = useState<WorldDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>(initialTab);
-  const [configuring, setConfiguring] = useState(false);
-  function switchTab(next: Tab) {
-    setConfiguring(false);
-    setTab(next);
-  }
+  const [tab, setTab] = useState<Tab>(initialTab === 'list' ? 'documents' : 'journal');
+  const [docSection, setDocSection] = useState<'list' | 'entries' | 'upload'>('list');
+  const [activeRun, setActiveRun] = useState<Run | null>(null);
+  const [query, setQuery] = useState('');
+  const [searchVersion, setSearchVersion] = useState(0);
+  const [entryMatches, setEntryMatches] = useState<LoreEntryDto[]>([]);
+  const [entryTotal, setEntryTotal] = useState(0);
+  const [entryError, setEntryError] = useState('');
+  const [entryOffset, setEntryOffset] = useState(0);
+  const [showExport, setShowExport] = useState(false);
   const [targetEntryId, setTargetEntryId] = useState<string>();
   const [uploadPolicy, setUploadPolicy] = useState(() => getUploadPolicy());
-  const [notice, setNotice] = useState('');
 
   // 稳定的草稿容器：切子页签不会丢草稿，不同世界 key 隔离（契约 M1_R4_API §6）
   const draftStoreRef = useRef<LoreEntryDraftStore | null>(null);
@@ -108,7 +115,11 @@ export function WorldLoreView({
 
   useEffect(() => {
     const controller = new AbortController();
-    setConfiguring(false);
+    setTab(initialTab === 'list' ? 'documents' : 'journal');
+    setActiveRun(null);
+    setDocSection('list');
+    setQuery('');
+    setShowExport(false);
     setViewingDoc(null);
     setTargetEntryId(undefined);
     void loadWorld(controller.signal);
@@ -232,10 +243,10 @@ export function WorldLoreView({
   };
 
   // 契约 DTO → 检索面板 DTO 的薄适配层（面板类型由 Ma 维护，不共用 src/api/types）
-  async function runSearch(
+  const runSearch = useCallback(async (
     params: { worldId: string; query: string; limit?: number; offset?: number },
     signal?: AbortSignal,
-  ) {
+  ) => {
     const result = await searchLore(params, signal);
     return {
       total: result.total,
@@ -243,209 +254,151 @@ export function WorldLoreView({
       offset: result.offset,
       items: result.items.map(toLoreSearchItem),
     };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setEntryMatches([]);
+    setEntryTotal(0);
+    setEntryError('');
+    if (!query.trim()) { setEntryTotal(0); return; }
+    listLoreEntries({ worldId, q: query, limit: 20, offset: entryOffset }, controller.signal).then(page => {
+      if (!controller.signal.aborted) { setEntryMatches(page.items); setEntryTotal(page.total); }
+    }).catch(error => {
+      if (!controller.signal.aborted) setEntryError(error instanceof Error ? error.message : '设定搜索失败，请重试。');
+    });
+    return () => controller.abort();
+  }, [worldId, query, entryOffset, searchVersion]);
+
+  const onQueryChange = useCallback((value: string) => { setQuery(value); setEntryOffset(0); }, []);
+  function openEntry(id?: string) {
+    setTargetEntryId(id);
+    setDocSection('entries');
+    setTab('documents');
+  }
+  function openDocuments() {
+    setDocSection('list');
+    setTab('documents');
   }
 
   const documents = worldDetail?.documents || [];
 
   return (
-    <div className="narrow doc-hub">
-      <Back onClick={onBack} label="返回世界列表" />
+    <div className="narrow doc-hub world-workspace">
+      <header className="workspace-header">
+        <Back onClick={onBack} label="返回世界列表" />
+        <h1>{worldDetail?.name || worldName}</h1>
+        {worldDetail?.description && <p className="muted">{worldDetail.description}</p>}
+      </header>
+      <nav className="workspace-tabs" aria-label="世界栏目">
+        {([
+          { id: 'journal', label: '冒险', icon: BookOpen },
+          { id: 'documents', label: '世界观文档', icon: ClipboardList },
+          { id: 'settings', label: '设置', icon: SettingsIcon },
+        ] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button"
+          aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''}
+          onClick={() => setTab(id)}><Icon size={17} />{label}</button>)}
+      </nav>
 
-      <PageTitle
-        eyebrow="YOUR WORLD"
-        title={worldDetail?.name || worldName}
-        description={worldDetail?.description || '在这个世界开启旅程，或先导入你的世界设定。'}
-        action={<Tag>世界资料库</Tag>}
-      />
-
-      {!loading && worldDetail && <div className="world-export">
-        {modelProfileEnabled && <a className="primary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`,
-          { part: 'zip', destination: 'folder' })}>
-          <Download size={16} aria-hidden="true" />导出两份文件
-        </a>}
-        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'world' })}>世界观 JSON</a>
-        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'saves' })}>存档 JSON</a>
-        <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'zip' })}>打包为 ZIP</a>
+      {error && <div className="upload-error-callout" role="alert">
+        <AlertCircle size={18} /><span>{error}</span>
+        <button type="button" className="text-button" onClick={() => void loadWorld()}>重新加载</button>
       </div>}
 
-      {/* 切换 Tab */}
-      <div className="tabs" style={{ marginTop: 0 }}>
-        <button type="button" className={tab === 'journal' ? 'active' : ''} onClick={() => switchTab('journal')}>冒险记录</button>
-        <button
-          type="button"
-          className={tab === 'list' ? 'active' : ''}
-          onClick={() => switchTab('list')}
-        >
-          <BookOpen size={15} /> 已导入资料 ({documents.length})
-        </button>
-        <button
-          type="button"
-          className={tab === 'search' ? 'active' : ''}
-          onClick={() => switchTab('search')}
-        >
-          <Search size={15} /> 检索资料
-        </button>
-        <button
-          type="button"
-          className={tab === 'entries' ? 'active' : ''}
-          onClick={() => switchTab('entries')}
-        >
-          <ClipboardList size={15} /> 人工设定
-        </button>
-        <button
-          type="button"
-          className={tab === 'narration' ? 'active' : ''}
-          onClick={() => switchTab('narration')}
-        >
-          <FlaskConical size={15} /> 叙事实验
-        </button>
-        <button
-          type="button"
-          className={tab === 'upload' ? 'active' : ''}
-          onClick={() => switchTab('upload')}
-        >
-          <Upload size={15} /> 导入新文档
-        </button>
+      <section hidden={tab !== 'documents'} aria-label="世界观文档">
+        {docSection === 'list' && <>
+          <LoreSearchPanel key={`${worldId}:${searchVersion}`} compact worldId={worldId}
+            search={runSearch} onQueryChange={onQueryChange} placeholder="搜索文档与人工设定…"
+            onOpenSource={target => setViewingDoc({
+              documentId: target.documentId, mode: 'raw',
+              source: { chunkIndex: target.chunkIndex, startChar: target.startChar, endChar: target.endChar },
+            })} />
+          <div className="document-toolbar">
+            <span className="muted">{documents.length} 份文档</span>
+            <button type="button" className="secondary" onClick={() => setDocSection('upload')}><Upload size={15} />导入</button>
+            <button type="button" className="secondary" onClick={() => openEntry()}><ClipboardList size={15} />人工设定</button>
+            <button type="button" className="text-button" aria-expanded={showExport}
+              onClick={() => setShowExport(value => !value)}><Download size={15} />导出</button>
+          </div>
+          {showExport && <section className="world-export" aria-label="导出世界和存档">
+            {modelProfileEnabled && <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`,
+              { part: 'zip', destination: 'folder' })}>导出两份文件</a>}
+            <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'world' })}>世界观</a>
+            <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'saves' })}>存档</a>
+            <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'zip' })}>完整备份 ZIP</a>
+          </section>}
+          {!query && <DocumentList documents={documents} loading={loading}
+            onSelectDocument={doc => setViewingDoc({ documentId: doc.id, mode: 'raw' })}
+            onDeleteDocument={handleDeleteDocument} />}
+          {query && <>
+            <h3 className="document-section-title">人工设定 · {entryTotal} 条匹配</h3>
+            {entryError && <p role="alert" className="error">{entryError}</p>}
+            <div className="document-entry-matches">{entryMatches.map(entry => <button type="button"
+              key={entry.id} className="document-entry-result" onClick={() => openEntry(entry.id)}>
+              <strong>{entry.title}</strong><span>{entry.summary}</span>
+            </button>)}</div>
+            {entryTotal > 20 && <div className="document-toolbar">
+              <button type="button" className="text-button" disabled={entryOffset === 0}
+                onClick={() => setEntryOffset(value => Math.max(0, value - 20))}>上一页设定</button>
+              <button type="button" className="text-button" disabled={entryOffset + 20 >= entryTotal}
+                onClick={() => setEntryOffset(value => value + 20)}>下一页设定</button>
+            </div>}
+          </>}
+        </>}
+        {docSection !== 'list' && <button type="button" className="text-button workspace-subback"
+          onClick={openDocuments}><ArrowLeft size={16} />返回世界观文档</button>}
+        {docSection === 'entries' && <LoreEntriesPanel initialEntryId={targetEntryId} worldId={worldId}
+          api={loreApi} draftStore={draftStore}
+          onOpenSource={target => setViewingDoc({ documentId: target.documentId, mode: 'raw',
+            source: { chunkId: target.chunkId, chunkIndex: target.chunkIndex, startChar: target.startChar, endChar: target.endChar } })} />}
+        {docSection === 'upload' && <DocumentUpload worldId={worldId} onSuccess={handleUploadSuccess}
+          onCancel={openDocuments} {...uploadPolicy}
+          onViewExisting={id => setViewingDoc({ documentId: id, mode: 'raw' })}
+          onRefreshRequest={() => void loadWorld()} />}
+      </section>
+
+      <div hidden={tab !== 'journal'}>
+        <AdventureJournal worldId={worldId} sessionId={modelSession?.session_id}
+          onActiveRunChange={setActiveRun}
+          onConfigure={() => setTab('settings')}
+          onImportMaterials={() => { setDocSection('upload'); setTab('documents'); }}
+          onSessionExpired={() => onModelSessionChange?.(null)}
+          onOpenSource={source => {
+            if (source.kind === 'entry') openEntry(source.entry_id);
+            else if (source.document_id) setViewingDoc({ documentId: source.document_id, mode: 'raw',
+              source: { chunkId: source.chunk_id, chunkIndex: source.chunk_index } });
+          }} />
       </div>
 
-      {error && (
-        <div className="upload-error-callout mb-4" role="alert">
-          <AlertCircle size={18} />
-          <div>
-            <div>{error}</div>
-            <button
-              type="button"
-              className="text-button mt-1"
-              style={{ color: '#ba6452', textDecoration: 'underline' }}
-              onClick={() => void loadWorld()}
-            >
-              重新加载
-            </button>
-          </div>
-        </div>
-      )}
+      <section hidden={tab !== 'settings'} aria-label="世界设置" className="workspace-settings">
+        <h2>模型连接</h2>
+        <NarrationPreview worldId={worldId} api={narrationApi} initialMode="live" connectionOnly
+          initialSession={modelSession} onSessionChange={onModelSessionChange} />
+        {activeRun && <section aria-label="当前旅程的世界脉动">
+          <h2>世界脉动 <small className="muted">· {activeRun.name}</small></h2>
+          {activeRun.mode === 'live'
+            ? <WorldPulsePanel key={activeRun.id} adventureId={activeRun.id}
+                narrationSessionId={modelSession?.session_id} narrationModel={modelSession?.model} defaultOpen={false} />
+            : tab === 'settings' && <PulsePreview adventureId={activeRun.id} />}
+        </section>}
+        {!activeRun && <section><h2>世界脉动</h2><p className="muted">开启旅程后，可在这里设置该旅程的世界脉动。</p></section>}
+        {preferences && onPreferencesChange && <Preferences embedded state={preferences}
+          update={onPreferencesChange} back={() => setTab('journal')} />}
+        <details className="journal-sources">
+          <summary>开局与日程</summary>
+          {tab === 'settings' && <OpeningEditor key={worldId} worldId={worldId} />}
+        </details>
+      </section>
 
-      {notice && (
-        <p className="muted text-xs" role="status">
-          {notice}
-        </p>
-      )}
-
-      {tab === 'list' && <>
-        <button type="button" className="secondary mb-3" onClick={() => switchTab('openings')}>开局与日程</button>
-        <DocumentList
-          documents={documents}
-          loading={loading}
-          onSelectDocument={(doc, mode) => setViewingDoc({ documentId: doc.id, mode })}
-          onDeleteDocument={handleDeleteDocument}
-        />
-      </>}
-      {tab === 'openings' && <>
-        <button type="button" className="text-button mb-3" onClick={() => switchTab('list')}>返回资料列表</button>
-        <OpeningEditor key={worldId} worldId={worldId} />
-      </>}
-
-      {tab === 'search' && (
-        <LoreSearchPanel
-          worldId={worldId}
-          search={runSearch}
-          onOpenSource={target =>
-            setViewingDoc({
-              documentId: target.documentId,
-              mode: 'chunks',
-              source: {
-                chunkIndex: target.chunkIndex,
-                startChar: target.startChar,
-                endChar: target.endChar,
-              },
-            })
-          }
-        />
-      )}
-
-      {tab === 'entries' && (
-        <LoreEntriesPanel
-          initialEntryId={targetEntryId}
-          worldId={worldId}
-          api={loreApi}
-          draftStore={draftStore}
-          onOpenSource={target =>
-            setViewingDoc({
-              documentId: target.documentId,
-              mode: 'chunks',
-              source: {
-                chunkId: target.chunkId,
-                chunkIndex: target.chunkIndex,
-                startChar: target.startChar,
-                endChar: target.endChar,
-              },
-            })
-          }
-        />
-      )}
-
-      {tab === 'narration' && (
-        <NarrationPreview
-          worldId={worldId}
-          api={narrationApi}
-          initialSession={modelSession}
-          onSessionChange={onModelSessionChange}
-          onOpenSource={target => {
-            if (target.kind === 'entry') {
-              setTargetEntryId(target.entry_id);
-              setTab('entries');
-              return;
-            }
-            setViewingDoc({
-              documentId: target.document_id || '',
-              mode: 'chunks',
-              source: {
-                chunkId: target.chunk_id,
-                chunkIndex: target.chunk_index,
-              },
-            });
-          }}
-        />
-      )}
-
-      {tab === 'journal' && configuring && (
-        <section aria-label="冒险模型设置">
-          <NarrationPreview worldId={worldId} api={narrationApi} initialMode="live" connectionOnly
-            initialSession={modelSession} onSessionChange={onModelSessionChange} />
-          <button type="button" className="secondary mt-3" onClick={() => setConfiguring(false)}>返回旅程</button>
-        </section>
-      )}
-      {tab === 'journal' && <div hidden={configuring}><AdventureJournal worldId={worldId} sessionId={modelSession?.session_id}
-        onConfigure={() => setConfiguring(true)}
-        onImportMaterials={() => setTab('upload')}
-        onSessionExpired={() => onModelSessionChange?.(null)}
-        onOpenSource={source => {
-          if (source.kind === 'entry') { setTargetEntryId(source.entry_id); setTab('entries'); }
-          else if (source.document_id) setViewingDoc({documentId:source.document_id,mode:'chunks',source:{chunkId:source.chunk_id,chunkIndex:source.chunk_index}});
-        }} /></div>}
-
-      {tab === 'upload' && (
-        <DocumentUpload
-          worldId={worldId}
-          onSuccess={handleUploadSuccess}
-          onCancel={() => setTab('list')}
-          {...uploadPolicy}
-          onViewExisting={id => setViewingDoc({ documentId: id, mode: 'chunks' })}
-          onRefreshRequest={() => void loadWorld()}
-        />
-      )}
-
-      {/* 文档切片与原文查看器（可带检索来源区间） */}
-      {viewingDoc && (
-        <DocumentViewer
-          documentId={viewingDoc.documentId}
-          initialMode={viewingDoc.mode || 'chunks'}
-          initialSource={viewingDoc.source}
-          onClose={() => setViewingDoc(null)}
-        />
-      )}
-
+      {viewingDoc && <DocumentViewer key={viewingDoc.documentId}
+        documentId={viewingDoc.documentId} initialMode={viewingDoc.mode || 'raw'}
+        initialSource={viewingDoc.source} onClose={() => setViewingDoc(null)}
+        onSaved={saved => {
+          setWorldDetail(current => current && { ...current,
+            documents: current.documents.map(doc => doc.id === saved.id ? saved : doc) });
+          setQuery('');
+          setSearchVersion(value => value + 1);
+        }} />}
     </div>
   );
 }
-

@@ -488,6 +488,7 @@ def list_entries(
     world_id: str,
     *,
     type: str | None = None,
+    query: str | None = None,
     status: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
@@ -518,6 +519,12 @@ def list_entries(
         _validate_status(status)
         where_clauses.append("status = ?")
         params.append(status)
+
+    if query is not None:
+        if not isinstance(query, str) or len(query) > 100:
+            raise LoreEntryValidationError("q", "搜索词最多100字。")
+        where_clauses.append("instr(lower(title || ' ' || summary), lower(?)) > 0")
+        params.append(query.strip())
 
     where_sql = " AND ".join(where_clauses)
 

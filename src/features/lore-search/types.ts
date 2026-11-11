@@ -51,5 +51,7 @@ export interface LoreSearchPanelProps {
   placeholder?: string;
   pageSize?: number;
   className?: string;
+  compact?: boolean;
+  onQueryChange?: (query: string) => void;
 }
 

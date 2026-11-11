@@ -13,6 +13,8 @@ import {
   AlertCircle,
   Hash,
   RefreshCw,
+  Pencil,
+  Eye,
 } from 'lucide-react';
 import type { LoreChunk, RawTextPage, WorldDocument } from '../../api/types';
 import {
@@ -21,6 +23,7 @@ import {
   getChunkByIndex,
   getChunkById,
   getDocumentRaw,
+  updateDocumentText,
   ApiClientError,
 } from '../../api/client';
 import { loadSourceChunk } from './sourceNavigation';
@@ -45,6 +48,7 @@ export interface DocumentViewerProps {
   /** 可选来源高亮区间 (UTF-16 代码单元) */
   initialSource?: SourceLocation;
   onClose: () => void;
+  onSaved?: (document: WorldDocument) => void;
 }
 
 const CHUNK_PAGE_SIZE = 100; // 每页切片拉取上限
@@ -86,7 +90,96 @@ export function DocumentViewer({
   initialChunkIndex,
   initialSource,
   onClose,
+  onSaved,
 }: DocumentViewerProps) {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const [originalText, setOriginalText] = useState("");
+  const [editVersion, setEditVersion] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const editRequest = useRef<AbortController | null>(null);
+  const saveLock = useRef(false);
+  const closeRef = useRef<() => void>(() => {});
+
+  async function beginEditing() {
+    if (editLoading || saving || !doc) return;
+    editRequest.current?.abort();
+    const controller = new AbortController();
+    editRequest.current = controller;
+    setEditLoading(true);
+    setEditError("");
+    try {
+      const meta = await getDocument(documentId, controller.signal);
+      const pages: string[] = [];
+      let offset: number | null = 0;
+      while (offset !== null) {
+        const page = await getDocumentRaw(documentId, { offset, limit: 50000 }, controller.signal);
+        if (controller.signal.aborted) return;
+        pages.push(page.text);
+        offset = page.next_offset;
+      }
+      const latest = await getDocument(documentId, controller.signal);
+      if (controller.signal.aborted) return;
+      if (latest.content_sha256 !== meta.content_sha256) throw new Error("文档刚刚发生变化，请重新点击编辑。");
+      const text = pages.join("");
+      setEditText(text);
+      setOriginalText(text);
+      setEditVersion(meta.content_sha256);
+      setEditing(true);
+    } catch (failure) {
+      if (!controller.signal.aborted) setEditError(failure instanceof Error ? failure.message : "正文读取失败，请重试。");
+    } finally {
+      if (!controller.signal.aborted) setEditLoading(false);
+    }
+  }
+
+  async function finishEditing() {
+    if (saveLock.current || editLoading) return false;
+    if (editText === originalText) {
+      setEditing(false);
+      return true;
+    }
+    saveLock.current = true;
+    setSaving(true);
+    setEditError("");
+    const controller = new AbortController();
+    editRequest.current = controller;
+    try {
+      const saved = await updateDocumentText(documentId, editText, editVersion, controller.signal);
+      if (controller.signal.aborted) return false;
+      setEditing(false);
+      setOriginalText(editText);
+      setDoc(saved);
+      setRefreshVersion(value => value + 1);
+      onSaved?.(saved);
+      return true;
+    } catch (failure) {
+      if (!controller.signal.aborted) setEditError(failure instanceof ApiClientError
+        ? failure.friendlyMessage : "保存失败，编辑内容仍保留，请重试。");
+      return false;
+    } finally {
+      saveLock.current = false;
+      if (!controller.signal.aborted) setSaving(false);
+    }
+  }
+
+  async function closeViewer() {
+    if (saving) return;
+    if (editLoading) { editRequest.current?.abort(); onClose(); return; }
+    if (editing && !(await finishEditing())) return;
+    onClose();
+  }
+  closeRef.current = () => { void closeViewer(); };
+  useEffect(() => {
+    setEditing(false);
+    setEditError("");
+    setEditLoading(false);
+    setRefreshVersion(0);
+    return () => editRequest.current?.abort();
+  }, [documentId]);
   const [mode, setMode] = useState<'chunks' | 'raw'>(initialMode);
   const [doc, setDoc] = useState<WorldDocument | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,12 +235,12 @@ export function DocumentViewer({
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        onClose();
+        closeRef.current();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, []);
 
   // 加载文档元信息与初始分块（严格隔离切文档状态，防止迟到响应串文档）
   useEffect(() => {
@@ -156,8 +249,9 @@ export function DocumentViewer({
     viewRequest.current = controller;
     nextChunkOffset.current = 0;
     setLoadingMoreChunks(false);
-    setMode(initialMode);
-    setActiveHighlight(initialSource || (initialChunkIndex !== undefined ? { chunkIndex: initialChunkIndex } : undefined));
+    setMode(refreshVersion ? 'raw' : initialMode);
+    const source = refreshVersion ? undefined : initialSource || (initialChunkIndex !== undefined ? { chunkIndex: initialChunkIndex } : undefined);
+    setActiveHighlight(source);
 
     // 切换文档时立即清空旧状态
     setDoc(null);
@@ -167,7 +261,7 @@ export function DocumentViewer({
     setChunkExpandErrorMap({});
     setLoadingChunkMap({});
     setRawPage(null);
-    setRawOffset(initialSource?.startChar ? Math.floor(initialSource.startChar / PAGE_SIZE_RAW) * PAGE_SIZE_RAW : 0);
+    setRawOffset(!refreshVersion && initialSource?.startChar ? Math.floor(initialSource.startChar / PAGE_SIZE_RAW) * PAGE_SIZE_RAW : 0);
     setOffsetHistory([0]);
     setError(null);
     setLoadMoreChunksError(null);
@@ -179,7 +273,7 @@ export function DocumentViewer({
         const [docData, chunksData, target] = await Promise.all([
           getDocument(documentId, controller.signal),
           getDocumentChunks(documentId, { limit: CHUNK_PAGE_SIZE, offset: 0, include_text: false }, controller.signal),
-          loadSourceChunk(documentId, initialSource || { chunkIndex: initialChunkIndex },
+          loadSourceChunk(documentId, source || {},
             { byId: getChunkById, byIndex: getChunkByIndex }, controller.signal),
         ]);
         if (!active) return;
@@ -210,7 +304,7 @@ export function DocumentViewer({
       active = false;
       controller.abort();
     };
-  }, [documentId, initialMode, initialChunkIndex, initialSource?.chunkId, initialSource?.chunkIndex, initialSource?.startChar, initialSource?.endChar]);
+  }, [documentId, initialMode, initialChunkIndex, initialSource?.chunkId, initialSource?.chunkIndex, initialSource?.startChar, initialSource?.endChar, refreshVersion]);
 
   // 按需加载更多切片（突破 100 块上限，展示服务端真实 total）
   async function handleLoadMoreChunks() {
@@ -279,7 +373,7 @@ export function DocumentViewer({
       active = false;
       controller.abort();
     };
-  }, [documentId, mode, rawOffset]);
+  }, [documentId, mode, rawOffset, refreshVersion]);
 
   // 自动滚动至高亮区域
   useEffect(() => {
@@ -375,7 +469,7 @@ export function DocumentViewer({
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={() => void closeViewer()}>
       <section
         role="dialog"
         aria-modal="true"
@@ -430,34 +524,49 @@ export function DocumentViewer({
               </div>
             )}
           </div>
+          {doc && <button type="button" className="icon-button"
+            aria-label={editing ? "保存并切换只读" : "编辑文档"} title={editing ? "保存并只读" : "编辑文档"}
+            aria-pressed={editing} disabled={editLoading || saving}
+            onClick={() => editing ? void finishEditing() : void beginEditing()}>
+            {editing ? <Eye size={20} /> : <Pencil size={20} />}
+          </button>}
           <button
             type="button"
             className="icon-button"
             aria-label="关闭查看器"
-            onClick={onClose}
+            disabled={saving}
+            onClick={() => void closeViewer()}
           >
             <X size={20} />
           </button>
         </div>
 
-        <div className="viewer-modes">
+        {editError && <p className="viewer-edit-error error" role="alert">{editError}</p>}
+        {(editLoading || saving) && <p className="viewer-edit-status" role="status">{saving ? "正在保存…" : "正在载入可编辑正文…"}</p>}
+        {editing && <div className="viewer-editor">
+          <p className="muted">点击眼睛保存并回到只读。修改的是文档文字。</p>
+          <textarea aria-label="世界观文档正文" value={editText} disabled={saving}
+            onChange={event => setEditText(event.target.value)} spellCheck={false} />
+          <span className="muted">{editText.length.toLocaleString()} 字符{editText !== originalText ? " · 待保存" : ""}</span>
+        </div>}
+        <div className="viewer-modes" hidden={editing}>
           <button
             type="button"
             className={`viewer-mode-btn ${mode === 'chunks' ? 'active' : ''}`}
             onClick={() => setMode('chunks')}
           >
-            <Layers size={15} /> 章节切片 ({chunks.length}{totalChunks > chunks.length ? ` / ${totalChunks}` : ''})
+            <Layers size={15} /> 章节索引 ({chunks.length}{totalChunks > chunks.length ? ` / ${totalChunks}` : ''})
           </button>
           <button
             type="button"
             className={`viewer-mode-btn ${mode === 'raw' ? 'active' : ''}`}
             onClick={() => setMode('raw')}
           >
-            <AlignLeft size={15} /> 全文溯源 (分页)
+            <AlignLeft size={15} /> 阅读正文
           </button>
         </div>
 
-        <div className="viewer-body">
+        <div className="viewer-body" hidden={editing}>
           {loading && (
             <div className="empty" style={{ padding: '40px 0' }}>
               <div className="status-dot" style={{ width: '12px', height: '12px' }} />

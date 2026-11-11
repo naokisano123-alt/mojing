@@ -725,6 +725,60 @@ def create_app(
             row = _get_document(conn, document_id)
         return _document_dict(row)
 
+    @app.put("/api/v1/documents/{document_id}")
+    def edit_document(document_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        text = payload.get("text")
+        expected = payload.get("expected_content_sha256")
+        if not isinstance(text, str) or not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
+            raise ApiError(422, "DOCUMENT_EDIT_INVALID", "请提交文档正文及读取时的版本。")
+        text = normalize(text)
+        try:
+            units = u16len(text)
+            encoded = text.encode("utf-8")
+        except UnicodeEncodeError:
+            raise ApiError(422, "DOCUMENT_EDIT_INVALID", "文档包含无效字符。") from None
+        if not text.strip():
+            raise ApiError(422, "EMPTY_DOCUMENT", "文档正文不能为空。")
+        if units > cfg.max_text_units:
+            raise ApiError(413, "DOCUMENT_EDIT_TOO_LARGE", "文档正文超过编辑长度上限。")
+        digest = hashlib.sha256(encoded).hexdigest()
+        parts = chunk_text(text)
+        now = _now()
+        with db(cfg.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            old = _get_document(conn, document_id)
+            _get_world(conn, old["world_id"])
+            # A retried save after a lost response must not archive twice.
+            if old["text"] == text:
+                return _document_dict(old)
+            if old["content_sha256"] != expected:
+                raise ApiError(409, "DOCUMENT_EDIT_CONFLICT", "文档已在其他页面修改，请保留草稿并重新读取。")
+            # Retain cited chunks and excerpts as historical sources. New
+            # searches use fresh chunk IDs, while the document ID stays stable.
+            archived_id = _new_id()
+            columns = [row["name"] for row in conn.execute("PRAGMA table_info(documents)")]
+            archived = dict(old)
+            archived.update(id=archived_id, deleted_at=now)
+            conn.execute(
+                f"INSERT INTO documents ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                [archived[column] for column in columns],
+            )
+            conn.execute("UPDATE chunks SET document_id=? WHERE document_id=?", (archived_id, document_id))
+            conn.execute("UPDATE lore_entry_sources SET document_id=? WHERE document_id=?", (archived_id, document_id))
+            conn.execute("""
+                UPDATE documents SET text=?, text_length=?, line_count=?, chunk_count=?,
+                    content_sha256=?, byte_size=?, encoding='utf-8', updated_at=? WHERE id=?
+            """, (text, units, text.count("\n") + 1, len(parts), digest, len(encoded), now, document_id))
+            conn.executemany("""
+                INSERT INTO chunks (id, document_id, world_id, chunk_index, heading_path, start_char, end_char, text)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                (_new_id(), document_id, old["world_id"], part.chunk_index,
+                 json.dumps(part.heading_path, ensure_ascii=False), part.start_char, part.end_char, part.text)
+                for part in parts
+            ])
+            return _document_dict(_get_document(conn, document_id))
+
     @app.get("/api/v1/documents/{document_id}/raw")
     def document_raw(
         document_id: str,
@@ -812,13 +866,14 @@ def create_app(
     def list_lore_entries(
         world_id: str,
         type: str | None = Query(None),
+        q: str | None = Query(None, max_length=100),
         status: str | None = Query(None),
         limit: int = Query(20, ge=1, le=100),
         offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         with db(cfg.db_path) as conn:
             return lore_service.list_entries(
-                conn, world_id, type=type, status=status, limit=limit, offset=offset
+                conn, world_id, type=type, status=status, limit=limit, offset=offset, query=q
             )
 
     @app.post("/api/v1/worlds/{world_id}/lore-entries", status_code=201)
