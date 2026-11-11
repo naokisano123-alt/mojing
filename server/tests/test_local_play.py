@@ -89,3 +89,47 @@ def test_native_profile_restores_after_restart_and_can_be_deleted(tmp_path):
 
     with TestClient(make_app()) as client:
         assert client.post("/api/v1/model-profile/restore").json() == {"session": None}
+
+
+def test_mobile_pulse_connects_using_frontend_transport_routes(tmp_path):
+    """Use the shipped frontend paths against the same loopback app as Android."""
+    import re
+    from pathlib import Path
+
+    from app.model_gateway import ModelSessionStore
+
+    source = (Path(__file__).resolve().parents[2] / "src/features/world-pulse/api.ts").read_text()
+    transport = source.split("export const worldPulseApi:", 1)[1].split("/**", 1)[0]
+    routes = {}
+    for method, endpoint in re.findall(r"['\"](GET|POST|PUT)['\"],\s*`([^`]+)`", transport):
+        routes[endpoint.rsplit("/", 1)[-1]] = (method, endpoint)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("mobile test")
+    store = ModelSessionStore()
+    app = create_app(Settings(db_path=tmp_path / "pulse.db"), narration_store=store)
+    attach_local_ui(app, dist, "test-local-password")
+    with TestClient(app, base_url=LOCAL_ORIGIN, headers={"Origin": LOCAL_ORIGIN}) as browser:
+        browser.auth = httpx.BasicAuth(LOCAL_USER, "test-local-password")
+        world = browser.post("/api/v1/worlds", json={"name": "雾港"}).json()
+        run = browser.post(f"/api/v1/worlds/{world['id']}/adventures",
+                           json={"name": "手机版验收", "mode": "live"}).json()
+        config = {"base_url": "https://mock.invalid/v1", "model": "test", "api_key": "test-key"}
+        sid = browser.post("/api/v1/model-sessions", json=config).json()["session_id"]
+
+        def call(route, payload=None):
+            method, endpoint = routes[route]
+            endpoint = endpoint.replace("${encodeURIComponent(adventureId)}", run["id"])
+            return browser.request(method, "/api/v1" + endpoint, json=payload)
+
+        # Both UI connection choices must reach a real route, including when
+        # unknown POST paths would otherwise fall through to StaticFiles (405).
+        route = next(key for key in routes if key not in {"world-pulse", "activity"})
+        for config in ({**config, "mode": "independent"},
+                       {"mode": "reuse_narration", "narration_session_id": sid}):
+            connected = call(route, config)
+            assert connected.status_code == 200, connected.text
+            assert connected.json()["mode"] == config["mode"]
+            assert not connected.json()["enabled"]
+        assert call("world-pulse", {"enabled": False}).status_code == 200
+        assert call("activity", {"active": False}).status_code == 200
