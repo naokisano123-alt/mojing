@@ -55,6 +55,7 @@ def test_pulse_failure_reason_and_explicit_retry(tmp_path, failure, code):
         )
         proposal = {"operations": [{
             "op": "create", "kind": "thread", "title": title,
+            "public_label": ("躁动的狮群", "城内契约", "潮水之约")[index],
             "description": "行会安排商队轮流进港。", "location": "码头",
             "scope": "local", "next_update_minute": 60 + index * 30,
             "source_ids": source_ids[:1],
@@ -130,6 +131,7 @@ def test_live_seed_advance_news_narration_and_offline_gate(tmp_path, monkeypatch
             return mock_reply({"operations": [{
                 "op": "create", "kind": "thread", "title": title,
                 "description": hidden if index == 0 else "商队在码头等候。",
+                "public_label": ("躁动的狮群", "城内契约", "潮水之约")[index],
                 "location": "码头", "scope": "local", "stage": "开始", "status": "active",
                 "next_update_minute": 20 + index * 100, "source_ids": source_ids[:1],
             } for index, title in enumerate(("码头的交接", "本地商队", "行会日程"))]})
@@ -175,6 +177,7 @@ def test_live_seed_advance_news_narration_and_offline_gate(tmp_path, monkeypatch
         assert connected.status_code == 200, connected.text
         assert connected.json()["mode"] == connection
         assert not connected.json()["enabled"]
+        assert not connected.json()["simulation"]["initialized"]
         assert "sk-" not in connected.text and session not in connected.text
 
         enabled = client.put(pulse, json={"enabled": True})
@@ -185,6 +188,11 @@ def test_live_seed_advance_news_narration_and_offline_gate(tmp_path, monkeypatch
         assert client.post(f"{pulse}/activity", json={"active": True}).status_code == 200
         wait_for(lambda: client.get(pulse).json(), lambda s: s["usage"]["billed_calls"] == 1)
         assert calls == ["seed"]
+        simulation = client.get(pulse).json()["simulation"]
+        assert simulation["initialized"]
+        assert {item["label"] for item in simulation["events"]} == {"躁动的狮群", "城内契约", "潮水之约"}
+        assert hidden not in json.dumps(simulation, ensure_ascii=False)
+        assert "码头的交接" not in json.dumps(simulation, ensure_ascii=False)
         assert client.get(f"{adventure}/world-news").json()["items"] == []
 
         def turn(key, revision):
@@ -202,6 +210,7 @@ def test_live_seed_advance_news_narration_and_offline_gate(tmp_path, monkeypatch
         assert "source_event_id" not in page["items"][0]
         assert public not in narrations[0] and hidden not in narrations[0]
         assert calls == ["seed", "advance"]
+        assert {item["label"] for item in client.get(pulse).json()["simulation"]["events"]} == {"躁动的狮群", "城内契约", "潮水之约"}
 
         assert client.post(f"{pulse}/activity", json={"active": False}).status_code == 200
         turn("second", 1)

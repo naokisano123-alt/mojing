@@ -140,3 +140,35 @@ def test_invalid_confirmation_choice_is_not_coerced(client):
     assert result.status_code==422
     detail=client.get(f"/api/v1/adventures/{run['id']}").json()
     assert detail['revision']==0 and detail['character']['stamina']==100
+
+
+def test_qualitative_condition_confirmed_and_restored_with_money(db_path):
+    captured = []
+    def upstream(request):
+        captured.append(json.loads(request.content)['messages'][1]['content'])
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps({
+            'narrative': '你休息了一会儿，右臂旧伤仍未痊愈。', 'references': [],
+            'proposed_changes': {'condition': '右臂仍有旧伤，疲惫稍有缓解。', 'coins_delta': -2},
+        })}}]})
+    store = ModelSessionStore(http_transport=httpx.MockTransport(upstream))
+    session = store.create('https://model.invalid', 'test', 'secret')['session_id']
+    with TestClient(create_app(Settings(db_path=db_path), narration_store=store)) as client:
+        run = make_run(client, 'live', {'coins': 10, 'condition': '右臂有旧伤，长途跋涉后有些疲惫。'})
+        path = f"/api/v1/adventures/{run['id']}"
+        draft = client.post(f'{path}/drafts', json={'request_id': 'rest', 'expected_revision': 0,
+            'action': '花两枚铜币找地方休息', 'session_id': session})
+        assert draft.status_code == 200, draft.text
+        assert 'stamina_delta' not in captured[0] and 'spirit_delta' not in captured[0]
+        assert '"stamina"' not in captured[0] and '"spirit"' not in captured[0]
+        assert client.get(path).json()['character']['condition'] == run['character']['condition']
+        committed = client.post(f'{path}/drafts/rest/commit', json={'apply_changes': True}).json()
+        assert committed['character']['condition'] == '右臂仍有旧伤，疲惫稍有缓解。'
+        assert committed['character']['coins'] == 8
+        saved = client.post(f'{path}/checkpoints', json={'request_id': 'save', 'expected_revision': 1, 'name': '休息之后'}).json()
+        restored = client.post(f"/api/v1/checkpoints/{saved['id']}/restore", json={'request_id': 'restore', 'name': '另一条路线'})
+        assert restored.status_code == 201, restored.text
+        branch = client.get(f"/api/v1/adventures/{restored.json()['id']}").json()
+        assert branch['character'] == committed['character']
+        assert len(branch['turns']) == 1
+        assert branch['turns'][0]['result']['state_before']['condition'] == run['character']['condition']
+        assert branch['turns'][0]['result']['state_after']['condition'] == committed['character']['condition']

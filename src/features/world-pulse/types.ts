@@ -45,6 +45,11 @@ export interface WorldPulseStatus {
   world_minute?: number;
   world_revision?: number;
   day_usage?: PulseDayUsageSummary | null;
+  simulation?: {
+    initialized: boolean;
+    events: { kind: 'thread' | 'incident'; label: string }[];
+    updated_minute: number;
+  };
 }
 
 /**

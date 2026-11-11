@@ -1,5 +1,7 @@
-import { Bookmark } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { UserRound, MessagesSquare, MapPin, Clock3 } from "lucide-react";
+import { JournalOverlay } from "./JournalOverlay";
+import { flushSync } from "react-dom";
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   adventureApi,
   type Detail,
@@ -16,13 +18,14 @@ import { InventoryEditor } from "./InventoryEditor";
 import { checkpointApi as defaultCheckpointApi } from "./checkpointApi";
 import { CheckpointPanel } from "./CheckpointPanel";
 import { MemoryChanges, MemoryPanel } from "./MemoryPanel";
-import { WorldKnowledgePanel } from "../world-knowledge";
 import { WorldStartPanel } from "../world-start";
 import type { WorldStartCommitResultDto } from "../world-start";
-import { WorldEncounterPanel } from "../world-encounters";
 import { CharacterCard } from "./CharacterCard";
 import type { NarrationSource } from "../narration-preview/types";
 import "./adventures.css";
+
+const WorldKnowledgePanel = lazy(() => import("../world-knowledge/WorldKnowledgePanel").then(module => ({ default: module.WorldKnowledgePanel })));
+const WorldEncounterPanel = lazy(() => import("../world-encounters/WorldEncounterPanel").then(module => ({ default: module.WorldEncounterPanel })));
 
 function worldTime(start: string, minutes: number) {
   return new Date(Date.parse(start + "Z") + minutes * 60000).toISOString().slice(0, 16).replace("T", " ");
@@ -43,6 +46,9 @@ function ClockSummary({ clock, pending }: { clock: ClockResult; pending?: boolea
 
 export function AdventureJournal({
   worldId,
+  view = "adventure",
+  onViewChange,
+  saveActions,
   sessionId,
   onConfigure,
   onImportMaterials,
@@ -53,6 +59,9 @@ export function AdventureJournal({
   checkpointApi = defaultCheckpointApi,
 }: {
   worldId: string;
+  view?: "adventure" | "saves";
+  onViewChange?: (view: "adventure" | "saves") => void;
+  saveActions?: ReactNode;
   sessionId?: string;
   onConfigure: () => void;
   onImportMaterials?: () => void;
@@ -74,16 +83,21 @@ export function AdventureJournal({
   const [loadingRuns, setLoadingRuns] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [analyzeStart, setAnalyzeStart] = useState(false);
-  const [showCheckpoints, setShowCheckpoints] = useState(false);
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
+  const runsOffset = useRef(0);
   const [runs, setRuns] = useState<Run[]>([]),
     [run, setRun] = useState<Detail | null>(null);
   useEffect(() => { onActiveRunChange?.(run); }, [run, onActiveRunChange]);
-  useEffect(() => { setShowCheckpoints(false); }, [run?.id]);
+  useEffect(() => { setPanel(null); setNewsFact(null); }, [view]);
+  useEffect(() => {
+    if (run?.world_id !== worldId) return;
+    try { localStorage.setItem(`mojing:active-adventure:${worldId}`, run.id); } catch { /* Optional device preference. */ }
+  }, [run?.id, worldId]);
   const [name, setName] = useState("新的旅程"),
     [mode, setMode] = useState<"fake" | "live">();
   const [expanded, setExpanded] = useState(false);
-  const [newsOpen, setNewsOpen] = useState(false);
+  const [panel, setPanel] = useState<"character" | "news" | null>(null);
+  const [newsFact, setNewsFact] = useState<string | null>(null);
   const [newsRefresh, setNewsRefresh] = useState(0);
   const [action, setAction] = useState(""),
     [draft, setDraft] = useState<Draft | null>(null);
@@ -122,8 +136,11 @@ export function AdventureJournal({
       if (valid(generation) && Array.isArray(data.items)) setOpenings(data.items);
     }).catch(() => { /* Older endpoints still allow freeform creation. */ });
     setShowCreate(false);
+    setPanel(null);
+    setNewsFact(null);
     setAnalyzeStart(false);
     setRuns([]);
+    runsOffset.current = 0;
     setRun(null);
     setDraft(null);
     setExpanded(false);
@@ -136,7 +153,21 @@ export function AdventureJournal({
       .then(async (data) => {
         if (!valid(generation)) return;
         setRuns(data.items);
+        runsOffset.current = data.items.length;
         setHasMoreRuns(data.items.length === 30);
+        let remembered: string | null = null;
+        try { remembered = localStorage.getItem(`mojing:active-adventure:${worldId}`); } catch { /* Storage may be disabled. */ }
+        if (remembered) {
+          try {
+            const detail = await api.detail(remembered);
+            if (valid(generation) && detail.world_id === worldId) {
+              setRun(detail);
+              setDraft(detail.latest_draft);
+              setRuns(items => items.some(item => item.id === detail.id) ? items : [detail, ...items]);
+              return;
+            }
+          } catch { /* Removed or unavailable journey: fall back to the latest one. */ }
+        }
         if (data.items[0]) await refresh(data.items[0].id);
       })
       .catch((e) => {
@@ -180,6 +211,8 @@ export function AdventureJournal({
     }
   };
   const choose = async (id: string) => {
+    setPanel(null);
+    setNewsFact(null);
     epoch.current++;
     active.current?.abort();
     active.current = null;
@@ -197,6 +230,7 @@ export function AdventureJournal({
       if (valid(generation)) {
         setRun(detail);
         setDraft(detail.latest_draft);
+        onViewChange?.("adventure");
       }
     } catch (e) {
       if (valid(generation)) setError(String(e));
@@ -239,7 +273,7 @@ export function AdventureJournal({
     locked.current = false;
     setBusy(false);
     setError(
-      "已停止等待，未确认的内容不会写入回合。可点击“刷新记录”查询草案；上游仍可能计费。",
+      "已停止等待，行动已保留。可到存档栏目恢复未完成内容；上游仍可能计费。",
     );
   };
   const accept = () =>
@@ -288,6 +322,7 @@ export function AdventureJournal({
     const detail = await api.detail(result.adventure_id);
     if (!valid(generation)) return;
     setRuns(items => [detail, ...items.filter(item => item.id !== detail.id)]);
+    runsOffset.current++;
     setRun(detail);
     setDraft(detail.latest_draft);
     setShowCreate(false);
@@ -295,15 +330,23 @@ export function AdventureJournal({
     setAdvanceHours(undefined);
     setAction("");
     setExpanded(false);
+    onViewChange?.("adventure");
   });
 
   return (
     <section className="adventure-journal" aria-label="冒险记录">
       {loadingRuns && <p role="status" className="muted">正在读取旅程…</p>}
+      {!loadingRuns && view === "adventure" && !run && <div className="journal-empty">
+        <p className="muted">故事还未开始。</p>
+        <button type="button" className="primary" onClick={() => onViewChange?.("saves")}>开始冒险</button>
+      </div>}
+      {view === "saves" && <section className="journal-save-manager" aria-label="旅程与存档">
+        <h2>旅程与存档</h2>
+        {saveActions}
       {runs.length > 0 && (
         <button type="button" className="text-button" disabled={busy}
           aria-expanded={showCreate} onClick={() => setShowCreate(value => !value)}>
-          {showCreate ? "收起新旅程" : "开启另一段旅程"}
+          {showCreate ? "收起新旅程" : "新建旅程"}
         </button>
       )}
       {!loadingRuns && (showCreate || runs.length === 0) && (
@@ -376,7 +419,7 @@ export function AdventureJournal({
             />
           </label>
           <p className="muted">
-            新角色体力100、精神100，累计耗时从0分钟开始。初始化只在创建旅程时生效。
+            钱币与物品按实际数量记录，身体与精神状况随故事描述。
           </p>
           <InventoryEditor
             items={initialInventory}
@@ -404,9 +447,10 @@ export function AdventureJournal({
                     });
                 if (valid(generation)) {
                   setRuns((prev) => [created, ...prev]);
+                  runsOffset.current++;
                   setShowCreate(false);
                   await refresh(created.id);
-                  if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); }
+                  if (valid(generation)) { setExpanded(false); setAction(""); setAdvanceHours(undefined); onViewChange?.("adventure"); }
                 }
               })
             }
@@ -424,7 +468,7 @@ export function AdventureJournal({
         >
           {runs.map((item) => (
             <option key={item.id} value={item.id}>
-              {item.name} · {item.mode === "fake" ? "Fake测试" : "Live模型"}
+              {item.name}
             </option>
           ))}
         </select>
@@ -436,8 +480,9 @@ export function AdventureJournal({
           onClick={() =>
             operate(async () => {
               const generation = epoch.current,
-                page = await api.list(worldId, undefined, runs.length);
+                page = await api.list(worldId, undefined, runsOffset.current);
               if (valid(generation)) {
+                runsOffset.current += page.items.length;
                 setRuns((prev) => [
                   ...prev,
                   ...page.items.filter(
@@ -452,48 +497,19 @@ export function AdventureJournal({
           读取更多旅程
         </button>
       )}
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      {run && (
-        <>
-          <div className="journal-heading">
-            <h3>{run.name}</h3>
-            <button type="button" className="icon-button" aria-label="存档与分支" title="存档与分支"
-              aria-expanded={showCheckpoints} onClick={() => setShowCheckpoints(value => !value)}>
-              <Bookmark size={19} />
-            </button>
-            <span>
-              {run.mode === "fake" ? "Fake · 无真实AI" : "Live · 模型叙事"} ·
-              已确认 {run.revision} 回合
-            </span>
-          </div>
-          {run.opening && run.character && <p className="muted">
-            世界时间 · {worldTime(run.opening.starts_at, run.character.elapsed_minutes)}
-          </p>}
-          {run.opening && <details open={run.revision === 0} className="journal-sources">
-            <summary>开场 · {run.opening.name}</summary>
-            <p className="journal-prose">{run.opening.intro}</p>
-          </details>}
-          <button
-            className="text-button"
-            disabled={busy}
-            onClick={() => operate(() => refresh(run.id))}
-          >
-            刷新记录 / 恢复草案
-          </button>
-          {run.origin_checkpoint_id && (
-            <p className="muted">
-              当前为存档分支，继承检查点之前的确认历史，原路线保持不变。
-            </p>
-          )}
-          {showCheckpoints && <CheckpointPanel
+
+        {run && <>
+          <p className="muted">当前旅程 · {run.name}</p>
+          <button type="button" className="text-button" disabled={busy}
+            onClick={() => operate(() => refresh(run.id))}>刷新进度与恢复草稿</button>
+          {run.origin_checkpoint_id && <p className="muted">这是一条独立分支，原路线仍然保留。</p>}
+        </>}
+          {run && <CheckpointPanel
             api={checkpointApi}
             run={run}
             disabled={busy}
             onRestored={async (branch) => {
+              runsOffset.current++;
               setRuns((prev) => [
                 branch,
                 ...prev.filter((item) => item.id !== branch.id),
@@ -505,30 +521,28 @@ export function AdventureJournal({
               await choose(branch.id);
             }}
           />}
-          {run.character ? (
-            <CharacterCard key={`character-${run.id}`} state={run.character} title="当前角色状态"
-              descriptions={run.item_descriptions} disabled={busy}
-              onSaveDescription={async (name, description) => {
-                const generation = epoch.current;
-                const saved = await api.saveItemDescription(run.id, name, description);
-                if (valid(generation)) {
-                  setRun(current => current && {
-                    ...current,
-                    item_descriptions: { ...current.item_descriptions, [saved.name]: saved.description },
-                  });
-                }
-              }} />
-          ) : (
-            <p className="muted">
-              旧旅程未初始化角色，继续仅记录叙事。新建旅程可使用角色状态。
-            </p>
-          )}
-          {run.memory && <MemoryPanel key={`memory-${run.id}`} memory={run.memory} disabled={busy}
-            onCorrect={async correction => {
-              const generation = epoch.current;
-              const memory = await api.correctMemory(run.id, correction);
-              if (valid(generation)) setRun(current => current && { ...current, memory });
-            }} />}
+      </section>}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      {run && view === "adventure" && (
+        <>
+          <div className="journal-tools" aria-label="冒险工具">
+            <div className="journal-scene">
+              {run.character?.location && <span><MapPin size={14} />{run.character.location}</span>}
+              {run.opening && run.character && <span><Clock3 size={14} />{worldTime(run.opening.starts_at, run.character.elapsed_minutes)}</span>}
+            </div>
+            <div className="journal-tool-buttons">
+              <button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setPanel("character")}><UserRound size={17} />角色</button>
+              <button type="button" className="text-button" aria-haspopup="dialog" onClick={() => setPanel("news")}><MessagesSquare size={17} />消息</button>
+            </div>
+          </div>
+          {run.opening && <details open={run.revision === 0} className="journal-sources">
+            <summary>开场 · {run.opening.name}</summary>
+            <p className="journal-prose">{run.opening.intro}</p>
+          </details>}
           {run.turns[0]?.sequence > 1 && (
             <button className="text-button" disabled={busy} onClick={older}>
               更早的回合
@@ -552,7 +566,7 @@ export function AdventureJournal({
           )}
           {draft?.status === "pending" && (
             <p role="status">
-              草案仍在生成；请稍后刷新。中断的请求90秒后失效。
+              故事正在生成。<button type="button" className="text-button" disabled={busy} onClick={() => operate(() => refresh(run.id))}>检查生成结果</button>
             </p>
           )}
           {draft?.status === "ready" && draft.result && (
@@ -633,16 +647,47 @@ export function AdventureJournal({
             busy={busy} stopping={busy && active.current !== null}
             disabled={run.mode === "live" && !sessionId}
             send={generate} stop={stop} />}
-          <details
-            className="journal-sources"
-            aria-label="世界消息"
-            onToggle={event => setNewsOpen(event.currentTarget.open)}
-          >
-            <summary>世界消息 · 只显示你有渠道得知的消息</summary>
-            {newsOpen && <>
-              <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at}
-                refreshTrigger={newsRefresh} />
-              <WorldEncounterPanel key={`encounters-${run.id}`} adventureId={run.id} defaultOpen={false}
+          {run.memory && <MemoryPanel key={`memory-${run.id}`} memory={run.memory} disabled={busy}
+            onCorrect={async correction => {
+              const generation = epoch.current;
+              const memory = await api.correctMemory(run.id, correction);
+              if (valid(generation)) setRun(current => current && { ...current, memory });
+            }} />}
+
+          {panel === "character" && <JournalOverlay title="角色" onClose={() => setPanel(null)}>
+          {run.character ? (
+            <CharacterCard key={`character-${run.id}`} state={run.character} title="角色信息"
+              descriptions={run.item_descriptions} disabled={busy}
+              onSaveDescription={async (name, description) => {
+                const generation = epoch.current;
+                const saved = await api.saveItemDescription(run.id, name, description);
+                if (valid(generation)) {
+                  setRun(current => current && {
+                    ...current,
+                    item_descriptions: { ...current.item_descriptions, [saved.name]: saved.description },
+                  });
+                }
+              }} />
+          ) : (
+            <p className="muted">
+              这段旅程尚无角色资料。
+            </p>
+          )}
+          </JournalOverlay>}
+          {panel === "news" && <JournalOverlay title="世界消息" onClose={() => setPanel(null)}>
+            <Suspense fallback={<p role="status" className="muted">正在打开消息…</p>}>
+              {!newsFact ? <WorldKnowledgePanel adventureId={run.id} startsAt={run.opening?.starts_at}
+                refreshTrigger={newsRefresh} onVerify={setNewsFact} /> : <>
+              <div className="journal-heading">
+                <button type="button" className="text-button" onClick={() => setNewsFact(null)}>返回消息列表</button>
+                <button type="button" className="text-button" onClick={() => {
+                  flushSync(() => { setPanel(null); setExpanded(true); });
+                  const input = document.getElementById("journal-action-editor-input") as HTMLTextAreaElement | null;
+                  input?.focus();
+                  input?.setSelectionRange(input.value.length, input.value.length);
+                }}>回到冒险编辑行动</button>
+              </div>
+              <WorldEncounterPanel key={`encounters-${run.id}-${newsFact}`} adventureId={run.id} defaultOpen focusFactId={newsFact}
                 composerDraft={action} onComposerDraftChange={setAction} onExpandComposer={setExpanded}
                 refreshTrigger={`${run.revision}:${newsRefresh}`}
                 disabled={busy || draft?.status === "ready" || draft?.status === "pending"}
@@ -650,9 +695,14 @@ export function AdventureJournal({
                   setAction("");
                   setExpanded(false);
                   setNewsRefresh(value => value + 1);
+                  setPanel(null);
+                  setNewsFact(null);
+                  void operate(() => refresh(run.id));
                 }} />
-            </>}
-          </details>
+              </>}
+            </Suspense>
+          </JournalOverlay>}
+
         </>
       )}
     </section>

@@ -146,7 +146,7 @@ it("failed commit keeps the draft so retry uses the same idempotent endpoint", a
 it("state proposal defaults to not adopted, and adoption is explicit", async () => {
   const { api } = setup(true);
   render(<AdventureJournal {...props} api={api} />);
-  await screen.findByLabelText("当前角色状态");
+  await screen.findByRole("button", { name: "角色", exact: true });
   fireEvent.click(screen.getByRole("button", { name: "自由编辑行动" }));
   fireEvent.change(screen.getByLabelText("你的行动"), {
     target: { value: "买茶" },
@@ -168,7 +168,7 @@ it("state proposal defaults to not adopted, and adoption is explicit", async () 
 it("a state proposal can be saved as narrative without changing character state", async () => {
   const { api } = setup(true);
   render(<AdventureJournal {...props} api={api} />);
-  await screen.findByLabelText("当前角色状态");
+  await screen.findByRole("button", { name: "角色", exact: true });
   fireEvent.click(screen.getByRole("button", { name: "自由编辑行动" }));
   fireEvent.change(screen.getByLabelText("你的行动"), {
     target: { value: "买茶" },
@@ -186,7 +186,7 @@ it("item changes appear in the same optional state confirmation", async () => {
   ];
   ready.result!.projected_state!.inventory = [{ name: "干粮", quantity: 1 }];
   render(<AdventureJournal {...props} api={api} />);
-  await screen.findByLabelText("当前角色状态");
+  await screen.findByRole("button", { name: "角色", exact: true });
   fireEvent.click(screen.getByRole("button", { name: "自由编辑行动" }));
   fireEvent.change(screen.getByLabelText("你的行动"), {
     target: { value: "买干粮" },
@@ -308,14 +308,95 @@ it("refreshing a journey keeps a single current character and memory panel", asy
     latest_draft: null,
   }));
   const messages = vi.spyOn(console, "error").mockImplementation(() => {});
-  render(<AdventureJournal {...props} api={api} />);
+  const { rerender } = render(<AdventureJournal {...props} api={api} />);
   await screen.findByText("世界日志与更正（0）");
   for (revision = 1; revision <= 4; revision++) {
-    fireEvent.click(screen.getByRole("button", { name: "刷新记录 / 恢复草案" }));
+    rerender(<AdventureJournal {...props} api={api} view="saves" />);
+    fireEvent.click(screen.getByRole("button", { name: "刷新进度与恢复草稿" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "刷新进度与恢复草稿" })).toBeEnabled());
+    rerender(<AdventureJournal {...props} api={api} view="adventure" />);
     await screen.findByText("第 " + revision + " 回合");
-    expect(screen.getAllByLabelText("当前角色状态")).toHaveLength(1);
+    expect(screen.queryByLabelText("角色信息")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "角色", exact: true }));
+    expect(screen.getAllByLabelText("角色信息")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "关闭角色" }));
     expect(screen.getAllByText("世界日志与更正（0）")).toHaveLength(1);
-    await waitFor(() => expect(screen.getByRole("button", { name: "刷新记录 / 恢复草案" })).toBeEnabled());
   }
   expect(messages.mock.calls.some(args => args.some(arg => String(arg).includes("same key")))).toBe(false);
+});
+
+it("adventure keeps management out of the story, with qualitative character details in an accessible overlay", async () => {
+  const { api, ready } = setup(true);
+  const detail = await api.detail();
+  detail.character = { ...detail.character!, condition: "右臂仍有旧伤，精神尚好。" };
+  detail.memory = { cursor: 0, items: [], events: [] };
+  detail.turns = [{ sequence: 1, action: "走进小镇", result: { ...ready.result!, narrative: "街灯在雨中摇曳。" } }];
+  render(<AdventureJournal {...props} api={api} />);
+  const story = await screen.findByText("街灯在雨中摇曳。");
+  expect(screen.queryByLabelText("选择冒险记录")).toBeNull();
+  expect(screen.queryByRole("region", { name: "存档与分支" })).toBeNull();
+  expect(screen.queryByLabelText("角色信息")).toBeNull();
+  const log = screen.getByText("世界日志与更正（0）");
+  expect(story.compareDocumentPosition(log) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const trigger = screen.getByRole("button", { name: "角色", exact: true });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole("dialog", { name: "角色", exact: true });
+  expect(dialog).toHaveTextContent("右臂仍有旧伤");
+  expect(dialog).toHaveTextContent("铜币");
+  expect(dialog).not.toHaveTextContent("100/100");
+  expect(dialog).not.toHaveTextContent("体力");
+  expect(document.body.style.overflow).toBe("hidden");
+  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.body.style.overflow).not.toBe("hidden");
+  expect(trigger).toHaveFocus();
+});
+
+it("remembered journey resumes per world and ignores a mismatched saved journey", async () => {
+  const { api } = setup();
+  const first = await api.detail();
+  const other = { ...first, id: "saved", name: "旧分支" };
+  localStorage.setItem("mojing:active-adventure:w", "saved");
+  api.detail.mockImplementation(async (id?: string) => id === "saved" ? other : first);
+  const onActiveRunChange = vi.fn();
+  const { rerender } = render(<AdventureJournal {...props} api={api} onActiveRunChange={onActiveRunChange} />);
+  await waitFor(() => expect(onActiveRunChange).toHaveBeenLastCalledWith(other));
+  localStorage.setItem("mojing:active-adventure:w2", "saved");
+  const second = { ...first, id: "second", world_id: "w2" };
+  api.list.mockResolvedValue({ items: [second] });
+  api.detail.mockImplementation(async (id?: string) => id === "saved" ? other : second);
+  rerender(<AdventureJournal {...props} worldId="w2" api={api} onActiveRunChange={onActiveRunChange} />);
+  await waitFor(() => expect(onActiveRunChange).toHaveBeenLastCalledWith(second));
+  expect(localStorage.getItem("mojing:active-adventure:w")).toBe("saved");
+  expect(localStorage.getItem("mojing:active-adventure:w2")).toBe("second");
+});
+
+it("消息只展示一份列表，查证建议可带回同一行动输入框", async () => {
+  const { createInnkeeperCaravanEncounterScenario } = await import("../../../src/features/world-encounters");
+  const { transport } = createInnkeeperCaravanEncounterScenario("run");
+  const bundle = await transport.getEntrypointBundle("run");
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input).split("?")[0];
+    const body = path.endsWith("/world-news") ? { items: bundle.news_items, next_before: null }
+      : path.endsWith("/world-encounters") ? bundle : {};
+    return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const { api } = setup(true);
+  render(<AdventureJournal {...props} api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "消息", exact: true }));
+  await screen.findByText("市井传闻：灰鬃商队迟迟未至");
+  expect(screen.getAllByText("市井传闻：灰鬃商队迟迟未至")).toHaveLength(1);
+  expect(fetcher.mock.calls.some(args => String(args[0]).includes("/world-encounters"))).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "查证：市井传闻：灰鬃商队迟迟未至" }));
+  fireEvent.click(await screen.findByTestId("encounter-option-opt_fact_player_initial_rumor_ask_npc_marta_innkeeper"));
+  expect((screen.getByTestId("encounter-action-editor") as HTMLTextAreaElement).value).toContain("向玛塔老板娘");
+  expect(screen.getByRole("dialog", { name: "世界消息" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "回到冒险编辑行动" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect((screen.getByLabelText("你的行动") as HTMLTextAreaElement).value).toContain("向玛塔老板娘");
+  expect(screen.getByLabelText("你的行动")).toHaveFocus();
+  expect(api.prepare).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
 });

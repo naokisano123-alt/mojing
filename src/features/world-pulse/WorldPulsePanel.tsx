@@ -546,6 +546,14 @@ export function WorldPulsePanel({
               状态说明：{reasonText}
             </p>
           )}
+          {status?.simulation?.initialized && <div className="world-pulse-simulation" aria-label="远景模拟结果">
+            <strong>{status.reason_code === 'PULSE_JOB_FAILED' || currentState !== 'ready' ? '已保存的远景事件' : '远景模拟成功'}</strong>
+            <p>以下仅为远景代称，具体消息仍须由角色在旅程中获知。</p>
+            <ul>{status.simulation.events.map((event, index) => <li key={index}>
+              <span>{event.kind === 'thread' ? '大事件' : '小事件'}：</span>{event.label}
+            </li>)}</ul>
+            {!status.simulation.events.length && <p>当前远景事件已暂告一段落。</p>}
+          </div>}
         </div>
 
         {/* 额外消耗常驻说明 */}

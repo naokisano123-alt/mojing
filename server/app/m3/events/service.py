@@ -191,6 +191,7 @@ def _row_to_event_dict(
             turnpoint_type,
             precondition_ids_json,
             revision,
+            public_label,
         ) = row
         data = {
             "instance_id": instance_id,
@@ -211,6 +212,7 @@ def _row_to_event_dict(
             "turnpoint_type": turnpoint_type,
             "precondition_ids_json": precondition_ids_json,
             "revision": revision,
+            "public_label": public_label,
         }
 
     event_id = data["event_id"]
@@ -236,6 +238,8 @@ def _row_to_event_dict(
         "precondition_ids": json.loads(data.get("precondition_ids_json") or "[]"),
         "revision": int(data["revision"]),
     }
+    if data.get("public_label"):
+        record["public_label"] = data["public_label"]
     if consequences_by_event is not None:
         record["consequences"] = list(consequences_by_event.get(event_id, ()))
     return record
@@ -647,7 +651,7 @@ def _select_minimal_causal_neighborhood(
             SELECT instance_id, event_id, kind, title, description, location, scope,
                    participants_json, stage, status, created_minute, updated_minute,
                    next_update_minute, cause_event_ids_json, source_ids_json,
-                   turnpoint_type, precondition_ids_json, revision
+                   turnpoint_type, precondition_ids_json, revision, public_label
             FROM world_events
             WHERE instance_id = ? AND event_id IN ({placeholders})
             ORDER BY updated_minute DESC, created_minute ASC, event_id ASC
@@ -666,7 +670,7 @@ def _select_minimal_causal_neighborhood(
             SELECT instance_id, event_id, kind, title, description, location, scope,
                    participants_json, stage, status, created_minute, updated_minute,
                    next_update_minute, cause_event_ids_json, source_ids_json,
-                   turnpoint_type, precondition_ids_json, revision
+                   turnpoint_type, precondition_ids_json, revision, public_label
             FROM world_events
             WHERE instance_id = ?
             ORDER BY updated_minute DESC, revision DESC, created_minute ASC, event_id ASC
@@ -888,7 +892,7 @@ def read_snapshot(
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE instance_id = ?
           AND status = 'active'
@@ -1053,7 +1057,7 @@ def _load_validation_context_from_db(
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE instance_id = ?
         """,
@@ -1130,6 +1134,8 @@ def _proposal_to_raw_dict(proposal: ValidatedEventProposal) -> dict[str, Any]:
             item["kind"] = op.kind
         if op.title is not None:
             item["title"] = op.title
+        if op.public_label is not None:
+            item["public_label"] = op.public_label
         if op.description is not None:
             item["description"] = op.description
         if op.location is not None:
@@ -1435,6 +1441,10 @@ def apply_proposal(
                     "consequences": op_consequences,
                     "revision": revision,
                 }
+                if op.public_label:
+                    conn.execute("UPDATE world_events SET public_label = ? WHERE instance_id = ? AND event_id = ?",
+                                 (op.public_label, instance_id, event_record["event_id"]))
+                    event_record["public_label"] = op.public_label
                 conn.execute(
                     """
                     INSERT INTO world_event_revisions (
@@ -1582,6 +1592,10 @@ def apply_proposal(
                     "consequences": op_consequences,
                     "revision": new_revision,
                 }
+                if op.public_label:
+                    conn.execute("UPDATE world_events SET public_label = ? WHERE instance_id = ? AND event_id = ?",
+                                 (op.public_label, instance_id, event_record["event_id"]))
+                    event_record["public_label"] = op.public_label
                 conn.execute(
                     """
                     INSERT INTO world_event_revisions (
@@ -1642,7 +1656,7 @@ def get_event(conn: sqlite3.Connection, instance_id: str, event_id: str) -> dict
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE instance_id = ? AND event_id = ?
         """,
@@ -1700,7 +1714,7 @@ def list_events(
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE {where_sql}
         ORDER BY created_minute ASC, event_id ASC
@@ -1801,7 +1815,7 @@ def list_due_events(
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE {where_sql}
         ORDER BY next_update_minute ASC, created_minute ASC, event_id ASC
@@ -2098,7 +2112,7 @@ def snapshot(conn: sqlite3.Connection, instance_id: str) -> dict[str, Any]:
         SELECT instance_id, event_id, kind, title, description, location, scope,
                participants_json, stage, status, created_minute, updated_minute,
                next_update_minute, cause_event_ids_json, source_ids_json,
-               turnpoint_type, precondition_ids_json, revision
+               turnpoint_type, precondition_ids_json, revision, public_label
         FROM world_events
         WHERE instance_id = ?
         ORDER BY created_minute ASC, event_id ASC
@@ -2387,6 +2401,11 @@ def restore(
                     rev,
                 ),
             )
+
+            if ev.get("public_label") is not None:
+                public_label = _require_non_empty_str(ev["public_label"], f"events[{idx}].public_label", 24)
+                conn.execute("UPDATE world_events SET public_label = ? WHERE instance_id = ? AND event_id = ?",
+                             (public_label, target_instance_id, eid))
 
         _detect_causal_cycles(cause_graph)
 

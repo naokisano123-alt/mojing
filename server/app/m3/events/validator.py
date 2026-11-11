@@ -85,6 +85,7 @@ _ALLOWED_CREATE_KEYS = frozenset(
         "description",
         "location",
         "scope",
+        "public_label",
         "participants",
         "stage",
         "status",
@@ -109,6 +110,7 @@ _ALLOWED_UPDATE_KEYS = frozenset(
         "description",
         "location",
         "scope",
+        "public_label",
         "participants",
         "stage",
         "status",
@@ -1139,6 +1141,7 @@ def validate_proposal(
             validated_ops.append(
                 ValidatedEventOp(
                     op="create",
+                    public_label=_require_non_empty_str(raw_op["public_label"], f"{op_label}.public_label", 24) if "public_label" in raw_op else None,
                     kind=kind,
                     title=title,
                     description=description,
@@ -1446,6 +1449,7 @@ def validate_proposal(
             validated_ops.append(
                 ValidatedEventOp(
                     op="update",
+                    public_label=_require_non_empty_str(raw_op["public_label"], f"{op_label}.public_label", 24) if "public_label" in raw_op else existing.get("public_label"),
                     event_id=event_id,
                     expected_event_revision=expected_rev,
                     kind=existing["kind"],

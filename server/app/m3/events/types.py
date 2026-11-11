@@ -254,6 +254,7 @@ class ValidatedEventOp:
     turnpoint_type: str | None = None
     precondition_ids: tuple[str, ...] | None = None
     reason: str = ""
+    public_label: str | None = None
 
 
 @dataclass(frozen=True)

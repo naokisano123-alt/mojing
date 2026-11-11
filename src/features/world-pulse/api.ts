@@ -170,6 +170,24 @@ export function sanitizePulseStatus(raw: unknown): WorldPulseStatus {
     reason_summary,
     day_usage,
   };
+  const simulation = obj.simulation;
+  if (simulation && typeof simulation === 'object') {
+    const value = simulation as Record<string, unknown>;
+    const events = Array.isArray(value.events) ? value.events.flatMap(item => {
+      if (!item || typeof item !== 'object') return [];
+      const event = item as Record<string, unknown>;
+      if (event.kind !== 'thread' && event.kind !== 'incident') return [];
+      const kind: 'thread' | 'incident' = event.kind;
+      return [{ kind, label: typeof event.label === 'string' && event.label.trim()
+        ? event.label.trim().slice(0, 24) : '未明的动向' }];
+    }).slice(0, 30) : [];
+    safeStatus.simulation = {
+      initialized: value.initialized === true,
+      events,
+      updated_minute: typeof value.updated_minute === 'number' && Number.isFinite(value.updated_minute)
+        ? Math.max(0, Math.floor(value.updated_minute)) : 0,
+    };
+  }
   if (typeof obj.world_minute === 'number' && Number.isFinite(obj.world_minute)) {
     safeStatus.world_minute = Math.max(0, Math.floor(obj.world_minute));
   }

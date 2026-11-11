@@ -20,14 +20,6 @@ export function CharacterCard({
       </strong>
       <dl>
         <div>
-          <dt>体力</dt>
-          <dd>{state.stamina}/100</dd>
-        </div>
-        <div>
-          <dt>精神</dt>
-          <dd>{state.spirit}/100</dd>
-        </div>
-        <div>
           <dt>铜币</dt>
           <dd>{state.coins}</dd>
         </div>
@@ -40,6 +32,7 @@ export function CharacterCard({
           <dd>{state.location}</dd>
         </div>
       </dl>
+      {state.condition && <p className="journal-condition">{state.condition}</p>}
       <div className="inventory-list">
         <strong>背包</strong>
         {state.inventory?.length ? (

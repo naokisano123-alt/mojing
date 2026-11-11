@@ -87,6 +87,7 @@ PULSE_EVENT_OUTPUT_SCHEMA: dict[str, Any] = {
                     "kind": {"type": "string", "enum": list(EVENT_KINDS)},
                     "title": {"type": "string", "minLength": 1, "maxLength": 120},
                     "description": {"type": "string", "minLength": 1, "maxLength": 2000},
+                    "public_label": {"type": "string", "minLength": 1, "maxLength": 24},
                     "location": {"type": "string", "minLength": 1, "maxLength": 120},
                     "scope": {"type": "string", "enum": list(EVENT_SCOPES)},
                     "participants": {
@@ -838,6 +839,7 @@ def _build_event_field_contract() -> str:
         "location（非空）、scope、next_update_minute（整数）、source_ids（授权来源 ID 数组）。\n"
         f"kind 仅允许 {'/'.join(EVENT_KINDS)}；scope 必须填写且仅允许 {'/'.join(EVENT_SCOPES)}；"
         f"status 仅允许 {'/'.join(EVENT_STATUSES)}。\n"
+        "为新建事件同时提供 public_label（2～12字的模糊文学化名称，如意象或隐喻），给玩家作为远景标题；不得包含实际人物姓名、具体地点、幕后计划、秘密或结局，不要直接缩短内部 title。public_label 不代表角色知情。\n"
         "可选字段：participants（人名字符串数组）、stage（非空字符串）、status、cause_event_ids（已存在事件 ID 数组）、"
         "consequences、turnpoint_type、precondition_ids、reason。新建事件 status=\"active\"，next_update_minute 须大于当前世界分钟。\n"
         "update 必填：op=\"update\"、event_id、expected_event_revision（原事件整数版本）；"

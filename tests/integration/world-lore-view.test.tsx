@@ -78,20 +78,23 @@ describe('WorldLoreView 装配', () => {
     expect(await screen.findByText('云山纪.md')).toBeTruthy();
     expect(screen.getByRole('button', { name: '冒险' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '导出两份文件' })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: '导出', exact: true }));
-    expect(screen.getByRole('link', { name: '导出两份文件' }))
+    expect(screen.getByRole('link', { name: '导出设定' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=world');
+    expect(screen.queryByRole('link', { name: '导出存档' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '存档', exact: true }));
+    await userEvent.click(screen.getByText('导出与备份'));
+    expect(screen.getByRole('link', { name: '保存世界观和存档两份文件' }))
       .toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip&destination=folder');
-    for (const [label, part] of [['世界观', 'world'], ['存档', 'saves'], ['完整备份 ZIP', 'zip']]) {
-      expect(screen.getByRole('link', { name: label })).toHaveAttribute('href', `/api/v1/worlds/w1/transfer?part=${part}`);
-    }
+    expect(screen.getByRole('link', { name: '导出存档' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=saves');
+    expect(screen.getByRole('link', { name: '完整备份 ZIP' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip');
+    expect(screen.queryByRole('link', { name: '导出设定' })).toBeNull();
   });
 
-  it('三个主栏目和文档内的设定及导入能真实挂载', async () => {
+  it('四个主栏目和文档内的设定及导入能真实挂载', async () => {
     const user = userEvent.setup();
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
     await screen.findByText('云山纪.md');
 
-    expect(screen.getByRole('navigation', { name: '世界栏目' }).querySelectorAll('button')).toHaveLength(3);
+    expect(screen.getByRole('navigation', { name: '世界栏目' }).querySelectorAll('button')).toHaveLength(4);
     expect(screen.getByRole('textbox', { name: '检索关键词' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '检索资料' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '叙事实验' })).not.toBeInTheDocument();
@@ -118,6 +121,8 @@ describe('WorldLoreView 装配', () => {
     await user.click(screen.getByRole('button', { name: '连接并建立会话' }));
     await screen.findByText('会话已激活');
     await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
+    expect(screen.queryByLabelText('新冒险模式')).toBeNull();
+    await user.click(await screen.findByRole('button', { name: '开始冒险' }));
     expect(await screen.findByLabelText('新冒险模式')).toHaveValue('live');
     expect(screen.queryByRole('button', { name: '管理模型连接' })).not.toBeInTheDocument();
   });
@@ -159,6 +164,47 @@ it('switching to documents and settings preserves the pending adventure action a
   await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
   expect(screen.getByLabelText('你的行动')).toHaveValue('我还没有写完的行动');
   expect(screen.getByText('世界脉动设置')).not.toBeVisible();
-  await user.click(screen.getByRole('button', { name: '存档与分支', exact: true }));
+  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
   expect(await screen.findByRole('region', { name: '存档与分支' })).toBeVisible();
+});
+
+it('存档独立管理，读档后返回对应正文，待确认故事跨栏目仍保留', async () => {
+  localStorage.clear();
+  const turn = (narrative: string) => ({ sequence: 1, action: '走进街道', result: {
+    request_id: 'confirmed', mode: 'fake', narrative, references: [], sources: [],
+  } });
+  const current = { id: 'current', world_id: 'w1', name: '当前旅程', mode: 'fake', revision: 1,
+    turns: [turn('当前路线的正文。')], latest_draft: { id: 'pending', status: 'ready', action: '看看窗外',
+      result: { request_id: 'pending', mode: 'fake', narrative: '还未确认的故事。', references: [], sources: [] } } };
+  const restored = { ...current, id: 'restored', origin_checkpoint_id: 'cp', latest_draft: null,
+    turns: [turn('存档恢复后的正文。')] };
+  const checkpoint = { id: 'cp', adventure_id: 'current', name: '雨夜之前', revision: 1, mode: 'fake', created_at: 1 };
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input).split('?')[0];
+    if (path.endsWith('/worlds/w1')) return json(WORLD);
+    if (path.endsWith('/capabilities')) return json({});
+    if (path.endsWith('/worlds/w1/adventures')) return json({ items: [current] });
+    if (path.endsWith('/adventures/current')) return json(current);
+    if (path.endsWith('/adventures/restored')) return json(restored);
+    if (path.endsWith('/checkpoints/cp/restore')) return json(restored);
+    if (path.endsWith('/checkpoints')) return json({ items: [checkpoint] });
+    if (path.endsWith('/openings')) return json({ items: [] });
+    return json({ error: { code: 'NOT_FOUND', message: 'not mocked' } }, 404);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const user = userEvent.setup();
+  render(<WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}} initialTab="journal" />);
+  await screen.findByText('还未确认的故事。');
+  expect(screen.queryByLabelText('选择冒险记录')).toBeNull();
+  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
+  expect(await screen.findByRole('region', { name: '存档与分支' })).toBeVisible();
+  expect(screen.queryByText('还未确认的故事。')).toBeNull();
+  await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
+  expect(screen.getByText('还未确认的故事。')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
+  await user.click(await screen.findByRole('button', { name: '从雨夜之前创建分支' }));
+  expect(await screen.findByText('存档恢复后的正文。')).toBeVisible();
+  expect(screen.getByRole('button', { name: '冒险', exact: true })).toHaveAttribute('aria-current', 'page');
+  expect(screen.queryByRole('region', { name: '存档与分支' })).toBeNull();
+  expect(localStorage.getItem('mojing:active-adventure:w1')).toBe('restored');
 });

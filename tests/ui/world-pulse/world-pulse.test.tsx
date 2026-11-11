@@ -353,3 +353,25 @@ describe('WorldPulsePanel mobile UI & lifecycle contract tests (390px mobile wid
     await waitFor(() => expect(screen.queryByText(/MODEL_OUTPUT_TRUNCATED/)).toBeNull());
   });
 });
+
+it('只根据已保存的事件展示远景成功与模糊名，不拿用量或就绪状态猜成功', async () => {
+  let status: WorldPulseStatus = sanitizePulseStatus({
+    enabled: true, mode: 'independent', state: 'ready',
+    day_usage: { actual_tokens: 3335, estimated_tokens: 0, billed_calls: 1 },
+    simulation: { initialized: false, events: [], updated_minute: 0 },
+  });
+  const transport: WorldPulseTransport = {
+    getStatus: vi.fn(async () => status), connect: vi.fn(async () => status),
+    setEnabled: vi.fn(async () => status), setActivity: vi.fn(async () => undefined),
+  };
+  render(<WorldPulsePanel adventureId="saved-world" adventureMode="live" transport={transport} />);
+  expect(await screen.findByTestId('pulse-state-badge')).toHaveTextContent('就绪运行');
+  expect(screen.queryByText('远景模拟成功')).toBeNull();
+  status = sanitizePulseStatus({ ...status, simulation: { initialized: true, updated_minute: 15,
+    events: [{ kind: 'thread', label: '躁动的狮群', title: '不该传入正文的秘密计划' }, { kind: 'incident', label: '城内契约' }] } });
+  fireEvent.click(screen.getByRole('button', { name: '刷新脉动状态' }));
+  expect(await screen.findByText('远景模拟成功')).toBeInTheDocument();
+  expect(screen.getByLabelText('远景模拟结果')).toHaveTextContent('大事件：躁动的狮群');
+  expect(screen.getByLabelText('远景模拟结果')).toHaveTextContent('小事件：城内契约');
+  expect(document.body.textContent).not.toContain('不该传入正文的秘密计划');
+});
