@@ -59,6 +59,7 @@ export default function App() {
     modelEdited.current = true;
     setModelSession(session);
   }
+  const remoteListEpoch = useRef(0);
   const [remoteWorlds, setRemoteWorlds] = useState<WorldSummary[]>([]);
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remoteError, setRemoteError] = useState('');
@@ -174,26 +175,48 @@ export default function App() {
     }, 900);
   }
   async function loadRemoteWorlds() {
+    const epoch = ++remoteListEpoch.current;
     setRemoteStatus('loading');
     setRemoteError('');
     try {
-      const listing = await fetchRemoteWorldList({ limit: 50 });
-      setRemoteWorlds(listing.items);
+      const worlds: WorldSummary[] = [];
+      let offset = 0;
+      while (true) {
+        const listing = await fetchRemoteWorldList({ limit: 50, offset });
+        if (epoch !== remoteListEpoch.current) return;
+        worlds.push(...listing.items);
+        offset += listing.items.length;
+        if (listing.items.length < 50 || offset >= listing.total) break;
+      }
+      let lastWorld: string | null = null;
+      try { lastWorld = localStorage.getItem('mojing:last-world'); } catch { /* Optional device preference. */ }
+      setRemoteWorlds(lastWorld ? [...worlds.filter(world => world.id === lastWorld), ...worlds.filter(world => world.id !== lastWorld)] : worlds);
       setRemoteStatus('ready');
     } catch (err) {
+      if (epoch !== remoteListEpoch.current) return;
       setRemoteStatus('error');
-      setRemoteError(err instanceof ApiClientError ? err.friendlyMessage : '无法连接资料库服务，请确认后端已启动。');
+      setRemoteError(err instanceof ApiClientError ? err.friendlyMessage : '暂时无法读取世界，请重试。');
     }
+  }
+  function registerWorld(created: WorldSummary) {
+    remoteListEpoch.current++;
+    setRemoteWorlds(current => [created, ...current.filter(world => world.id !== created.id)]);
+    setRemoteStatus('ready');
+    setRemoteError('');
+    openLore(created);
+  }
+  function handleImportWorld(created: WorldSummary) {
+    registerWorld(created);
+    setToast('备份已导入为独立世界，可以继续冒险。');
   }
   useEffect(() => { void loadRemoteWorlds(); }, []);
   async function handleCreateRemoteWorld(name: string, description: string) {
     const created = await createRemoteWorld({ name, description });
-    setRemoteWorlds(current => [...current, created]);
-    setRemoteStatus('ready');
-    openLore(created);
+    registerWorld(created);
     setToast('世界已创建。可以开始冒险，也可以先导入设定。');
   }
   function openLore(target: WorldSummary) {
+    try { localStorage.setItem('mojing:last-world', target.id); } catch { /* Optional device preference. */ }
     setLoreWorld({ id: target.id, name: target.name });
     history.pushState(null, '', '#lore/' + target.id);
     setDirection('left');
@@ -238,13 +261,13 @@ export default function App() {
             <button className="primary" onClick={() => go('home')}>进入我的世界<ArrowRight size={18} /></button>
             <small>进度已保留在当前浏览器</small>
           </section>}
-          {page === 'home' && <Home worlds={state.worlds} create={() => go('create')} enter={id => {
+          {page === 'home' && <Home worlds={state.worlds} enter={id => {
             if (busy) { setToast('请等待当前回合结束。'); return; }
             setState(s => ({ ...s, current: id })); go('story');
           }}
             remoteWorlds={remoteWorlds} remoteStatus={remoteStatus} remoteError={remoteError}
             onRetryRemote={loadRemoteWorlds} onEnterRemote={openLore}
-            onCreateRemote={handleCreateRemoteWorld} />}
+            onCreateRemote={handleCreateRemoteWorld} onImportRemote={handleImportWorld} />}
           {page === 'create' && <CreateWorld cancel={() => go('home', 'right')} submit={(name, description, docs) => {
             const next = makeWorld(name, description, docs);
             setState(s => ({ ...s, worlds: [...s.worlds, next], current: next.id }));

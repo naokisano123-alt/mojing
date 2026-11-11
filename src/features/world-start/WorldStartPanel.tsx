@@ -554,9 +554,9 @@ export function WorldStartPanel({
     >
       <div className="world-start-header">
         <div className="world-start-title-group">
-          <h3 className="world-start-title">{displayWorldTitle} · 开局与初始局势</h3>
+          <h3 className="world-start-title">{displayWorldTitle} · 根据资料生成开局</h3>
           <p className="world-start-subtitle">
-            从已导入的世界资料建立初始局势，或跳过设置直接开启普通冒险。
+            AI 会先整理起点、在场人物和初始状况，供你确认后开始。也可跳过这一步，直接进入冒险。
           </p>
         </div>
         <span
@@ -574,14 +574,14 @@ export function WorldStartPanel({
         data-testid="world-start-api-disclosure"
         role="note"
       >
-        <strong>模型调用与边界说明：</strong>
-        <span>
+        <p>{mode === 'live' ? '将调用已连接的模型，可能消耗 Token。生成的开局需要你确认后才生效。' : '使用本地模拟生成开局，无需 API Key。'}</p>
+        <details><summary>分析内容与用量说明</summary><span>
           导入文档本身只保存资料，不会自动调用 AI。当你主动点击「启动 AI 开局分析」时，系统将读取所选资料节选与起点，
           {mode === 'live'
             ? `复用当前已连接的模型会话（${modelName || (sessionId ? '已激活会话' : '待连接会话')}）生成初始局势草案，可能消耗模型 Token。`
             : '使用本地模拟模式（免 API Key）生成初始局势草案。'}
           未确认的草案不会写入正式事件、人物、知识与世界时间。
-        </span>
+        </span></details>
       </div>
 
       {loading && (
@@ -621,7 +621,7 @@ export function WorldStartPanel({
                 onClick={() => void handleQuickStartAdventure()}
                 data-testid="world-start-error-quick-btn"
               >
-                普通冒险先行
+                跳过分析，直接开始
               </button>
             </div>
           )}

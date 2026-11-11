@@ -38,7 +38,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
     );
 
     // 验证第一份资料世界（青瓷海岬志）加载与真实调用前用途说明
-    expect(await screen.findByText(/青瓷海岬志 · 开局与初始局势/)).toBeInTheDocument();
+    expect(await screen.findByText(/青瓷海岬志 · 根据资料生成开局/)).toBeInTheDocument();
     expect(screen.getByTestId('world-start-api-disclosure')).toHaveTextContent(
       /导入文档本身只保存资料，不会自动调用 AI/,
     );
@@ -85,7 +85,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
       />,
     );
 
-    expect(await screen.findByText(/赤砂星晷录 · 开局与初始局势/)).toBeInTheDocument();
+    expect(await screen.findByText(/赤砂星晷录 · 根据资料生成开局/)).toBeInTheDocument();
     expect(screen.getByTestId('world-start-location-input')).toHaveValue('第三分水闸集市');
 
     fireEvent.click(screen.getByTestId('world-start-analyze-btn'));
@@ -132,7 +132,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
       />,
     );
 
-    await screen.findByText(/赤砂星晷录 · 开局与初始局势/);
+    await screen.findByText(/赤砂星晷录 · 根据资料生成开局/);
     fireEvent.click(screen.getByTestId('world-start-analyze-btn'));
 
     expect(await screen.findByTestId('world-start-error-alert')).toHaveTextContent(
@@ -200,7 +200,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
       />,
     );
 
-    await screen.findByText(/青瓷海岬志 · 开局与初始局势/);
+    await screen.findByText(/青瓷海岬志 · 根据资料生成开局/);
     fireEvent.click(screen.getByTestId('world-start-analyze-btn'));
     await screen.findByTestId('world-start-draft-card');
     fireEvent.click(screen.getByTestId('world-start-confirm-btn'));
@@ -233,7 +233,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
       <WorldStartPanel worldId="world_celain_harbor" transport={transport} />,
     );
 
-    await screen.findByText(/青瓷海岬志 · 开局与初始局势/);
+    await screen.findByText(/青瓷海岬志 · 根据资料生成开局/);
 
     // 设置青瓷海岬志的分析响应延迟 140ms，赤砂星晷录无延迟
     transport.setResponseDelay('world_celain_harbor', 140);
@@ -245,7 +245,7 @@ describe('WorldStartPanel & WorldStartJourneyHost mobile UI tests (390px viewpor
     // 在青瓷海岬志分析尚未返回前，立即切换到赤砂星晷录
     view.rerender(<WorldStartPanel worldId="world_sand_clockwork" transport={transport} />);
 
-    expect(await screen.findByText(/赤砂星晷录 · 开局与初始局势/)).toBeInTheDocument();
+    expect(await screen.findByText(/赤砂星晷录 · 根据资料生成开局/)).toBeInTheDocument();
     await new Promise(resolve => setTimeout(resolve, 180));
 
     // 旧世界的慢响应已被中止并丢弃，当前页面仍为赤砂星晷录的等待分析状态

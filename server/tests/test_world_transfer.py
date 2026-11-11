@@ -100,3 +100,41 @@ def test_rejects_mismatches_bad_zip_and_broken_history_without_partial_world(cli
     result = import_files(client, ("archive.zip", raw.getvalue()))
     assert result.json()["error"]["code"] == "WORLD_TRANSFER_INVALID"
     assert client.get("/api/v1/worlds").json()["total"] == 1
+
+
+def test_import_same_device_then_leave_reopen_and_restart_keeps_live_progress(tmp_path):
+    import httpx
+    from app.model_gateway import ModelSessionStore
+    path = tmp_path / 'phone.db'
+    def provider(request):
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps({
+            'narrative': '你沿着街道继续探索。', 'references': [], 'proposed_changes': {'minutes': 30, 'coins_delta': -1},
+        })}}]})
+    store = ModelSessionStore(http_transport=httpx.MockTransport(provider))
+    session = store.create('https://model.invalid', 'test', 'mock-only')['session_id']
+    with TestClient(create_app(Settings(db_path=path), narration_store=store)) as phone:
+        world, original = make_run(phone, 'live')
+        original = advance(phone, original, 'first', session=session)
+        archive = phone.get(f'/api/v1/worlds/{world}/transfer', params={'part': 'zip'}).content
+        imported = import_files(phone, ('backup.zip', archive))
+        assert imported.status_code == 201, imported.text
+        copied = imported.json()
+        assert copied['id'] != world
+        assert copied['name'] == '分支世界（导入）'
+        journey = phone.get(f"/api/v1/worlds/{copied['id']}/adventures").json()['items'][0]
+        continued = advance(phone, journey, 'continued', '继续探索', session)
+        assert continued['revision'] == 2 and continued['character']['coins'] == 8
+        # Returning to the list, then reopening exactly the imported ID must retain new turns.
+        assert copied['id'] in {w['id'] for w in phone.get('/api/v1/worlds').json()['items']}
+        assert phone.get(f"/api/v1/adventures/{journey['id']}").json()['revision'] == 2
+        assert phone.get(f"/api/v1/adventures/{original['id']}").json()['revision'] == 1
+        again = import_files(phone, ('backup.zip', archive)).json()
+        assert again['name'] == '分支世界（导入2）'
+    fresh_store = ModelSessionStore(http_transport=httpx.MockTransport(provider))
+    new_session = fresh_store.create('https://model.invalid', 'test', 'fresh-mock-only')['session_id']
+    with TestClient(create_app(Settings(db_path=path), narration_store=fresh_store)) as restarted:
+        detail = restarted.get(f"/api/v1/adventures/{journey['id']}").json()
+        assert detail['revision'] == 2 and len(detail['turns']) == 2
+        final = advance(restarted, detail, 'after-restart', '重启后继续', new_session)
+        assert final['revision'] == 3 and final['character']['coins'] == 7
+        assert restarted.get(f"/api/v1/adventures/{original['id']}").json()['revision'] == 1
