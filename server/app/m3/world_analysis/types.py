@@ -538,6 +538,7 @@ class ProposedInitialEvent:
     supplement_reason: str = ""
     visibility: VisibilityLevel = "local_observable"
     player_known_at_start: bool = False
+    player_known_basis: str = ""
     player_rumor_title: str = ""
     player_rumor_content: str = ""
     player_channel: Literal["observed", "notice", "rumor", ""] = ""
@@ -562,12 +563,20 @@ class ProposedInitialEvent:
             "supplement_reason": self.supplement_reason,
             "visibility": self.visibility,
             "player_known_at_start": self.player_known_at_start,
+            "player_known_basis": self.player_known_basis,
             "player_rumor_title": self.player_rumor_title,
             "player_rumor_content": self.player_rumor_content,
             "player_channel": self.player_channel,
             "player_knowledge_type": self.player_knowledge_type,
             "consequences": [dict(c) for c in self.consequences],
         }
+
+
+def player_knows_initial_event(event: ProposedInitialEvent) -> bool:
+    """Public visibility and a character's explicitly grounded private knowledge are separate."""
+    return event.player_known_at_start and (
+        event.visibility in PLAYER_SUMMARY_ALLOWED_VISIBILITY or bool(event.player_known_basis)
+    )
 
 
 @dataclass(frozen=True)
