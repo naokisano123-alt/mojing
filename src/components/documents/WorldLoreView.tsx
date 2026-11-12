@@ -314,7 +314,7 @@ export function WorldLoreView({
           { id: 'settings', label: '设置', icon: SettingsIcon },
         ] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button"
           aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''}
-          onClick={() => { if (id === 'journal') setJournalPage('landing'); navigate(id, id === 'journal'); }}><Icon size={17} />{label}</button>)}
+          title={label} onClick={() => { if (id === 'journal') setJournalPage('landing'); navigate(id, id === 'journal'); }}><Icon size={22} /><span className="sr-only">{label}</span></button>)}
       </nav>}
 
       {error && <div className="upload-error-callout" role="alert">
