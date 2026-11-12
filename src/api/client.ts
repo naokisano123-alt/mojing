@@ -237,10 +237,10 @@ export async function request<T>(
 
 /* ================= 契约 §4 接口清单实现 ================= */
 
-export function importWorldFiles(files: File[]): Promise<WorldSummary> {
+export function importWorldFiles(files: File[], targetWorldId?: string): Promise<WorldSummary> {
   const body = new FormData();
   for (const file of files) body.append('files', file);
-  return request('POST', '/world-transfers', { body, timeoutMs: 180_000 });
+  return request('POST', '/world-transfers' + (targetWorldId ? `?target_world_id=${encodeURIComponent(targetWorldId)}` : ''), { body, timeoutMs: 180_000 });
 }
 
 /** 4.1 健康检查 */

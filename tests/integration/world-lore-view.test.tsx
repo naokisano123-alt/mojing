@@ -58,12 +58,13 @@ describe('WorldLoreView 装配', () => {
         if (url.endsWith('/model-sessions')) {
           return json({ session_id: 'session', model: 'test', expires_at: '2099-01-01T00:00:00Z' }, 201);
         }
-        if (['/adventures', '/openings'].some(path => url.split('?')[0].endsWith(path))) {
+        if (['/adventures', '/openings', '/journeys'].some(path => url.split('?')[0].endsWith(path))) {
           return json({ items: [] });
         }
         if (url.includes('/lore-entries')) {
           return json({ items: [], total: 0, limit: 20, offset: 0 });
         }
+        if (url.endsWith('/world-start')) return json({ materials: [], start_points: [] });
         if (url.includes('/worlds/w1')) {
           return json(WORLD);
         }
@@ -72,29 +73,29 @@ describe('WorldLoreView 装配', () => {
     );
   });
 
-  it('加载世界详情并提供世界观、存档和 ZIP 三种文件入口', async () => {
-    render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} modelProfileEnabled />);
-
-    expect(await screen.findByText('云山纪.md')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '冒险' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: '导出两份文件' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: '导出设定' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=world');
-    expect(screen.queryByRole('link', { name: '导出存档' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: '存档', exact: true }));
-    await userEvent.click(screen.getByText('导出与备份'));
-    expect(screen.getByRole('link', { name: '保存世界观和存档两份文件' }))
-      .toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip&destination=folder');
-    expect(screen.getByRole('link', { name: '导出存档' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=saves');
-    expect(screen.getByRole('link', { name: '完整备份 ZIP' })).toHaveAttribute('href', '/api/v1/worlds/w1/transfer?part=zip');
-    expect(screen.queryByRole('link', { name: '导出设定' })).toBeNull();
+  it('世界观内提供世界导出，旅程可选择并包含全部存档', async () => {
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (input, options) => String(input).endsWith('/journeys')
+      ? json({ items: [{id:'j1', name:'过客', active_adventure_id:'j1'}, {id:'j2', name:'归人', active_adventure_id:'j2'}] }) : original(input, options));
+    const user = userEvent.setup();
+    render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
+    await screen.findByText('云山纪.md');
+    await user.click(screen.getByText('导出世界与旅程'));
+    expect(screen.getByRole('link', {name:'仅导出世界观'})).toHaveAttribute('href','/api/v1/worlds/w1/transfer?part=world');
+    const all = await screen.findByRole('checkbox', {name:'全选旅程'});
+    expect(all).toBeChecked();
+    await user.click(screen.getByRole('checkbox', {name:'归人'}));
+    expect(screen.getByRole('link', {name:'导出世界与所选旅程（ZIP）'})).toHaveAttribute('href','/api/v1/worlds/w1/transfer?part=zip&journeys=j1');
+    await user.click(screen.getByRole('checkbox', {name:'过客'}));
+    expect(screen.queryByRole('link', {name:'导出世界与所选旅程（ZIP）'})).toBeNull();
   });
 
-  it('四个主栏目和文档内的设定及导入能真实挂载', async () => {
+  it('三个底部栏目和文档内的设定及导入能真实挂载', async () => {
     const user = userEvent.setup();
     render(<WorldLoreView worldId="w1" worldName="潮汐档案馆" onBack={() => {}} />);
     await screen.findByText('云山纪.md');
 
-    expect(screen.getByRole('navigation', { name: '世界栏目' }).querySelectorAll('button')).toHaveLength(4);
+    expect(screen.getByRole('navigation', { name: '世界栏目' }).querySelectorAll('button')).toHaveLength(3);
     expect(screen.getByRole('textbox', { name: '检索关键词' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '检索资料' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '叙事实验' })).not.toBeInTheDocument();
@@ -122,8 +123,11 @@ describe('WorldLoreView 装配', () => {
     await screen.findByText('会话已激活');
     await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
     expect(screen.queryByLabelText('新冒险模式')).toBeNull();
-    await user.click(await screen.findByRole('button', { name: '开始冒险' }));
-    expect(await screen.findByLabelText('新冒险模式')).toHaveValue('live');
+    await user.click(await screen.findByRole('button', { name: '开始旅程' }));
+    await user.click(screen.getByText('游玩方式', {selector:'summary'}));
+    expect(await screen.findByLabelText('游玩方式')).toHaveValue('live');
+    expect(screen.queryByLabelText('初始位置')).toBeNull();
+    expect(screen.getByLabelText('你的开局')).toBeVisible();
     expect(screen.queryByRole('button', { name: '管理模型连接' })).not.toBeInTheDocument();
   });
 
@@ -151,6 +155,7 @@ it('switching to documents and settings preserves the pending adventure action a
   const user = userEvent.setup();
   render(<WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}}
     initialTab="journal" modelSession={{ session_id: 'session', model: 'test', expires_at: null }} />);
+  await user.click(await screen.findByRole('button', {name:'继续冒险'}));
   await screen.findByText('旅程尚未落笔。写下第一个行动。');
   expect(screen.queryByRole('button', { name: '管理模型连接' })).toBeNull();
   expect(screen.queryByRole('region', { name: '存档与分支' })).toBeNull();
@@ -162,13 +167,15 @@ it('switching to documents and settings preserves the pending adventure action a
   expect(screen.getByText('世界脉动设置')).toBeVisible();
   expect(screen.queryByRole('button', { name: '发送行动' })).toBeNull();
   await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
+  await user.click(await screen.findByRole('button', {name:'继续冒险'}));
   expect(screen.getByLabelText('你的行动')).toHaveValue('我还没有写完的行动');
   expect(screen.getByText('世界脉动设置')).not.toBeVisible();
-  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
-  expect(await screen.findByRole('region', { name: '存档与分支' })).toBeVisible();
+  await user.click(screen.getByRole('button', {name:'返回冒险入口'}));
+  await user.click(screen.getByRole('button', {name:'存档与读档'}));
+  expect(await screen.findByRole('region', {name:'存档与读档'})).toBeVisible();
 });
 
-it('存档独立管理，读档后返回对应正文，待确认故事跨栏目仍保留', async () => {
+it('存档归入冒险，读档后返回对应正文，待确认故事跨栏目仍保留', async () => {
   localStorage.clear();
   const turn = (narrative: string) => ({ sequence: 1, action: '走进街道', result: {
     request_id: 'confirmed', mode: 'fake', narrative, references: [], sources: [],
@@ -186,7 +193,9 @@ it('存档独立管理，读档后返回对应正文，待确认故事跨栏目�
     if (path.endsWith('/worlds/w1/adventures')) return json({ items: [current] });
     if (path.endsWith('/adventures/current')) return json(current);
     if (path.endsWith('/adventures/restored')) return json(restored);
-    if (path.endsWith('/checkpoints/cp/restore')) return json(restored);
+    if (path.endsWith('/journeys/current/load/cp')) return json(restored);
+    if (path.endsWith('/journeys')) return json({items:[{id:'current',name:'当前旅程',active_adventure_id:'current',revision:1,mode:'fake'}]});
+    if (path.endsWith('/journeys/current/saves')) return json({items:[{...checkpoint,kind:'manual'}]});
     if (path.endsWith('/checkpoints')) return json({ items: [checkpoint] });
     if (path.endsWith('/openings')) return json({ items: [] });
     return json({ error: { code: 'NOT_FOUND', message: 'not mocked' } }, 404);
@@ -194,17 +203,43 @@ it('存档独立管理，读档后返回对应正文，待确认故事跨栏目�
   vi.stubGlobal('fetch', fetcher);
   const user = userEvent.setup();
   render(<WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}} initialTab="journal" />);
+  await user.click(await screen.findByRole('button', {name:'继续冒险'}));
   await screen.findByText('还未确认的故事。');
   expect(screen.queryByLabelText('选择冒险记录')).toBeNull();
-  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
-  expect(await screen.findByRole('region', { name: '存档与分支' })).toBeVisible();
+  await user.click(screen.getByRole('button', {name:'返回冒险入口'}));
+  await user.click(screen.getByRole('button', {name:'存档与读档'}));
+  expect(await screen.findByRole('region', {name:'存档与读档'})).toBeVisible();
   expect(screen.queryByText('还未确认的故事。')).toBeNull();
   await user.click(screen.getByRole('button', { name: '冒险', exact: true }));
+  await user.click(await screen.findByRole('button', {name:'继续冒险'}));
   expect(screen.getByText('还未确认的故事。')).toBeVisible();
-  await user.click(screen.getByRole('button', { name: '存档', exact: true }));
-  await user.click(await screen.findByRole('button', { name: '从雨夜之前创建分支' }));
+  await user.click(screen.getByRole('button', {name:'返回冒险入口'}));
+  await user.click(screen.getByRole('button', {name:'存档与读档'}));
+  await user.click(await screen.findByRole('button', {name:/当前旅程.*第 1 回合/}));
+  await user.click(await screen.findByRole('button', {name:'读取存档'}));
   expect(await screen.findByText('存档恢复后的正文。')).toBeVisible();
   expect(screen.getByRole('button', { name: '冒险', exact: true })).toHaveAttribute('aria-current', 'page');
   expect(screen.queryByRole('region', { name: '存档与分支' })).toBeNull();
   expect(localStorage.getItem('mojing:active-adventure:w1')).toBe('restored');
+});
+
+it('新建世界先整理文档，完成后才出现主栏目与冒险入口', async () => {
+  const fetcher = vi.fn(async input => {
+    const path=String(input).split('?')[0];
+    if(path.endsWith('/capabilities')) return json({});
+    if(path.endsWith('/adventures') || path.endsWith('/openings')) return json({items:[]});
+    if(path.endsWith('/worlds/w1')) return json(WORLD);
+    return json({items:[]});
+  });
+  vi.stubGlobal('fetch',fetcher);
+  localStorage.setItem('mojing:prepare-world:w1','1');
+  const user=userEvent.setup();
+  render(<WorldLoreView worldId="w1" worldName={WORLD.name} onBack={() => {}} initialTab="list" prepareWorld />);
+  expect(await screen.findByRole('heading',{name:'整理你的世界'})).toBeVisible();
+  expect(screen.queryByRole('navigation',{name:'世界栏目'})).toBeNull();
+  await screen.findByText('云山纪.md');
+  await user.click(screen.getByRole('button',{name:'完成准备，进入世界'}));
+  expect(screen.getByRole('navigation',{name:'世界栏目'}).querySelectorAll('button')).toHaveLength(3);
+  expect(await screen.findByRole('button',{name:'开始旅程'})).toBeVisible();
+  expect(localStorage.getItem('mojing:prepare-world:w1')).toBeNull();
 });

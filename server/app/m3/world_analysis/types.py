@@ -211,6 +211,7 @@ class StartingPointSpec:
     request_id: str = ""
     parent_draft_id: str | None = None
     branch_from_checkpoint_id: str | None = None
+    player_description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -224,6 +225,7 @@ class StartingPointSpec:
             "request_id": self.request_id,
             "parent_draft_id": self.parent_draft_id,
             "branch_from_checkpoint_id": self.branch_from_checkpoint_id,
+            "player_description": self.player_description,
         }
 
 

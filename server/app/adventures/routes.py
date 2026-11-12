@@ -20,6 +20,10 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
     from .checkpoints import register_checkpoint_routes
     from .world_start import register_world_start_routes
     register_checkpoint_routes(app, cfg)
+    from .journeys import register_routes as register_journeys
+    register_journeys(app, cfg)
+    from .opening_options import register_routes as register_opening_options
+    register_opening_options(app, cfg, get_store)
     register_world_start_routes(app, cfg.db_path, get_store)
 
     @app.get('/api/v1/worlds/{world_id}/openings')
@@ -199,7 +203,7 @@ def register_routes(app, cfg, get_store, get_builder, pulse_worker):
             clock = None
             clock_max = None
             if opening:
-                intro += '\n开局（历史，人物当前状态以最新观察为准）：' + safe_u16_truncate(opening['intro'], 1000)
+                intro += '\n开局（历史，人物当前状态以最新观察为准）：' + safe_u16_truncate(opening['intro'], 6000)
                 intro += '\n当前世界时间：' + scenario.world_time(opening, state.elapsed_minutes)
                 if requested is not None:
                     clock = scenario.plan(opening, state.elapsed_minutes, requested)

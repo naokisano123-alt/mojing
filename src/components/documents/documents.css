@@ -576,3 +576,25 @@
 .world-workspace .journal-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 .world-workspace .journal-heading > span { grid-column: 1 / -1; font-size: 11px; }
 .world-workspace .raw-text-view { font-size: var(--reading-size, 16px); line-height: var(--reading-leading, 2.2); }
+
+/* 阅读区域让位于正文，三个栏目固定在底部。 */
+.workspace-container { padding-top: max(8px, env(safe-area-inset-top)) !important; }
+.world-workspace { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+.workspace-header { margin: 0; }
+.workspace-header .back { margin: 0 0 8px; min-height: 36px; font-size: 12px; }
+.workspace-tabs { position: fixed; inset: auto 0 0; top: auto; margin: 0; z-index: 40;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 4px max(12px, calc((100vw - 760px) / 2)) calc(4px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line); border-bottom: 0; background: var(--bg); }
+.workspace-tabs button { flex-direction: column; gap: 4px; min-height: 50px; border-bottom: 0; border-radius: 10px; font-size: 11px; }
+.workspace-tabs button.active { background: var(--soft); color: var(--green); }
+.workspace-tabs svg { width: 22px; height: 22px; }
+.world-preparation { margin: 12px 0 24px; }
+.world-preparation h1 { font-size: 24px; }
+.world-export-panel { margin: 14px 0; }
+.world-export-panel > summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.world-export-panel a { display: inline-flex; text-decoration: none; justify-content: center; }
+.world-export-panel .journal-apply { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.world-export-panel input[type=checkbox] { width: auto; }
+
+.keyboard-open .workspace-tabs { display: none; }
+.keyboard-open .world-workspace { padding-bottom: 16px; }

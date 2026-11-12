@@ -309,6 +309,8 @@ def register_world_start_routes(app, path, get_store):
             run, opening = _create(conn, world_id, point, summary['mode'], summary, row)
             analysis.apply_draft_to_instance_in_savepoint(conn, row['instance_id'], draft,
                                                            advance_instance_revision=True)
+            from .journeys import autosave
+            autosave(conn, run['id'])
             result = _result(conn, run, opening, summary)
             conn.execute("""
                 UPDATE m3_world_analysis_drafts SET adventure_id=?, player_summary_json=? WHERE draft_id=?

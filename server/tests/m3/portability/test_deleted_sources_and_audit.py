@@ -117,7 +117,7 @@ class TestDeletedSourcesAndAudit(unittest.TestCase):
 
             # 从迁移后的检查点恢复出新分支，验证可继续恢复与推进
             cps_dst = conn_dst.execute(
-                "SELECT id, name FROM adventure_checkpoints WHERE adventure_id = ? ORDER BY created_at ASC",
+                "SELECT id, name FROM adventure_checkpoints WHERE adventure_id = ? AND name <> '自动存档' ORDER BY created_at ASC",
                 (main_adv_id,),
             ).fetchall()
             self.assertEqual(len(cps_dst), 2)
