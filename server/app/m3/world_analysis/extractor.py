@@ -908,15 +908,38 @@ def merge_batch_extractions(
             if loc_name not in merged_locations:
                 merged_locations[loc_name] = {
                     **dict(raw_loc),
-                    "location_id": str(raw_loc.get("location_id") or _slugify_identifier("loc", loc_name, len(merged_locations) + 1)),
+                    "location_id": str(raw_loc.get("location_id") or _slugify_identifier("loc", loc_name, len(merged_locations) + 1)).strip(),
                     "name": loc_name,
                     "source_ids": list(dict.fromkeys(loc_sources)),
                 }
             else:
                 existing_loc = merged_locations[loc_name]
+                identity_resolution_log.append({
+                    "action": "merged_batch_location", "name": loc_name, "batch_index": b_idx,
+                    "canonical_location_id": existing_loc["location_id"],
+                    "incoming_location_id": str(raw_loc.get("location_id") or "").strip(),
+                    "retained_description": existing_loc.get("description", ""),
+                    "incoming_description": raw_loc.get("description", ""),
+                    "retained_region": existing_loc.get("region", ""),
+                    "incoming_region": raw_loc.get("region", ""),
+                    "incoming_source_ids": list(loc_sources),
+                    "reason": "同名地点跨批合并，描述差异保留为审计依据。",
+                })
                 combined_sids = list(dict.fromkeys([*existing_loc.get("source_ids", ()), *loc_sources]))
                 existing_loc["source_ids"] = combined_sids
+                visibility_rank = {"public": 0, "local_observable": 1, "faction_internal": 2, "secret": 3}
+                old_vis, new_vis = existing_loc.get("visibility", "public"), raw_loc.get("visibility", "public")
+                normalized_visibility = []
+                for value in (old_vis, new_vis):
+                    value = "public" if value is None else value.strip() if isinstance(value, str) else value
+                    if not isinstance(value, str) or value not in visibility_rank:
+                        raise AnalysisValidationError("INVALID_VISIBILITY", "地点可见性格式无效。")
+                    normalized_visibility.append(value)
+                existing_loc["visibility"] = max(normalized_visibility, key=lambda value: visibility_rank[value])
                 if raw_loc.get("grounding_type") == "canon":
+                    if existing_loc.get("grounding_type") != "canon":
+                        existing_loc["description"] = raw_loc.get("description", existing_loc.get("description", ""))
+                        existing_loc["region"] = raw_loc.get("region", existing_loc.get("region", ""))
                     existing_loc["grounding_type"] = "canon"
 
         # 2. 合并初始事件线

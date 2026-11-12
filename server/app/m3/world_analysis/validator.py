@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 import hashlib
 import json
 import re
@@ -173,6 +174,17 @@ def _optional_str(value: Any, field_name: str, max_units: int = 300, default: st
             {"field": field_name, "max_units": max_units, "actual_units": units},
         )
     return cleaned
+
+
+def _available_location_id(preferred: str, name: str, occupied: set[str]) -> str:
+    """Model-local labels are not authoritative identities; repair collisions deterministically."""
+    candidate = preferred
+    salt = 0
+    while candidate in occupied:
+        salt += 1
+        token = hashlib.sha256(f"{preferred}\0{name}\0{salt}".encode()).hexdigest()[:20]
+        candidate = f"loc_{token}"
+    return candidate
 
 
 def _require_int(
@@ -630,6 +642,7 @@ def validate_analysis_draft(
     validated_locations: list[ProposedLocation] = []
     seen_loc_ids: set[str] = set()
     seen_loc_names: set[str] = set()
+    location_index: dict[str, int] = {}
 
     for idx, r_loc in enumerate(raw_locations):
         prefix = f"locations[{idx}]"
@@ -645,15 +658,6 @@ def validate_analysis_draft(
         for other_inst in ctx.other_instance_ids:
             if other_inst and other_inst in loc_id:
                 raise CrossInstanceAnalysisError(ctx.instance_id, loc_id, other_inst)
-        if loc_id in seen_loc_ids or name in seen_loc_names:
-            raise IdentityCollisionError(
-                loc_id,
-                code="DUPLICATE_LOCATION_ID",
-                message=f"{prefix} 存在重复的地点标识或名称: {name} ({loc_id})。",
-            )
-        seen_loc_ids.add(loc_id)
-        seen_loc_names.add(name)
-
         g_type = _normalize_grounding_type(r_loc.get("grounding_type"), f"{prefix}.grounding_type")
         sids = _validate_and_clean_source_ids(
             r_loc.get("source_ids"),
@@ -663,6 +667,43 @@ def validate_analysis_draft(
         )
         all_referenced_sources.update(sids)
         supp_reason = _optional_str(r_loc.get("supplement_reason"), f"{prefix}.supplement_reason", 300)
+        region = _optional_str(r_loc.get("region"), f"{prefix}.region", 100, default=name)
+        description = _require_str(r_loc.get("description") or f"{name}的局势场景。", f"{prefix}.description", 600)
+        vis = _normalize_visibility(r_loc.get("visibility"), f"{prefix}.visibility", default="public")
+        if name in location_index:
+            position = location_index[name]
+            existing = validated_locations[position]
+            # Keep contradictory descriptions and source evidence in the audit log,
+            # without selecting a new world fact or broadening visibility.
+            identity_resolution_log.append({
+                "action": "merged_duplicate_location", "canonical_location_id": existing.location_id,
+                "original_location_id": loc_id, "name": name,
+                "retained_region": existing.region, "incoming_region": region,
+                "retained_description": existing.description, "incoming_description": description,
+                "incoming_source_ids": list(sids),
+                "reason": "同名地点合并为一个身份，保留不同描述与来源供核对，不据此创建另一地点。",
+            })
+            rank = {"public": 0, "local_observable": 1, "faction_internal": 2, "secret": 3}
+            visibility = max((existing.visibility, vis), key=lambda value: rank[value])
+            preferred = existing
+            if existing.grounding_type != "canon" and g_type == "canon":
+                preferred = replace(existing, region=region, description=description,
+                                    grounding_type=g_type, supplement_reason=supp_reason)
+            validated_locations[position] = replace(preferred,
+                source_ids=tuple(dict.fromkeys((*existing.source_ids, *sids))), visibility=visibility,
+                is_starting_location=existing.is_starting_location or name == ctx.starting_point.location or bool(r_loc.get("is_starting_location")))
+            continue
+        original_id = loc_id
+        loc_id = _available_location_id(loc_id, name, seen_loc_ids)
+        if loc_id != original_id:
+            identity_resolution_log.append({
+                "action": "reassigned_location_id", "original_location_id": original_id,
+                "canonical_location_id": loc_id, "name": name,
+                "reason": "不同名称的地点误用同一模型编号，分配独立身份并保留地点名称与来源。",
+            })
+        location_index[name] = len(validated_locations)
+        seen_loc_ids.add(loc_id)
+        seen_loc_names.add(name)
         if g_type == "adventure_supplement":
             if not supp_reason:
                 supp_reason = f"为完善起点「{ctx.starting_point.location}」周边地理连通性而作的旅程内推演补写。"
@@ -675,13 +716,12 @@ def validate_analysis_draft(
                     "anchor_source_ids": list(sids),
                 }
             )
-        vis = _normalize_visibility(r_loc.get("visibility"), f"{prefix}.visibility", default="public")
         validated_locations.append(
             ProposedLocation(
                 location_id=loc_id,
                 name=name,
-                region=_optional_str(r_loc.get("region"), f"{prefix}.region", 100, default=name),
-                description=_require_str(r_loc.get("description") or f"{name}的局势场景。", f"{prefix}.description", 600),
+                region=region,
+                description=description,
                 is_starting_location=(name == ctx.starting_point.location or bool(r_loc.get("is_starting_location"))),
                 grounding_type=g_type,
                 source_ids=sids,
@@ -696,7 +736,7 @@ def validate_analysis_draft(
         validated_locations.insert(
             0,
             ProposedLocation(
-                location_id="loc_starting_point",
+                location_id=_available_location_id("loc_starting_point", ctx.starting_point.location, seen_loc_ids),
                 name=ctx.starting_point.location,
                 region=ctx.starting_point.location,
                 description=scene_overview,
