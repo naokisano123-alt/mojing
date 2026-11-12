@@ -860,6 +860,8 @@ def merge_batch_extractions(
     instance_id: str,
     starting_point: StartingPointSpec,
     detected_conflicts: Sequence[SettingConflictItem] = (),
+    tolerate_model_metadata: bool = False,
+    other_world_source_ids: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     """将多批长文抽取的模型阶段性输出（`batch_partials`）合并为统一的初始局势草案字典。"""
     if len(batch_partials) != len(batches):
@@ -885,6 +887,10 @@ def merge_batch_extractions(
         if not isinstance(partial, Mapping):
             raise AnalysisValidationError("BATCH_OUTPUT_INVALID", f"第 {b_idx} 批输出必须为 JSON 对象。")
         allowed_in_batch = frozenset(batch_meta.input_range.source_ids)
+        if tolerate_model_metadata:
+            from .normalization import normalize_model_sources
+            partial = normalize_model_sources(partial, allowed_in_batch, other_world_source_ids or {},
+                                              world_id, identity_resolution_log, b_idx)
 
         if isinstance(partial.get("scene_overview"), str) and partial["scene_overview"].strip():
             scene_overviews.append(partial["scene_overview"].strip())
@@ -1187,6 +1193,10 @@ def merge_batch_extractions(
                     remapped_known.append(target_ev)
             n["initial_known_event_ids"] = remapped_known
 
+    if tolerate_model_metadata:
+        from .normalization import normalize_optional_relationships
+        merged_relationships = normalize_optional_relationships(merged_npcs, merged_relationships,
+                                                               alias_to_npc_id, identity_resolution_log)
     dedup_rels: list[dict[str, Any]] = []
     seen_rel_keys: set[tuple[str, str, str]] = set()
     for rel in merged_relationships:

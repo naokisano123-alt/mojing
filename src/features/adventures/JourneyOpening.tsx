@@ -16,6 +16,7 @@ export function JourneyOpening({ worldId, sessionId, onStarted, onCancel, onConf
   const [options, setOptions] = useState<{title: string; description: string}[]>([]);
   const [mode, setMode] = useState<'fake' | 'live'>('live');
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
   const alive = useRef(true), locked = useRef(false);
   const startRequest = useRef<{ signature: string; id: string } | undefined>(undefined);
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -29,9 +30,19 @@ export function JourneyOpening({ worldId, sessionId, onStarted, onCancel, onConf
   }, [worldId]);
   async function perform(work: () => Promise<void>) {
     if (locked.current) return;
-    locked.current = true; setBusy(true); setError('');
+    locked.current = true; setBusy(true); setError(''); setErrorCode('');
     try { await work(); }
-    catch (e) { if (alive.current) setError(e instanceof ApiClientError ? e.friendlyMessage : e instanceof Error ? e.message : '开局失败，请重试。'); }
+    catch (e) {
+      if (alive.current) {
+        if (e instanceof ApiClientError && e.details?.model_output_issue) {
+          setError('模型这次没有整理好完整开局，尚未创建旅程。你的文字已保留，可以稍后重试。');
+          setErrorCode(e.code);
+        } else if (e instanceof ApiClientError && e.code === 'CROSS_WORLD_SOURCE_FORBIDDEN') {
+          setError('模型混入了其他世界的资料标识，本次已停止。你的开局文字已保留，可以重新尝试。');
+          setErrorCode(e.code);
+        } else setError(e instanceof ApiClientError ? e.friendlyMessage : e instanceof Error ? e.message : '开局失败，请重试。');
+      }
+    }
     finally { if (alive.current) { locked.current = false; setBusy(false); } }
   }
   const body = { mode, session_id: sessionId, selected_source_ids: selected, description };
@@ -66,6 +77,7 @@ export function JourneyOpening({ worldId, sessionId, onStarted, onCancel, onConf
     {mode === 'live' && <p className="muted text-sm">推荐开局和开始旅程会调用模型，可能消耗 Token。开始时会理解最终描述，并根据所选资料建立人物与初始局势；长文可能分多次调用。</p>}
     {unavailable && <button className="text-button" onClick={onConfigure}>前往设置连接模型</button>}
     {error && <p role="alert" className="error">{error}</p>}
+    {errorCode && <details className="journal-sources"><summary>查看错误代码</summary><p>{errorCode}</p></details>}
     <button className="primary" disabled={busy || unavailable || !name.trim() || !description.trim() || !bootstrap} onClick={() => void perform(async () => {
       const signature = JSON.stringify({ ...body, name, session_id: undefined });
       if (startRequest.current?.signature !== signature) startRequest.current = { signature, id: requestId() };
