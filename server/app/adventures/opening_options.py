@@ -10,6 +10,7 @@ from ..errors import ApiError
 from ..model_gateway.errors import GatewayError
 from ..model_gateway.structured import structured_output_options
 from ..narration.lifecycle import await_request_work
+from ..m3.world_analysis.errors import WorldAnalysisError
 from . import scenario, service, journeys
 from .state import character, StateError
 
@@ -161,7 +162,10 @@ def register_routes(app, cfg, get_store):
                         conn.execute('INSERT OR IGNORE INTO item_descriptions(world_id,name,description) VALUES(?,?,?)', (world_id, item, note))
                 conn.execute('UPDATE journey_start_requests SET adventure_id=? WHERE world_id=? AND request_id=?', (run['id'], world_id, rid))
                 return run
-        except BaseException:
+        except BaseException as failure:
+            if isinstance(failure, WorldAnalysisError):
+                failure.details = {**failure.details, 'stage': 'opening_analysis',
+                                   'model_output_issue': failure.status == 422}
             with db(cfg.db_path) as conn:
                 conn.execute('DELETE FROM journey_start_requests WHERE world_id=? AND request_id=? AND adventure_id IS NULL', (world_id, rid))
             raise

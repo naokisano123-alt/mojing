@@ -72,3 +72,28 @@ it('当前旅程优先，进入后自动存档在前；手动存档网络重试�
   expect(saves[0].request_id).toBe(saves[1].request_id);
   expect(screen.getByText('1/20 个手动存档')).toBeVisible();
 });
+
+it('开局分析异常使用简短提示并保留原文，不自动重试付费调用', async () => {
+  let starts = 0;
+  const rawError = "relationships[2].source_ids: secret relationship rejected";
+  vi.stubGlobal('fetch', vi.fn(async (input) => {
+    const path = String(input).split('?')[0];
+    if (path.endsWith('/world-start')) return json({materials:[],start_points:[]});
+    if (path.endsWith('/journey-start')) {
+      starts++;
+      return json({error:{code:'INVALID_MODEL_RELATIONSHIP',message:rawError,details:{stage:'opening_analysis',model_output_issue:true}}},422);
+    }
+    throw new Error('Unmocked ' + path);
+  }));
+  const started = vi.fn(async () => {}), user = userEvent.setup();
+  render(<JourneyOpening worldId="w" sessionId="session" onStarted={started} onCancel={() => {}} onConfigure={() => {}} />);
+  await screen.findByRole('button',{name:'以此开局开始旅程'});
+  await user.type(screen.getByLabelText('你的开局'),'我带着学院徽章来到王城旅店。');
+  await user.click(screen.getByRole('button',{name:'以此开局开始旅程'}));
+  expect(await screen.findByRole('alert')).toHaveTextContent('你的文字已保留');
+  expect(screen.getByLabelText('你的开局')).toHaveValue('我带着学院徽章来到王城旅店。');
+  expect(screen.queryByText(rawError)).toBeNull();
+  expect(screen.getByText('查看错误代码').closest('details')).not.toHaveAttribute('open');
+  expect(starts).toBe(1);
+  expect(started).not.toHaveBeenCalled();
+});
