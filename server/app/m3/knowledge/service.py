@@ -143,7 +143,7 @@ def _validate_holder_identifier_pure(
         raise KnowledgeError(
             422,
             "GLOBAL_BROADCAST_FORBIDDEN",
-            "禁止通过通配符或全局推演一次性将所有人物标为知情。",
+            "请指定具体的知情人物，不能使用全体人物通配符。",
         )
     if "::" in clean_holder:
         prefix, _ = clean_holder.split("::", 1)
@@ -537,12 +537,12 @@ def _project_row(conn: sqlite3.Connection, instance_id: str, row: sqlite3.Row | 
     }
 
 
-def _check_anti_global_sweep_pure(
-    ops: list[dict[str, Any]],
-    registered_npcs: set[str],
-    existing_knowers_by_event: dict[str, int] | None = None,
-) -> None:
-    """纯函数检查单批上限与防全局广播。"""
+def _check_transmission_batch_size(ops: list[Any]) -> None:
+    """Bound one write batch; a concrete local audience is not a global broadcast.
+
+    Every recipient still passes holder, source, channel, relay and time checks.
+    The number of NPCs currently registered cannot establish who knows a secret.
+    """
     if len(ops) > MAX_BATCH_TRANSMISSIONS:
         raise KnowledgeError(
             422,
@@ -550,71 +550,6 @@ def _check_anti_global_sweep_pure(
             f"单批传播操作不能超过 {MAX_BATCH_TRANSMISSIONS} 条。",
             {"limit": MAX_BATCH_TRANSMISSIONS},
         )
-    if len(registered_npcs) >= 2:
-        by_event: dict[str, set[str]] = {}
-        for op in ops:
-            if not isinstance(op, Mapping):
-                continue
-            evt_id = op.get("source_event_id")
-            holder = op.get("holder_id")
-            if isinstance(evt_id, str) and isinstance(holder, str):
-                by_event.setdefault(evt_id.strip(), set()).add(holder.strip())
-        for evt_id, holders in by_event.items():
-            if PLAYER_HOLDER_ID in holders and registered_npcs <= holders:
-                existing_count = (
-                    existing_knowers_by_event.get(evt_id, 0)
-                    if existing_knowers_by_event is not None
-                    else 0
-                )
-                if existing_count == 0:
-                    raise KnowledgeError(
-                        422,
-                        "GLOBAL_BROADCAST_FORBIDDEN",
-                        "禁止凭一次全局推演将所有 NPC 与玩家同时标为知情。",
-                    )
-
-
-def _check_anti_global_sweep(
-    conn: sqlite3.Connection,
-    instance_id: str,
-    ops: list[dict[str, Any]],
-) -> None:
-    """防止模型在单次全局推演中把所有已注册 NPC 和玩家一次性全部标为知情。"""
-    if len(ops) > MAX_BATCH_TRANSMISSIONS:
-        raise KnowledgeError(
-            422,
-            "GLOBAL_BROADCAST_FORBIDDEN",
-            f"单批传播操作不能超过 {MAX_BATCH_TRANSMISSIONS} 条。",
-            {"limit": MAX_BATCH_TRANSMISSIONS},
-        )
-    registered_npcs = {
-        row[0]
-        for row in conn.execute(
-            "SELECT holder_id FROM m3_knowledge_holders WHERE instance_id = ? AND holder_id != ?",
-            (instance_id, PLAYER_HOLDER_ID),
-        )
-    }
-    if len(registered_npcs) >= 2:
-        by_event: dict[str, set[str]] = {}
-        for op in ops:
-            if not isinstance(op, dict):
-                continue
-            evt_id = op.get("source_event_id")
-            holder = op.get("holder_id")
-            if isinstance(evt_id, str) and isinstance(holder, str):
-                by_event.setdefault(evt_id.strip(), set()).add(holder.strip())
-        for evt_id, holders in by_event.items():
-            if PLAYER_HOLDER_ID in holders and registered_npcs <= holders:
-                existing_knowers = conn.execute(
-                    "SELECT COUNT(*) FROM m3_knowledge_facts WHERE instance_id = ? AND source_event_id = ? AND status = 'active'",
-                    (instance_id, evt_id),
-                ).fetchone()[0]
-                if existing_knowers == 0:
-                    raise KnowledgeError(
-                        422,
-                        "GLOBAL_BROADCAST_FORBIDDEN",
-                        "禁止凭一次全局推演将所有 NPC 与玩家同时标为知情。",
-                    )
 
 
 def read_knowledge_snapshot(
@@ -979,7 +914,7 @@ def validate_proposal(
     2. 校验回显的 `instance_id`、`kind`/`mode`、`world_minute`、`world_revision` 一致性；
     3. 拒绝未知根字段、任意字段路径、直接改玩家账本；
     4. 限制接收人、来源事件、获知分钟、渠道和可信度；
-    5. 拒绝引用本批新建事件的临时 ID、未获准使用的事件 ID、跨实例引用、批量授知及把权威描述自动当作玩家消息；
+    5. 拒绝临时或未授权事件、跨实例引用、通配符授知、超量批次及权威描述自动转为玩家消息；
     6. 校验转述人必须已获知对应事件且满足时序先后。
     """
     ctx = _normalize_validation_context(context)
@@ -1103,21 +1038,7 @@ def validate_proposal(
             "Seed 阶段仅初始化权威事件，首版省略传播记录。",
         )
 
-    registered_npcs = (
-        {h for h in ctx.registered_holders if h != PLAYER_HOLDER_ID}
-        if ctx.registered_holders is not None
-        else set()
-    )
-    existing_knowers_by_event: dict[str, int] = {}
-    if ctx.known_facts_by_holder is not None:
-        for (_, eid) in ctx.known_facts_by_holder:
-            existing_knowers_by_event[eid] = existing_knowers_by_event.get(eid, 0) + 1
-
-    _check_anti_global_sweep_pure(
-        [item for item in raw_items if isinstance(item, Mapping)],
-        registered_npcs,
-        existing_knowers_by_event if ctx.known_facts_by_holder is not None else None,
-    )
+    _check_transmission_batch_size(raw_items)
 
     # 工作态知情视图（支持校验同批次内多跳传播先后顺序）
     working_known: dict[tuple[str, str], int] | None = (
@@ -1626,7 +1547,7 @@ def record_transmission(
     """验证并记录一条或多条知识传播/认知更正提议（使用 SAVEPOINT 保证原子性，不自行 commit）。"""
     instance = _require_instance(conn, instance_id)
     ops = _normalize_operations(instance_id, proposal)
-    _check_anti_global_sweep(conn, instance_id, ops)
+    _check_transmission_batch_size(ops)
 
     permitted_events: frozenset[str] | None = (
         frozenset(str(x).strip() for x in allowed_event_ids if str(x).strip())

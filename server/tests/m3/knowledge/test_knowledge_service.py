@@ -5,7 +5,7 @@
 2. 两位 NPC 对同一权威事件持不同说法（商队首领知悉改道事实 vs 城门卫兵误信全军覆没）
 3. 玩家获知前后对比：多跳传播（商队首领 -> 酒馆掌柜 -> 玩家交谈）前玩家完全不可见，交谈后可见
 4. 四类渠道（observed / notice / conversation / rumor）合法校验与非法渠道拒绝
-5. 禁止无来源授予、禁止未获知的 NPC 转述、禁止时序倒置、禁止未来时间传播、禁止全局广播
+5. 禁止无来源授予、禁止未获知的 NPC 转述、禁止时序倒置、禁止未来时间传播、禁止通配符广播
 6. 共用玩家投影零隐藏信息泄漏（标题、数量、空态、不透明分页游标、来源引用、错误信息均不暴露隐藏事件）
 7. 含提示词注入的传闻始终降权作为不可信角色认知资料，不触发越权指令或泄露隐藏事件
 8. 版本更正与 409 乐观锁冲突、撤回（retract）、批量传播单条失败时 SAVEPOINT 整体原子回滚
@@ -165,7 +165,7 @@ class KnowledgeServiceTests(unittest.TestCase):
         self.assertNotIn("全军覆没", dump_text)
 
     def test_reject_ungrounded_unlearned_relay_temporal_inversion_and_future(self) -> None:
-        """验收 3：禁止无来源授予、未获知的 NPC 转述、时序倒置、非法渠道、未来传播及全局广播。"""
+        """验收 3：禁止无来源授予、未获知的 NPC 转述、时序倒置、非法渠道、未来传播及通配符广播。"""
         seed_north_town_multi_hop_fixture(
             self.conn, "inst_1", world_minute=60, include_player_conversation=False
         )
@@ -330,7 +330,7 @@ class KnowledgeServiceTests(unittest.TestCase):
             )
         self.assertEqual(ctx8b.exception.code, "VALIDATION_ERROR")
 
-        # 7. 禁止通配符或一次全局推演将所有 NPC 和玩家同时标为知情
+        # 7. 禁止通配符；明确指定的小群体可以共同听到公开消息。
         with self.assertRaises(KnowledgeError) as ctx9:
             record_transmission(
                 self.conn,
@@ -346,29 +346,28 @@ class KnowledgeServiceTests(unittest.TestCase):
             )
         self.assertEqual(ctx9.exception.code, "GLOBAL_BROADCAST_FORBIDDEN")
 
-        with self.assertRaises(KnowledgeError) as ctx10:
-            record_transmission(
-                self.conn,
-                "inst_1",
-                [
-                    {
-                        "holder_id": h,
-                        "knowledge_type": "confirmed",
-                        "content": "全局推演直接让所有人知道王都密谋",
-                        "source_event_id": "evt_royal_secret_03",
-                        "channel": "notice",
-                        "learned_minute": 40,
-                    }
-                    for h in (
-                        "npc:caravan_leader",
-                        "npc:innkeeper",
-                        "npc:gate_guard",
-                        "npc:blacksmith",
-                        "player",
-                    )
-                ],
-            )
-        self.assertEqual(ctx10.exception.code, "GLOBAL_BROADCAST_FORBIDDEN")
+        result = record_transmission(
+            self.conn,
+            "inst_1",
+            [
+                {
+                    "holder_id": h,
+                    "knowledge_type": "confirmed",
+                    "content": "在场几人都看到商队准备改道的告示。",
+                    "source_event_id": "evt_caravan_02",
+                    "channel": "notice",
+                    "learned_minute": 40,
+                }
+                for h in (
+                    "npc:caravan_leader",
+                    "npc:innkeeper",
+                    "npc:gate_guard",
+                    "npc:blacksmith",
+                    "player",
+                )
+            ],
+        )
+        self.assertEqual(len(result), 5)
 
     def test_zero_leakage_projection_and_opaque_pagination(self) -> None:
         """验收 4：隐藏信息零泄漏——标题、数量、空态、分页游标、来源引用和错误信息均不能推断隐藏事件。"""

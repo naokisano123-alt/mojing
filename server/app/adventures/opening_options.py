@@ -11,6 +11,7 @@ from ..model_gateway.errors import GatewayError
 from ..model_gateway.structured import structured_output_options
 from ..narration.lifecycle import await_request_work
 from ..m3.world_analysis.errors import WorldAnalysisError
+from ..m3.knowledge.errors import KnowledgeError
 from . import scenario, service, journeys
 from .state import character, StateError
 
@@ -163,8 +164,8 @@ def register_routes(app, cfg, get_store):
                 conn.execute('UPDATE journey_start_requests SET adventure_id=? WHERE world_id=? AND request_id=?', (run['id'], world_id, rid))
                 return run
         except BaseException as failure:
-            if isinstance(failure, WorldAnalysisError):
-                failure.details = {**failure.details, 'stage': 'opening_analysis',
+            if isinstance(failure, (WorldAnalysisError, KnowledgeError)):
+                failure.details = {**(failure.details or {}), 'stage': 'opening_analysis',
                                    'model_output_issue': failure.status == 422}
             with db(cfg.db_path) as conn:
                 conn.execute('DELETE FROM journey_start_requests WHERE world_id=? AND request_id=? AND adventure_id IS NULL', (world_id, rid))

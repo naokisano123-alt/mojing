@@ -1187,7 +1187,8 @@ def validate_analysis_draft(
         if not cause_eids and validated_events:
             cause_eids.append(validated_events[0].event_id)
 
-        raw_known = r_npc.get("initial_known_event_ids") or cause_eids
+        # Being affected by an event does not imply knowing its backstage facts.
+        raw_known = r_npc.get("initial_known_event_ids") or ()
         known_eids: list[str] = []
         for k_eid in raw_known:
             k_str = _require_str(k_eid, f"{prefix}.initial_known_event_ids", 120)
