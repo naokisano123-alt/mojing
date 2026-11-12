@@ -618,13 +618,18 @@ def apply_draft_to_instance_in_savepoint(
                 location=holder["location"],
                 created_at_minute=holder["created_at_minute"],
             )
-        know_res = knowledge.record_transmission(
-            conn,
-            instance_id,
-            bundle["knowledge_transmissions"],
-            allowed_event_ids=bundle["allowed_event_ids"],
-        )
-        recorded_count = len(getattr(know_res, "applied", None) or bundle["knowledge_transmissions"])
+        # A long opening may contain more facts than one pulse write batch.
+        # All batches remain inside this SAVEPOINT: a failure rolls them all back.
+        from ..knowledge.types import MAX_BATCH_TRANSMISSIONS
+        transmissions = bundle["knowledge_transmissions"]
+        recorded_count = 0
+        for offset in range(0, len(transmissions), MAX_BATCH_TRANSMISSIONS):
+            batch = transmissions[offset:offset + MAX_BATCH_TRANSMISSIONS]
+            knowledge.record_transmission(
+                conn, instance_id, batch,
+                allowed_event_ids=bundle["allowed_event_ids"],
+            )
+            recorded_count += len(batch)
 
         if advance_instance_revision:
             conn.execute(

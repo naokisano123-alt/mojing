@@ -79,7 +79,9 @@ def test_private_commission_survives_real_start_routes_and_transfer(tmp_path, mo
             first.update(title='送达羊皮纸', description=HIDDEN, visibility='secret', player_known_at_start=True,
                          player_known_basis=KNOWN, player_rumor_title='旧王灵魂的秘密', player_rumor_content=HIDDEN)
             for npc in raw['npcs']:
-                npc['initial_known_event_ids'] = [eid for eid in npc.get('initial_known_event_ids', []) if eid != first['event_id']]
+                # All concrete actors may know the backstage event, while the player
+                # only knows the commission in their opening, not its hidden reason.
+                npc['initial_known_event_ids'] = [first['event_id']]
             raw.pop('player_opening_summary', None)
             return raw
     monkeypatch.setattr(analysis, 'OpenAIWorldAnalysisModelClient', lambda **kwargs: SecretCommission())

@@ -27,7 +27,7 @@
 
 ## 知识、传播及玩家投影
 
-- 权威事件与知情记录分表。记录最少含 `fact_id`、`holder_id`、`knowledge_type`（`confirmed/suspected/rumor/mistaken`）、`content`、`source_event_id`、`source_person_id`、`channel`、`learned_minute`、`confidence` 与状态。玩家使用该实例的 `player` 持有人标识。模型不能凭一次全局推演把所有 NPC 和玩家标为知情。
+- 权威事件与知情记录分表。记录最少含 `fact_id`、`holder_id`、`knowledge_type`（`confirmed/suspected/rumor/mistaken`）、`content`、`source_event_id`、`source_person_id`、`channel`、`learned_minute`、`confidence` 与状态。玩家使用该实例的 `player` 持有人标识。禁止通配符授知；每条记录须指定具体持有人并通过来源、渠道、转述链和时间校验。允许当前已生成的数名 NPC 与玩家共同知晓一条消息，不以“覆盖当前全部 NPC”的人数比例拒绝。同一开局的长记录分批原子写入，不增加模型调用。
 - 初版渠道包括 `observed/notice/conversation/rumor`。传播必须有有效来源、接收人、游戏分钟；转述者需已知道所转述内容，不得早于来源时间。不同持有人可保留不同可信度和版本。
 - 知识包提供 `record_transmission(conn, instance_id, proposal)`、`list_known(conn, instance_id, holder_id, *, before=None, limit=30)`、`snapshot(conn, instance_id)`、`restore(conn, target_instance_id, snapshot)`。玩家前端和叙事上下文使用同一种投影，返回知情条目的公开字段，不返回隐藏标题、总数、未来时间或不必要的真实事件 ID。展示入口由集成方挂载。
 - 可约定玩家 GET `/api/v1/adventures/{id}/world-news`，返回 `items` 和不透明分页游标 `next_before`。路由从当前旅程解析实例和玩家身份，客户端不传任意 holder。组件以 Fake 传输独立验收。
