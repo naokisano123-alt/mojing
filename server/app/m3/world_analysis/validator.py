@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 import hashlib
 import json
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -28,6 +29,7 @@ from .errors import (
 )
 from .extractor import normalize_starting_point, safe_u16_truncate, u16_units
 from .types import (
+    player_knows_initial_event,
     ANALYSIS_RUN_MODES,
     ANALYSIS_STATUSES,
     DEFAULT_MAX_INITIAL_THREADS,
@@ -327,7 +329,7 @@ def _validate_caller_player_summary_no_leaks(
                 )
             if eid and eid in events_by_id:
                 auth_ev = events_by_id[eid]
-                if not auth_ev.player_known_at_start or auth_ev.visibility not in PLAYER_SUMMARY_ALLOWED_VISIBILITY:
+                if not player_knows_initial_event(auth_ev):
                     raise UnpublicInfoLeakError(
                         f"player_opening_summary.known_situations[{idx}]",
                         f"事件「{auth_ev.title}」({eid}) 为角色尚未获知的隐藏或远方事件，禁止进入玩家开局摘要。",
@@ -354,7 +356,7 @@ def build_player_opening_summary(
     过滤保证：
     1. 仅包含位于 `starting_point.location`、`present_at_start=True` 且 `visibility in ('public', 'local_observable')` 的在场人物；
        不返回 `motivation`、`goal`、`cause_event_ids`、`initial_known_event_ids` 等后台私密字段。
-    2. 仅包含 `player_known_at_start=True` 且 `visibility in ('public', 'local_observable')` 的开局已知局势/传闻，
+    2. 包含公开已知局势，以及有开局亲历依据的玩家私密认知；不直接展示后台事件描述，
        使用玩家视角标题与内容（`player_rumor_title` / `player_rumor_content`），隐藏后台 `event_id` 与全知权威描述。
     3. 仅展示双方均在场且公开可见（`visibility in ('public', 'local_observable')`）的人物关系。
     """
@@ -393,7 +395,7 @@ def build_player_opening_summary(
 
     known_situations: list[dict[str, Any]] = []
     for ev in events:
-        if ev.player_known_at_start and ev.visibility in PLAYER_SUMMARY_ALLOWED_VISIBILITY and ev.player_rumor_content:
+        if player_knows_initial_event(ev) and ev.player_rumor_content:
             rumor_title = ev.player_rumor_title or f"{ev.location}传闻"
             rumor_body = ev.player_rumor_content
             known_situations.append(
@@ -797,11 +799,32 @@ def validate_analysis_draft(
                 ev_loc == ctx.starting_point.location and vis in PLAYER_SUMMARY_ALLOWED_VISIBILITY,
             )
         )
-        if vis not in PLAYER_SUMMARY_ALLOWED_VISIBILITY and player_known:
-            raise UnpublicInfoLeakError(
-                f"{prefix}.player_known_at_start",
-                f"事件「{title}」可见性为 {vis!r}（非公开/非本地可观察），不能在开局标记为玩家已知。",
-            )
+        basis = _optional_str(r_ev.get("player_known_basis"), f"{prefix}.player_known_basis", 360)
+        private_known = vis not in PLAYER_SUMMARY_ALLOWED_VISIBILITY and player_known
+        if private_known:
+            opening_text = ctx.starting_point.player_description
+            # The opening is the player's own confirmed description, not the world
+            # source library or the model's authoritative event description.
+            candidate = basis or str(r_ev.get("player_rumor_content") or "").strip()
+            sentences = re.split(r"[。！？!?\n]", opening_text)
+            contexts = [sentence for sentence in sentences if candidate and candidate in sentence]
+            unknown = ("你不知道", "你并不知道", "你尚不知", "你还不知道", "你未曾得知", "你对此不知情", "殊不知", "我不知道", "我尚不知")
+            if candidate and len(candidate) <= 360 and candidate in opening_text and contexts and not any(
+                marker in context for context in contexts for marker in unknown
+            ):
+                basis = candidate
+            else:
+                # An inconsistent model projection cannot grant private knowledge or
+                # block the entire opening. Keep the event hidden and the user's
+                # complete opening narrative intact; don't invent an access channel.
+                player_known = False
+                basis = ""
+                identity_resolution_log.append({
+                    "action": "withheld_ungrounded_player_knowledge", "event_id": ev_id,
+                    "reason": "私密事件缺少玩家开局中可核对的亲历依据，仅保留后台事件。",
+                })
+        elif not private_known:
+            basis = ""
 
         rumor_title = _optional_str(
             r_ev.get("player_rumor_title"),
@@ -815,8 +838,13 @@ def validate_analysis_draft(
             400,
             default="",
         )
+        if private_known and player_known:
+            # Never publish the event's hidden explanation or a model-invented
+            # spoiler title along with a legitimate private commission.
+            rumor_title = "你的开局经历"
+            rumor_content = basis
         if player_known:
-            if not rumor_content or (rumor_title == title and rumor_content == description):
+            if not rumor_content or (not basis and rumor_title == title and rumor_content == description):
                 rumor_content = ""
             if "【隐藏" in rumor_title or "【绝密" in rumor_title or "【隐藏" in rumor_content or "【绝密" in rumor_content:
                 raise UnpublicInfoLeakError(
@@ -830,6 +858,8 @@ def validate_analysis_draft(
             24,
             default="notice" if scope == "local" else "rumor",
         )
+        if basis:
+            p_channel = "observed"
         if player_known and p_channel not in ("observed", "notice", "rumor"):
             p_channel = "rumor"
         p_ktype = _optional_str(
@@ -859,6 +889,7 @@ def validate_analysis_draft(
                 supplement_reason=supp_reason,
                 visibility=vis,
                 player_known_at_start=player_known,
+                player_known_basis=basis,
                 player_rumor_title=rumor_title if player_known else "",
                 player_rumor_content=rumor_content if player_known else "",
                 player_channel=p_channel if player_known else "",  # type: ignore[arg-type]

@@ -289,7 +289,8 @@ def adapt_draft_to_domain_proposals(
                 "status": "active",
                 "title": safe_u16_truncate(p_title, 80),
                 "content": safe_u16_truncate(p_content, 360),
-                "reason": f"玩家在起点「{validated.starting_point.location}」开局可获知的公开信息或本地传闻。",
+                "reason": ("玩家确认的开局亲历或被告知事实，仅写入玩家认知。" if ev.player_known_basis else
+                           f"玩家在起点「{validated.starting_point.location}」开局可获知的公开信息或本地传闻。"),
             }
         )
 
