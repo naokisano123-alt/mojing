@@ -46,13 +46,21 @@ def checkpoint_dict(row):
 def create_checkpoint(conn, adventure_id, name, request_id, revision):
     name = validate_input(name, request_id)
     service.revision_number(revision)
-    conn.execute('BEGIN IMMEDIATE')
+    if not conn.in_transaction:
+        conn.execute('BEGIN IMMEDIATE')
     run = service.get_adventure(conn, adventure_id)
     old = conn.execute('SELECT * FROM adventure_checkpoints WHERE adventure_id=? AND request_id=?', (adventure_id, request_id)).fetchone()
     if old:
         if old['name'] != name or old['revision'] != revision:
             raise ApiError(409, 'REQUEST_CONFLICT', '同一请求不能用于不同的存档。')
         return checkpoint_dict(old)
+    if not request_id.startswith('autosave_'):
+        from . import journeys
+        journeys.ensure_members(conn, run['world_id'])
+        journey_id = conn.execute('SELECT journey_id FROM journey_members WHERE adventure_id=?', (adventure_id,)).fetchone()[0]
+        count = conn.execute("SELECT COUNT(*) FROM journey_save_slots WHERE journey_id=? AND kind='manual'", (journey_id,)).fetchone()[0]
+        if count >= 20:
+            raise ApiError(409, 'SAVE_LIMIT', '手动存档最多20个，请先删除一个存档。')
     if run['revision'] != revision:
         raise ApiError(409, 'ADVENTURE_CONFLICT', '记录已更新，请刷新后再存档。')
     id = str(uuid4())
@@ -71,7 +79,8 @@ def create_checkpoint(conn, adventure_id, name, request_id, revision):
 
 def restore(conn, checkpoint_id, name, request_id):
     name = validate_input(name, request_id)
-    conn.execute('BEGIN IMMEDIATE')
+    if not conn.in_transaction:
+        conn.execute('BEGIN IMMEDIATE')
     checkpoint = conn.execute('SELECT * FROM adventure_checkpoints WHERE id=?', (checkpoint_id,)).fetchone()
     if not checkpoint:
         raise ApiError(404, 'CHECKPOINT_NOT_FOUND', '存档不存在。')
@@ -122,7 +131,7 @@ def register_checkpoint_routes(app, cfg):
     def list_checkpoints(adventure_id: str, offset: int = Query(0, ge=0, le=9223372036854775807)):
         with db(cfg.db_path) as conn:
             service.get_adventure(conn, adventure_id)
-            return {'items': [checkpoint_dict(r) for r in conn.execute('SELECT id,adventure_id,name,revision,character_json,mode,created_at,memory_cursor FROM adventure_checkpoints WHERE adventure_id=? ORDER BY created_at DESC,id LIMIT 30 OFFSET ?', (adventure_id, offset))]}
+            return {'items': [checkpoint_dict(r) for r in conn.execute("SELECT id,adventure_id,name,revision,character_json,mode,created_at,memory_cursor FROM adventure_checkpoints WHERE adventure_id=? AND (request_id NOT LIKE 'autosave_%' OR id IN (SELECT checkpoint_id FROM journey_save_slots WHERE kind='manual')) ORDER BY created_at DESC,id LIMIT 30 OFFSET ?", (adventure_id, offset))]}
 
     @app.post('/api/v1/adventures/{adventure_id}/checkpoints', status_code=201)
     def save(adventure_id: str, payload: dict):

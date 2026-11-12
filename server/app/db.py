@@ -87,6 +87,10 @@ def init_db(path: Path | str) -> None:
                 conn.execute(f'ALTER TABLE adventures ADD COLUMN {column} TEXT')
         from .adventures.checkpoints import SCHEMA as CHECKPOINT_SCHEMA
         conn.executescript(CHECKPOINT_SCHEMA)
+        from .adventures.journeys import SCHEMA as JOURNEY_SCHEMA
+        conn.executescript(JOURNEY_SCHEMA)
+        from .adventures.opening_options import SCHEMA as START_REQUEST_SCHEMA
+        conn.executescript(START_REQUEST_SCHEMA)
         if 'memory_cursor' not in {row[1] for row in conn.execute('PRAGMA table_info(adventure_checkpoints)')}:
             conn.execute('ALTER TABLE adventure_checkpoints ADD COLUMN memory_cursor INTEGER NOT NULL DEFAULT 0')
         if 'opening_json' not in {row[1] for row in conn.execute('PRAGMA table_info(adventures)')}:

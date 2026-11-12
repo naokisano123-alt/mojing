@@ -193,3 +193,32 @@
 .item-details textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px;
   padding: 10px; color: var(--text); background: var(--paper); font: inherit; }
 .item-description-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.adventure-journal { margin-top: 4px; }
+.journal-tools { top: 0; min-height: 64px; padding: 8px 0; }
+.journal-scene { font-size: 13px; }
+.journal-turn { border: 0; border-radius: 0; padding: 0; background: transparent; }
+.journal-draft { padding: 16px; border: 1px dashed var(--green); border-radius: 12px; }
+.journal-action { display: flex; align-items: flex-start; gap: 14px; border-left: 3px solid var(--accent);
+  padding: 18px; margin: 20px 0; border-radius: 0 12px 12px 0; color: var(--green); background: var(--soft); }
+.journal-action > svg { flex-shrink: 0; margin-top: 3px; }
+.journal-action small { display: block; color: var(--muted); font-size: 11px; letter-spacing: 2px; }
+.journal-action p { margin: 10px 0 0; font-size: var(--reading-size, 16px); line-height: 1.8; white-space: pre-wrap; }
+.journal-turn-marker { text-align: center; margin: 24px 0; font-size: 11px; letter-spacing: 1px; }
+.journey-landing { display: grid; gap: 16px; max-width: 480px; margin: 12dvh auto 40px; width: 100%; }
+.journey-landing button { min-height: 56px; }
+.journey-row { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px; text-align: left; margin: 8px 0 16px; }
+.journey-row span { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.journey-bottom { display: flex; gap: 10px; margin: 24px 0; padding-top: 20px; border-top: 1px solid var(--line); }
+.journey-bottom.journal-create { display: grid; }
+.journey-bottom > button { flex: 1; }
+.journey-slot { border: 1px solid var(--line); border-radius: 12px; background: var(--paper); padding: 16px; display: grid; gap: 12px; }
+.journey-slot .journal-heading { gap: 8px; }
+.journey-opening { margin: 12px 0 24px; }
+.journey-opening h2, .journal-save-manager h2 { font-size: 20px; }
+.opening-options { display: grid; gap: 10px; }
+.opening-options button { display: grid; gap: 8px; text-align: left; white-space: normal; }
+.opening-options button span { font-size: 13px; line-height: 1.8; white-space: pre-wrap; color: var(--muted); }
+.opening-description > span { display: flex; align-items: center; gap: 8px; color: var(--green); margin: 8px 0; }
+.opening-description textarea { width: 100%; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 16px; font: inherit; line-height: 1.9; color: var(--text); }
+@media (max-width: 370px) { .journal-tools { top: 0; } .journal-tool-buttons button { padding: 6px; font-size: 12px; } }

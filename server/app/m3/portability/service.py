@@ -691,8 +691,17 @@ def _save_payload(
     conn: sqlite3.Connection,
     world: Mapping[str, Any],
     settings_digest: str,
+    selected_journeys: list[str] | None = None,
 ) -> dict[str, Any]:
-    instances = _saved_instances(conn, world["id"]).fetchall()
+    from ...adventures import journeys
+    folders = journeys.list_folders(conn, world['id'])
+    available = {item['id'] for item in folders}
+    selected = available if selected_journeys is None else set(selected_journeys)
+    if not selected <= available:
+        raise ApiError(422, 'JOURNEY_NOT_FOUND', '所选旅程不属于当前世界。')
+    allowed = {row['adventure_id'] for row in conn.execute('SELECT * FROM journey_members') if row['journey_id'] in selected}
+    checkpoint_ids = {row[0] for row in conn.execute('SELECT id,adventure_id FROM adventure_checkpoints') if row[1] in allowed}
+    instances = [row for row in _saved_instances(conn, world['id']).fetchall() if row['adventure_id'] in allowed]
     has_openings = conn.execute(
         "SELECT 1 FROM adventures WHERE world_id=? AND opening_json IS NOT NULL LIMIT 1",
         (world["id"],),
@@ -723,7 +732,16 @@ def _save_payload(
         else:
             table_iterators[table] = _rows(conn, table, cols, world["id"])
 
+    def selected_rows(table, rows):
+        for row in rows:
+            if (row['id'] if table == 'adventures' else row['adventure_id']) not in allowed:
+                continue
+            if table == 'adventures' and row.get('origin_checkpoint_id') not in checkpoint_ids:
+                row = {**row, 'origin_checkpoint_id': None}
+            yield row
+    table_iterators = {table: selected_rows(table, rows) for table, rows in table_iterators.items()}
     payload: dict[str, Any] = {
+        'journey_metadata': journeys.export_metadata(conn, world['id'], allowed),
         "format": SAVES_FORMAT,
         "version": version,
         "world_id": world["id"],
@@ -775,6 +793,7 @@ def transfer_export(
     world: Mapping[str, Any],
     part: str,
     scratch_dir: Any = None,
+    selected_journeys: list[str] | None = None,
 ) -> StreamingResponse:
     """兼容公共路由 `GET /api/v1/worlds/{world_id}/transfer` 的流式导出实现。"""
     ensure_portability_schema(conn)
@@ -787,7 +806,7 @@ def transfer_export(
         archive = settings
         if part != "world":
             saves = stack.enter_context(TemporaryFile(dir=scratch_dir))
-            _write_json(saves, _save_payload(conn, world, _digest(settings)))
+            _write_json(saves, _save_payload(conn, world, _digest(settings), selected_journeys))
             if size + saves.tell() > TRANSFER_BYTE_LIMIT:
                 raise TransferLimitExceededError()
             archive = saves
@@ -1227,6 +1246,7 @@ def _existing_settings(
     conn: sqlite3.Connection,
     source_id: str,
     digest: str,
+    target_world_id: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, dict[str, str]] | None, str]:
     candidates = conn.execute(
         """
@@ -1240,6 +1260,8 @@ def _existing_settings(
         (source_id, source_id, digest),
     )
     for world in candidates:
+        if target_world_id and world["id"] != target_world_id:
+            continue
         if _local_digest(conn, world) == (world["local_digest"] or digest):
             settings = _world_payload(conn, world)
             for table in WORLD_TABLES:
@@ -1256,6 +1278,7 @@ def import_transfer(
     conn: sqlite3.Connection,
     uploads: list[Any],
     max_documents: int = 50,
+    target_world_id: str | None = None,
 ) -> str:
     """兼容公共路由 `POST /api/v1/world-transfers` 的完整导入实现。
 
@@ -1339,7 +1362,19 @@ def import_transfer(
                 for table, rows in {**world_records, **save_records}.items()
             }
             world_id = str(uuid4())
-            _copy_settings(conn, settings, world_id, world_records, ids)
+            if target_world_id:
+                if saves is None:
+                    raise ApiError(422, 'SAVES_REQUIRED', '请选择包含旅程存档的文件。')
+                # Only an exact unchanged world version can receive another journey.
+                local_settings, mapping, matched = _existing_settings(conn, source_id, digest, target_world_id)
+                if matched != target_world_id:
+                    raise ApiError(409, 'TRANSFER_WORLD_MISMATCH', '存档与当前世界观版本不匹配，请从首页导入为新的世界。')
+                world_id = target_world_id
+                for table in WORLD_TABLES:
+                    identity = {r['id']: r['id'] for r in world_records[table] if 'id' in r}
+                    ids[table] = ((mapping or {}).get(table) or identity) if settings_part else identity
+            else:
+                _copy_settings(conn, settings, world_id, world_records, ids)
 
             source_ids: dict[str, dict[str, str]] = {
                 table: ids[table].copy() for table in ("documents", "chunks", "lore_entries")
@@ -1398,6 +1433,8 @@ def import_transfer(
                     historical_id_registry,
                     inherited_tombstones,
                 )
+                from ...adventures import journeys
+                journeys.import_metadata(conn, saves.get('journey_metadata'), ids, world_id)
                 for run in save_records["adventures"]:
                     original = run["id"]
                     new_id = ids["adventures"][original]
@@ -1428,17 +1465,18 @@ def import_transfer(
                     else {}
                 ),
             }
-            _insert(
-                conn,
-                "world_transfer_sources",
-                {
-                    "world_id": world_id,
-                    "source_id": source_id,
-                    "source_digest": digest,
-                    "local_digest": _local_digest(conn, world_row),
-                    "id_map": json.dumps(stored_id_map, ensure_ascii=False),
-                },
-            )
+            if not target_world_id:
+                _insert(
+                    conn,
+                    "world_transfer_sources",
+                    {
+                        "world_id": world_id,
+                        "source_id": source_id,
+                        "source_digest": digest,
+                        "local_digest": _local_digest(conn, world_row),
+                        "id_map": json.dumps(stored_id_map, ensure_ascii=False),
+                    },
+                )
             conn.execute(f"RELEASE SAVEPOINT {savepoint_name}")
             return world_id
         except Exception:

@@ -1,12 +1,10 @@
-import { OpeningEditor } from "../../features/adventures/OpeningEditor";
 import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import {
-  Upload, Download, BookOpen, Bookmark, ClipboardList, Settings as SettingsIcon, ArrowLeft, AlertCircle,
+  Upload, BookOpen, ClipboardList, Settings as SettingsIcon, ArrowLeft, AlertCircle,
 } from 'lucide-react';
 import type { WorldDetail, WorldDocument } from '../../api/types';
 import {
   getWorld,
-  buildUrl,
   deleteDocument,
   getCapabilities,
   searchLore,
@@ -47,6 +45,7 @@ import {
   previewNarration,
 } from '../../api/client';
 import './documents.css';
+import { WorldExport } from './WorldExport';
 import { getUploadPolicy, toLoreSearchItem } from './loreAdapters';
 
 export interface WorldLoreViewProps {
@@ -54,6 +53,7 @@ export interface WorldLoreViewProps {
   worldName: string;
   onBack: () => void;
   initialTab?: 'list' | 'journal';
+  prepareWorld?: boolean;
   modelSession?: ModelSessionResponse | null;
   modelProfileEnabled?: boolean;
   onModelSessionChange?: (session: ModelSessionResponse | null) => void;
@@ -61,13 +61,14 @@ export interface WorldLoreViewProps {
   onPreferencesChange?: (value: Partial<State>) => void;
 }
 
-type Tab = 'documents' | 'journal' | 'saves' | 'settings';
+type Tab = 'documents' | 'journal' | 'settings';
 
 export function WorldLoreView({
   worldId,
   worldName,
   onBack,
   initialTab = 'list',
+  prepareWorld = false,
   modelSession = null,
   modelProfileEnabled = false,
   onModelSessionChange,
@@ -78,11 +79,17 @@ export function WorldLoreView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>(initialTab === 'list' ? 'documents' : 'journal');
+  const [journalPage, setJournalPage] = useState<'landing' | 'adventure' | 'saves'>('landing');
+  const [preparing, setPreparing] = useState(prepareWorld);
   const scrollPositions = useRef(new Map<Tab, number>());
   const nextScroll = useRef<number | null>(null);
   function navigate(next: Tab, reset = false) {
     scrollPositions.current.set(tab, window.scrollY);
     nextScroll.current = reset ? 0 : scrollPositions.current.get(next) ?? 0;
+    if (next === tab) {
+      window.scrollTo({ top: nextScroll.current ?? 0, behavior: 'instant' });
+      nextScroll.current = null;
+    }
     setTab(next);
   }
   useLayoutEffect(() => {
@@ -296,22 +303,19 @@ export function WorldLoreView({
   const documents = worldDetail?.documents || [];
 
   return (
-    <div className="narrow doc-hub world-workspace">
+    <div className="narrow doc-hub world-workspace" aria-label={worldDetail?.name || worldName}>
       <header className="workspace-header">
         <Back onClick={onBack} label="返回世界列表" />
-        <h1>{worldDetail?.name || worldName}</h1>
-        {worldDetail?.description && <p className="muted">{worldDetail.description}</p>}
       </header>
-      <nav className="workspace-tabs" aria-label="世界栏目">
+      {!preparing && <nav className="workspace-tabs" aria-label="世界栏目">
         {([
           { id: 'journal', label: '冒险', icon: BookOpen },
-          { id: 'saves', label: '存档', icon: Bookmark },
           { id: 'documents', label: '世界观文档', icon: ClipboardList },
           { id: 'settings', label: '设置', icon: SettingsIcon },
         ] as const).map(({ id, label, icon: Icon }) => <button key={id} type="button"
           aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''}
-          onClick={() => navigate(id)}><Icon size={17} />{label}</button>)}
-      </nav>
+          onClick={() => { if (id === 'journal') setJournalPage('landing'); navigate(id, id === 'journal'); }}><Icon size={17} />{label}</button>)}
+      </nav>}
 
       {error && <div className="upload-error-callout" role="alert">
         <AlertCircle size={18} /><span>{error}</span>
@@ -319,6 +323,7 @@ export function WorldLoreView({
       </div>}
 
       <section hidden={tab !== 'documents'} aria-label="世界观文档">
+        {preparing && <div className="world-preparation"><h1>整理你的世界</h1><p className="muted">导入或编写世界观文档，准备好后开始旅程。也可以稍后补充。</p></div>}
         {docSection === 'list' && <>
           <LoreSearchPanel key={`${worldId}:${searchVersion}`} compact worldId={worldId}
             search={runSearch} onQueryChange={onQueryChange} placeholder="搜索文档与人工设定…"
@@ -330,8 +335,9 @@ export function WorldLoreView({
             <span className="muted">{documents.length} 份文档</span>
             <button type="button" className="secondary" onClick={() => setDocSection('upload')}><Upload size={15} />导入</button>
             <button type="button" className="secondary" onClick={() => openEntry()}><ClipboardList size={15} />人工设定</button>
-            <a className="text-button" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'world' })}><Download size={15} />导出设定</a>
+
           </div>
+          <WorldExport worldId={worldId} />
           {!query && <DocumentList documents={documents} loading={loading}
             onSelectDocument={doc => setViewingDoc({ documentId: doc.id, mode: 'raw' })}
             onDeleteDocument={handleDeleteDocument} />}
@@ -360,22 +366,17 @@ export function WorldLoreView({
           onCancel={openDocuments} {...uploadPolicy}
           onViewExisting={id => setViewingDoc({ documentId: id, mode: 'raw' })}
           onRefreshRequest={() => void loadWorld()} />}
+        {preparing && <button className="primary" type="button" onClick={() => {
+          try { localStorage.removeItem(`mojing:prepare-world:${worldId}`); } catch { /* Optional preference. */ }
+          setPreparing(false); setDocSection('list'); navigate('journal', true);
+        }}>完成准备，进入世界</button>}
       </section>
 
-      <div hidden={tab !== 'journal' && tab !== 'saves'}>
+      <div hidden={tab !== 'journal'}>
         <AdventureJournal worldId={worldId} sessionId={modelSession?.session_id}
-          view={tab === 'saves' ? 'saves' : 'adventure'} onViewChange={view => navigate(view === 'saves' ? 'saves' : 'journal', true)}
-          saveActions={<details className="journal-sources"><summary>导出与备份</summary>
-            <div className="world-export">
-              <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'saves' })}>导出存档</a>
-              <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`, { part: 'zip' })}>完整备份 ZIP</a>
-              {modelProfileEnabled && <a className="secondary" href={buildUrl(`/worlds/${encodeURIComponent(worldId)}/transfer`,
-                { part: 'zip', destination: 'folder' })}>保存世界观和存档两份文件</a>}
-            </div>
-          </details>}
+          view={journalPage} onViewChange={view => { setJournalPage(view); window.scrollTo({ top: 0, behavior: 'instant' }); }}
           onActiveRunChange={setActiveRun}
           onConfigure={() => navigate('settings')}
-          onImportMaterials={() => { setDocSection('upload'); navigate('documents'); }}
           onSessionExpired={() => onModelSessionChange?.(null)}
           onOpenSource={source => {
             if (source.kind === 'entry') openEntry(source.entry_id);
@@ -398,10 +399,6 @@ export function WorldLoreView({
         {!activeRun && <section><h2>世界脉动</h2><p className="muted">开启旅程后，可在这里设置该旅程的世界脉动。</p></section>}
         {preferences && onPreferencesChange && <Preferences embedded state={preferences}
           update={onPreferencesChange} back={() => navigate('journal')} />}
-        <details className="journal-sources">
-          <summary>开局与日程</summary>
-          {tab === 'settings' && <OpeningEditor key={worldId} worldId={worldId} />}
-        </details>
       </section>
 
       {viewingDoc && <DocumentViewer key={viewingDoc.documentId}

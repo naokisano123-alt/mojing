@@ -29,6 +29,10 @@ function hashRoute(): { page: Page; loreId?: string } {
   return { page, loreId: page === 'lore' && id ? id : undefined };
 }
 
+function worldNeedsPreparation(id: string) {
+  try { return localStorage.getItem(`mojing:prepare-world:${id}`) === '1'; } catch { return false; }
+}
+
 export default function App() {
   const [state, setState] = useState(loadState);
   const [page, setPage] = useState<Page>(() => hashRoute().page);
@@ -212,8 +216,9 @@ export default function App() {
   useEffect(() => { void loadRemoteWorlds(); }, []);
   async function handleCreateRemoteWorld(name: string, description: string) {
     const created = await createRemoteWorld({ name, description });
+    try { localStorage.setItem(`mojing:prepare-world:${created.id}`, '1'); } catch { /* Optional preference. */ }
     registerWorld(created);
-    setToast('世界已创建。可以开始冒险，也可以先导入设定。');
+    setToast('世界已创建，先整理世界观文档。');
   }
   function openLore(target: WorldSummary) {
     try { localStorage.setItem('mojing:last-world', target.id); } catch { /* Optional device preference. */ }
@@ -254,7 +259,7 @@ export default function App() {
     {inWorld && <WorldBar branch={branch} showFate={page === 'story'} openFate={() => { swipe.cancel(); setFateOpen(true); }} />}
     <main className={`${inWorld ? 'world-main' : ''} ${page === 'story' ? 'story-main' : ''}`}>
       <div className="swipe-stage" style={{ transform: swipe.offset ? `translateX(${swipe.offset}px)` : undefined }}>
-        <div key={page} className={`page-motion slide-${direction} ${page === 'story' ? 'story-container' : 'content-container'}`}>
+        <div key={page} className={`page-motion slide-${direction} ${page === 'story' ? 'story-container' : 'content-container'} ${page === 'lore' ? 'workspace-container' : ''}`}>
           {page === 'cover' && <section className="cover-page">
             <div className="cover-emblem" aria-hidden="true">墨</div>
             <p className="eyebrow">MOJING</p><h1>万千世界，静候翻阅。</h1><p>旅途暂歇，故事还在。</p>
@@ -285,7 +290,7 @@ export default function App() {
           }} />}
           {page === 'settings' && <Settings state={state} update={s => setState(prev => ({ ...prev, ...s }))} back={() => go('home', 'right')} />}
           {page === 'lore' && (loreWorld
-            ? <WorldLoreView key={loreWorld.id} initialTab="journal" preferences={state} onPreferencesChange={changes => setState(current => ({ ...current, ...changes }))} modelSession={modelSession} modelProfileEnabled={modelProfileEnabled} onModelSessionChange={changeModelSession} worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} />
+            ? <WorldLoreView key={loreWorld.id} prepareWorld={worldNeedsPreparation(loreWorld.id)} initialTab={worldNeedsPreparation(loreWorld.id) ? 'list' : 'journal'} preferences={state} onPreferencesChange={changes => setState(current => ({ ...current, ...changes }))} modelSession={modelSession} modelProfileEnabled={modelProfileEnabled} onModelSessionChange={changeModelSession} worldId={loreWorld.id} worldName={loreWorld.name} onBack={() => { void loadRemoteWorlds(); go('home', 'right'); }} />
             : <div className="narrow"><button className="text-button back" onClick={() => go('home', 'right')}>← 返回我的世界</button><p className="muted">请从“我的世界”中选择一个世界资料库进入。</p></div>)}
         </div>
       </div>

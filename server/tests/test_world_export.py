@@ -72,7 +72,7 @@ def test_world_export_separates_settings_from_confirmed_saves(client):
     saves = with_saves.json()["saves"]
     assert {row["id"] for row in saves["adventures"]} == {home_run, branch.json()["id"]}
     assert {row["action"] for row in saves["turns"]} == {"走上旧桥"}
-    assert [row["name"] for row in saves["checkpoints"]] == ["过桥前"]
+    assert {row["name"] for row in saves["checkpoints"]} == {"自动存档", "过桥前"}
     assert "未确认行动" not in with_saves.text
     assert "其他世界的资料" not in with_saves.text
     assert client.get("/api/v1/worlds/missing/export").status_code == 404

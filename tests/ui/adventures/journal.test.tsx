@@ -94,7 +94,7 @@ it("generation is a draft until the player explicitly confirms it", async () => 
   await screen.findByText("待确认草案 · 尚未写入回合");
   expect(api.commit).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("确认并写入回合"));
-  await screen.findByText("第 1 回合");
+  await screen.findByText(/第 1 回合/);
   expect(api.commit).toHaveBeenCalledTimes(1);
   expect(screen.queryByLabelText("你的行动")).not.toBeInTheDocument();
 });
@@ -136,7 +136,7 @@ it("failed commit keeps the draft so retry uses the same idempotent endpoint", a
   await screen.findByRole("alert");
   expect(screen.getByText("待确认草案 · 尚未写入回合")).toBeTruthy();
   fireEvent.click(screen.getByText("确认并写入回合"));
-  await screen.findByText("第 1 回合");
+  await screen.findByText(/第 1 回合/);
   expect(api.commit.mock.calls).toEqual([
     ["run", "draft"],
     ["run", "draft"],
@@ -308,14 +308,18 @@ it("refreshing a journey keeps a single current character and memory panel", asy
     latest_draft: null,
   }));
   const messages = vi.spyOn(console, "error").mockImplementation(() => {});
-  const { rerender } = render(<AdventureJournal {...props} api={api} />);
+  render(<AdventureJournal {...props} api={api} />);
   await screen.findByText("世界日志与更正（0）");
   for (revision = 1; revision <= 4; revision++) {
-    rerender(<AdventureJournal {...props} api={api} view="saves" />);
-    fireEvent.click(screen.getByRole("button", { name: "刷新进度与恢复草稿" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "刷新进度与恢复草稿" })).toBeEnabled());
-    rerender(<AdventureJournal {...props} api={api} view="adventure" />);
-    await screen.findByText("第 " + revision + " 回合");
+    // A confirmed server refresh replaces the journal detail, retaining one current panel.
+    api.prepare.mockResolvedValueOnce({ id: "d" + revision, status: "ready", action: "在街上走走", result: {
+      request_id: "d" + revision, mode: "fake", narrative: "新的灯光。", references: [], sources: [],
+    } });
+    fireEvent.click(screen.getByRole("button", { name: "自由编辑行动" }));
+    fireEvent.change(screen.getByLabelText("你的行动"), { target: { value: "在街上走走" } });
+    fireEvent.click(screen.getByRole("button", { name: "发送行动" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认并写入回合" }));
+    await screen.findByText(new RegExp("第 " + revision + " 回合"));
     expect(screen.queryByLabelText("角色信息")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "角色", exact: true }));
     expect(screen.getAllByLabelText("角色信息")).toHaveLength(1);

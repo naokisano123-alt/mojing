@@ -74,6 +74,8 @@ def create_adventure(conn, world_id, name, mode, initial_character=None, opening
     instance_service.create_instance(
         conn, world_id, adventure_id=id, world_minute=state['elapsed_minutes'], instance_id=instance_id,
     )
+    from .journeys import autosave
+    autosave(conn, id)
     return get_adventure(conn, id)
 
 
@@ -196,6 +198,8 @@ def commit(conn, adventure_id, id, apply_changes=False, *, pulse_worker=None):
         session_router=pulse_worker.session_router if pulse_worker and run['mode'] == 'live' else None,
         activity_registry=pulse_worker.activity_registry if pulse_worker and run['mode'] == 'live' else None,
     )
+    from .journeys import autosave
+    autosave(conn, adventure_id)
     return get_adventure(conn, adventure_id)
 
 

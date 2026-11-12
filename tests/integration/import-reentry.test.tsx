@@ -56,6 +56,7 @@ it('导入入口归入新世界，ZIP 续玩后退出再进入仍选中独立副
   await user.click(screen.getByRole('button', { name: '导入世界或存档', exact: true }));
   await user.upload(screen.getByLabelText('选择迁移文件'), new File(['mock-zip'], 'backup.zip', { type: 'application/zip' }));
   await user.click(screen.getByRole('button', { name: '导入为独立副本' }));
+  await user.click(await screen.findByRole('button', { name: '继续冒险' }));
   await screen.findByText('导入前的故事。');
   expect(location.hash).toBe('#lore/imported');
   await user.click(screen.getByRole('button', { name: '自由编辑行动' }));
@@ -63,12 +64,13 @@ it('导入入口归入新世界，ZIP 续玩后退出再进入仍选中独立副
   await user.click(screen.getByRole('button', { name: '发送行动' }));
   await screen.findByText('待确认草案 · 尚未写入回合');
   await user.click(screen.getByRole('button', { name: '确认并写入回合' }));
-  await screen.findByText('第 2 回合');
+  await screen.findByText(/第 2 回合/);
   await user.click(screen.getByRole('button', { name: '返回世界列表' }));
   await screen.findByRole('heading', { name: imported.name, exact: true });
   await waitFor(() => expect(fetcher.mock.calls.some(args => String(args[0]).includes('offset=50'))).toBe(true));
   expect(document.querySelector('.world-card h2')?.textContent).toBe(imported.name);
   await user.click(screen.getByRole('button', { name: `查看${imported.name}的世界资料库` }));
+  await user.click(await screen.findByRole('button', { name: '继续冒险' }));
   expect(await screen.findByText('续玩的新故事。')).toBeVisible();
   expect(location.hash).toBe('#lore/imported');
   expect(localStorage.getItem('mojing:active-adventure:imported')).toBe('journey');

@@ -168,6 +168,7 @@ def normalize_starting_point(
         request_id=req_id,
         parent_draft_id=parent_draft,
         branch_from_checkpoint_id=branch_cp,
+        player_description=safe_u16_truncate(str(raw.get("player_description") or ""), 6000),
     )
 
 
@@ -1132,6 +1133,19 @@ def merge_batch_extractions(
         t_id = str(n.get("target_npc_id") or "").strip()
         if t_id and t_id in alias_to_npc_id:
             n["target_npc_id"] = alias_to_npc_id[t_id]
+        target = str(n.get("target_npc_id") or "").strip()
+        if n.get("action_kind") == "conversation_plan" and (
+            target not in retained_npc_ids or target == str(n["npc_id"])
+        ):
+            # A missing/truncated conversation partner cannot be invented. Defer the
+            # conversation as a local waiting task; the strict domain validator remains unchanged.
+            n.update(plan_kind="stay", action_kind="task_progress", target_npc_id="",
+                     current_activity="等待合适的交谈对象", task_title="等待交谈机会",
+                     task_stage="尚未开始交谈", task_progress_percent=0, availability="available")
+            identity_resolution_log.append({
+                "action": "deferred_conversation", "canonical_npc_id": n["npc_id"],
+                "reason": "交谈对象未在合并后的人物集合中得到确认，保留人物并暂缓交谈，不虚构目标。",
+            })
 
         if len(batches) > 1 and retained_event_ids:
             remapped_causes: list[str] = []

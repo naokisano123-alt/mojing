@@ -485,7 +485,7 @@ def create_app(
             return export_world(conn, _get_world(conn, world_id), include_saves, Path(cfg.db_path).parent)
 
     @app.get("/api/v1/worlds/{world_id}/transfer")
-    def download_world_transfer(world_id: str, part: Literal["world", "saves", "zip"]) -> Response:
+    def download_world_transfer(world_id: str, part: Literal["world", "saves", "zip"], journeys: str | None = None) -> Response:
         try:
             # M3 第三轮：可移植层支持已删除来源、v5 与历史快照
             from .m3.portability import transfer_export
@@ -494,17 +494,18 @@ def create_app(
 
         with db(cfg.db_path) as conn:
             conn.execute("BEGIN")
-            return transfer_export(conn, _get_world(conn, world_id), part, Path(cfg.db_path).parent)
+            return transfer_export(conn, _get_world(conn, world_id), part, Path(cfg.db_path).parent,
+                                   selected_journeys=journeys.split(',') if journeys else None)
 
     @app.post("/api/v1/world-transfers", status_code=201)
-    def restore_world_transfer(files: list[UploadFile] = File(...)) -> dict[str, Any]:
+    def restore_world_transfer(files: list[UploadFile] = File(...), target_world_id: str | None = None) -> dict[str, Any]:
         try:
             from .m3.portability import import_transfer
         except ImportError:
             from .world_transfer import import_transfer
 
         with db(cfg.db_path) as conn:
-            world_id = import_transfer(conn, files, cfg.max_documents_per_world)
+            world_id = import_transfer(conn, files, cfg.max_documents_per_world, target_world_id=target_world_id)
             return _world_dict(_get_world(conn, world_id), _count_documents(conn, world_id))
 
     @app.patch("/api/v1/worlds/{world_id}")
