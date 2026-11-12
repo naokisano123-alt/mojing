@@ -181,8 +181,12 @@ public final class MainActivity extends Activity {
         if (path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/export")) {
             return query == null || "include_saves=true".equals(query);
         }
-        return path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/transfer") && query != null
-            && query.matches("part=(world|saves|zip(?:&destination=folder)?)");
+        if (!path.matches("/api/v1/worlds/[0-9a-fA-F-]{36}/transfer") || query == null) return false;
+        java.util.Map<String, java.util.List<String>> parameters = new java.util.HashMap<>();
+        for (String name : uri.getQueryParameterNames()) {
+            parameters.put(name, uri.getQueryParameters(name));
+        }
+        return WorldExportPolicy.allows(parameters);
     }
 
     private static boolean exportPair(Uri url) {
